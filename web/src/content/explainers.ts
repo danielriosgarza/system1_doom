@@ -455,7 +455,7 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
       'In these recordings the worker uses its fallback templates, hand-written macro patterns filled in for the module that asked. With Codex switched on, a language model writes the proposal instead. Either way the result is only text until the admission gate accepts it.',
       'The worker has 20 seconds per proposal and works on one at a time. The controller keeps deciding every tick meanwhile; the finished proposal is picked up at the start of a later tick.',
     ],
-    code: 'llm_worker.py · AsyncLLMWorker',
+    code: 'llm_worker.py · SlowLLMWorker',
   },
   gate: {
     title: 'The admission gate',

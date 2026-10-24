@@ -370,6 +370,15 @@ export const PICK_RULES: Record<string, string> = {
   critical_cached: 'out of time: the cached action is repeated',
 }
 
+/** Why the greedy rule held this tick: a clear lead, or a close race with too little pressure to sample. */
+function greedyWhy(arbiter: NonNullable<TickTrace['arbiter']>): string {
+  const margin = arbiter.score_margin ?? 0
+  const pressure = arbiter.exploration_pressure ?? 0
+  if (arbiter.deterministic) return 'the arbiter runs deterministically in this recording'
+  if (margin >= 0.08) return `it led by ${fmt(margin, 2)}, at least the 0.08 needed to skip sampling`
+  return `the top two were only ${fmt(margin, 3)} apart, but exploration pressure was low (${fmt(pressure, 2)}, under 0.45)`
+}
+
 export function explainPick(tick: TickTrace): PickExplanation {
   const arbiter = tick.arbiter
   const selected = prettyId(tick.selected_action)
@@ -406,11 +415,7 @@ export function explainPick(tick: TickTrace): PickExplanation {
         detail: 'The tick budget was too short to score the menu, so the last good action was repeated.',
       }
     default: {
-      const why = arbiter.deterministic
-        ? 'the arbiter runs deterministically in this recording'
-        : margin >= 0.08
-          ? `it led by ${fmt(margin, 2)}, at least the 0.08 needed to skip sampling`
-          : `exploration pressure was low (${fmt(pressure, 2)}, under 0.45)`
+      const why = greedyWhy(arbiter)
       return {
         headline: `Took the top score: ${selected}.`,
         detail:
@@ -884,6 +889,11 @@ function arbiterLevel(tick: TickTrace, meta: EpisodeMeta): TowerLevel {
   const lo = Math.min(0, ...values)
   const hi = Math.max(...values, lo + 1e-6)
   const rule = tick.arbiter?.pick_rule ?? 'greedy'
+  // The greedy line names this tick's reason, as the inspector does; the other rules read the same every tick.
+  const ruleLine =
+    rule === 'greedy' && tick.arbiter
+      ? `greedy: the top score wins, since ${greedyWhy(tick.arbiter)}`
+      : (PICK_RULES[rule] ?? rule)
   return {
     id: 'arbiter',
     title: 'One decision',
@@ -901,7 +911,7 @@ function arbiterLevel(tick: TickTrace, meta: EpisodeMeta): TowerLevel {
     })),
     choice: tick.selected_action,
     choiceLabel: prettyId(tick.selected_action),
-    rule: PICK_RULES[rule] ?? rule,
+    rule: ruleLine,
     reads: 'five opinions, simulator evidence, the strategy bonus, exploration pressure',
     writes: 'one action for the motor',
     idle: false,
