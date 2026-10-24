@@ -44,6 +44,30 @@ describe('loadEpisode', () => {
     expect(tick?.state?.screen_width).toBe(320)
   })
 
+  it('reads the training run files that episode.json lists, and gives null for the rest', async () => {
+    const bundle = await loadEpisode('mini', 'episodes', diskFetcher())
+    expect(bundle.metrics?.map((r) => r.episode)).toEqual([1, 2, 3])
+    expect(bundle.evaluation?.heuristics.reward).toBe(547.98)
+    expect(bundle.evaluation?.latest?.cleared).toBe(0.3)
+    expect(bundle.trust?.trust_count).toBe(25)
+    expect(Object.keys(bundle.trust?.context_counts ?? {})).toHaveLength(2)
+    // macros.json is not listed, so it is not fetched.
+    expect(bundle.macros).toBeNull()
+  })
+
+  it('treats a listed run file that is missing, or an unlisted one, as absent', async () => {
+    const missing = await loadEpisode('mini', 'episodes', diskFetcher({ 'episodes/mini/trust.json': null }))
+    expect(missing.trust).toBeNull()
+    expect(missing.metrics).not.toBeNull()
+    const meta = JSON.parse(await readFile(`${FIXTURES}episodes/mini/episode.json`, 'utf8'))
+    const bare = await loadEpisode(
+      'mini',
+      'episodes',
+      diskFetcher({ 'episodes/mini/episode.json': JSON.stringify({ ...meta, files: meta.files.slice(0, 3) }) }),
+    )
+    expect([bare.metrics, bare.evaluation, bare.trust, bare.macros]).toEqual([null, null, null, null])
+  })
+
   it('names the frame of a tick by its number', async () => {
     const bundle = await loadEpisode('mini', 'episodes', diskFetcher())
     expect(frameUrl(bundle, 17)).toBe('episodes/mini/frames/00017.jpg')

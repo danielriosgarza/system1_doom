@@ -1,6 +1,15 @@
 // Pure readings of a tick trace that more than one panel needs. Every number here is either
 // copied from the trace or recomputed with the controller's own constants, named below.
-import type { ActionInfo, EpisodeMeta, ProposalTrace, StateTrace, TickTrace } from '../schema/bundle'
+import type {
+  ActionInfo,
+  ArbiterTrace,
+  EpisodeMeta,
+  MetricsRow,
+  ProposalTrace,
+  StateTrace,
+  TickTrace,
+  TrustFile,
+} from '../schema/bundle'
 
 export const MODULES = ['survival', 'combat', 'navigation', 'resource', 'goal'] as const
 export type ModuleName = (typeof MODULES)[number]
@@ -954,5 +963,201 @@ export function towerLevels(tick: TickTrace, meta: EpisodeMeta, proposals: Propo
     opinionsLevel(tick),
     arbiterLevel(tick, meta),
     motorLevel(tick, meta),
+  ]
+}
+
+// ---------------------------------------------------------------------------------------------
+// Learning across episodes (learning.py, LearnerConfig; train.py).
+
+/** LearnerConfig: returns over 8 steps discounted by 0.9; the networks and their training between episodes. */
+export const GAMMA = 0.9
+export const N_STEP = 8
+export const LEARNER = {
+  hidden: 64,
+  gateHidden: 32,
+  learningRate: 1e-3,
+  batch: 256,
+  trainSteps: 200,
+  replay: 100_000,
+  gateTemperature: 0.5,
+} as const
+/** train.py: the exploration floor falls linearly from 0.6 to 0.05 over the first 100 training episodes. */
+export const FLOOR_SCHEDULE = { start: 0.6, end: 0.05, episodes: 100 } as const
+/** Rolling window for the training curves, in episodes. */
+export const ROLLING_WINDOW = 20
+
+/**
+ * The floor a training episode played with. `exploration_schedule` is called with the episodes
+ * finished so far, so metrics row `episode` (counted from 1) used index episode − 1.
+ */
+export function floorAt(episode: number): number {
+  const { start, end, episodes } = FLOOR_SCHEDULE
+  const frac = Math.min(1, Math.max(0, (episode - 1) / episodes))
+  return start + (end - start) * frac
+}
+
+/** Trailing mean over the last `window` values (fewer at the start). */
+export function rolling(values: number[], window = ROLLING_WINDOW): number[] {
+  const out: number[] = []
+  let sum = 0
+  values.forEach((v, i) => {
+    sum += v
+    if (i >= window) sum -= values[i - window] ?? 0
+    out.push(sum / Math.min(window, i + 1))
+  })
+  return out
+}
+
+/** Survived means the episode did not end in death, as `train.evaluate` counts it. */
+export const survived = (row: MetricsRow) => !row.died
+
+export function trustLambda(n: number): number {
+  return n / (n + TRUST_COUNT)
+}
+
+export interface TrustCell {
+  action: string
+  n: number
+  lambda: number
+}
+
+export interface TrustRow {
+  context: string
+  /** Decisions taken in this context during training. */
+  n: number
+  cells: TrustCell[]
+}
+
+/** The actions the trust map shows: the vocabulary, in order, less those never executed in training. */
+export function trustActions(trust: TrustFile, meta: EpisodeMeta): string[] {
+  const tried = new Set(Object.keys(trust.action_counts).map((key) => key.slice(key.lastIndexOf('|') + 1)))
+  return Object.keys(meta.actions).filter((id) => tried.has(id))
+}
+
+export function trustRow(trust: TrustFile, context: string, actions: string[]): TrustRow {
+  return {
+    context,
+    n: trust.context_counts[context] ?? 0,
+    cells: actions.map((action) => {
+      const n = trust.action_counts[`${context}|${action}`] ?? 0
+      return { action, n, lambda: trustLambda(n) }
+    }),
+  }
+}
+
+/** Every context met in training, most experienced first. */
+export function trustRows(trust: TrustFile, actions: string[]): TrustRow[] {
+  return Object.keys(trust.context_counts)
+    .map((context) => trustRow(trust, context, actions))
+    .sort((a, b) => b.n - a.n || a.context.localeCompare(b.context))
+}
+
+/** A context signature in words: "healthy · stocked · 2 enemies mid · clear · pickup visible". */
+export function contextWords(signature: string): string {
+  const p = parseSignature(signature)
+  const enemies =
+    p.enemies === 'none' || !p.enemyCount
+      ? 'no enemies'
+      : `${p.enemyCount} ${p.enemyCount === 1 ? 'enemy' : 'enemies'} ${p.enemies}`
+  return [
+    p.hp,
+    p.ammo,
+    enemies,
+    p.dmg === 'under_fire' ? 'under fire' : p.dmg,
+    p.pickup === 'pickup_visible' ? 'pickup visible' : 'no pickup',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+export interface GateBlend {
+  g: number
+  table: Record<string, number>
+  gate: Record<string, number>
+  used: Record<string, number>
+  /** normalise((1 − g)·table + g·gate), recomputed. */
+  recomputed: Record<string, number>
+  /** The modules whose own top pick was the executed action: only their rows train the gate. */
+  trainers: string[]
+}
+
+/** The arbiter's module weights: the hand-written table and the gate's proposal blended by g (arbiter.py). */
+export function gateBlend(tick: TickTrace): GateBlend | null {
+  const arbiter: ArbiterTrace | null | undefined = tick.arbiter
+  const table = arbiter?.module_weights_heuristic
+  const gate = arbiter?.module_weights_gate
+  if (!arbiter || !table || !gate) return null
+  const g = arbiter.gate_share ?? 0
+  const mixed = Object.fromEntries(MODULES.map((m) => [m, (1 - g) * (table[m] ?? 0) + g * (gate[m] ?? table[m] ?? 0)]))
+  const total = Object.values(mixed).reduce((a, b) => a + b, 0) || 1
+  const recomputed = Object.fromEntries(Object.entries(mixed).map(([m, v]) => [m, v / total]))
+  const trainers = MODULES.filter((m) => tick.module_outputs[m]?.top_action === tick.selected_action)
+  return { g, table, gate, used: arbiter.module_weights ?? recomputed, recomputed, trainers }
+}
+
+export interface ReturnTerm {
+  tick: number
+  k: number
+  discount: number
+  reward: number
+  value: number
+}
+
+/**
+ * The 8-step return each module learns from: R_m(t) = Σ_{k=0..7} 0.9^k · r_m(t + k), truncated at
+ * the episode's end (learning.py, n_step_returns). Raw: the learner then standardises it.
+ */
+export function nStepReturns(
+  ticks: TickTrace[],
+  index: number,
+): Record<ModuleName, { terms: ReturnTerm[]; total: number }> {
+  const horizon = ticks.slice(index, index + N_STEP)
+  return Object.fromEntries(
+    MODULES.map((m) => {
+      const terms = horizon.map((t, k) => {
+        const reward = t.outcome?.module_rewards?.[m] ?? 0
+        const discount = GAMMA ** k
+        return { tick: t.tick, k, discount, reward, value: discount * reward }
+      })
+      return [m, { terms, total: terms.reduce((s, t) => s + t.value, 0) }]
+    }),
+  ) as Record<ModuleName, { terms: ReturnTerm[]; total: number }>
+}
+
+/** The eight primitives an action's encoding counts, in features.py order. */
+export const ENCODING_PRIMITIVES = [
+  'move_forward',
+  'move_backward',
+  'strafe_left',
+  'strafe_right',
+  'turn_left',
+  'turn_right',
+  'shoot',
+  'use',
+] as const
+export const ENCODING_LABELS = [
+  ...ENCODING_PRIMITIVES.map(prettyId),
+  'weapon switch',
+  'length ÷ 16',
+  'macro',
+  'targets a pickup',
+]
+
+/**
+ * The 12 numbers the networks know an action by (features.py, encode_action): for each primitive,
+ * how many steps of the plan use it ÷ plan length, counting strafe-and-shoot as both; then the
+ * share of weapon switches, length ÷ 16, 1 for a macro, and 1 when it targets a pickup.
+ */
+export function encodeAction(primitives: string[], isMacro: boolean, targetsPickup = false): number[] {
+  const length = Math.max(1, primitives.length)
+  const parts = primitives.flatMap((p) =>
+    p === 'strafe_left_shoot' || p === 'strafe_right_shoot' ? [p.slice(0, -'_shoot'.length), 'shoot'] : [p],
+  )
+  return [
+    ...ENCODING_PRIMITIVES.map((prim) => parts.filter((c) => c === prim).length / length),
+    primitives.filter((p) => p.startsWith('switch_weapon')).length / length,
+    primitives.length / 16,
+    isMacro ? 1 : 0,
+    targetsPickup ? 1 : 0,
   ]
 }

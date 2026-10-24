@@ -1,0 +1,29 @@
+{
+ "scenario": "deadly_corridor.cfg",
+ "episodes": 30,
+ "trained_episodes": 300,
+ "heuristics": {
+  "reward": 547.98,
+  "cleared": 0.1333,
+  "survived": 0.1333,
+  "kills": 4.03,
+  "health": 5.13,
+  "ticks": 77.9
+ },
+ "latest": {
+  "reward": 996.92,
+  "cleared": 0.3,
+  "survived": 0.3333,
+  "kills": 4.53,
+  "health": 15.93,
+  "ticks": 78.0
+ },
+ "best": {
+  "reward": 986.53,
+  "cleared": 0.3,
+  "survived": 0.3333,
+  "kills": 4.2,
+  "health": 17.13,
+  "ticks": 71.1
+ }
+}

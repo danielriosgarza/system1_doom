@@ -1,4 +1,13 @@
-import type { BundleIndexEntry, EpisodeMeta, ProposalTrace, TickTrace } from '../schema/bundle'
+import type {
+  ActionSpec,
+  BundleIndexEntry,
+  EpisodeMeta,
+  EvaluationSummary,
+  MetricsRow,
+  ProposalTrace,
+  TickTrace,
+  TrustFile,
+} from '../schema/bundle'
 
 /** The bundle schema version this app reads; `python -m system1_doom.export` writes it into every episode.json. */
 export const SUPPORTED_SCHEMA_VERSION = 1
@@ -16,6 +25,14 @@ export interface EpisodeBundle {
   meta: EpisodeMeta
   ticks: TickTrace[]
   proposals: ProposalTrace[]
+  /** The training run behind the checkpoint, one row per episode; null when the bundle has none. */
+  metrics: MetricsRow[] | null
+  /** The same seeded episodes played by each brain after training; null when absent. */
+  evaluation: EvaluationSummary | null
+  /** The checkpoint's experience counts; only bundles recorded with a model have them. */
+  trust: TrustFile | null
+  /** Macros admitted during training; null when absent. */
+  macros: ActionSpec[] | null
 }
 
 export class BundleError extends Error {
@@ -100,7 +117,29 @@ export async function loadEpisode(
   }
   ticks.sort((a, b) => a.tick - b.tick)
   const proposals = parseJsonl<ProposalTrace>(proposalsText, `${name}/proposals.jsonl`)
-  return { name, base, meta, ticks, proposals }
+
+  // Files copied from the training run, fetched only when episode.json lists them.
+  const listed = new Set(meta.files ?? [])
+  const extra = (file: string) =>
+    listed.has(file) ? fetchText(`${base}/${file}`, fetcher, true).then((text) => text || null) : Promise.resolve(null)
+  const [metricsText, evaluationText, trustText, macrosText] = await Promise.all([
+    extra('metrics.jsonl'),
+    extra('evaluation.json'),
+    extra('trust.json'),
+    extra('macros.json'),
+  ])
+  return {
+    name,
+    base,
+    meta,
+    ticks,
+    proposals,
+    metrics: metricsText === null ? null : parseJsonl<MetricsRow>(metricsText, `${name}/metrics.jsonl`),
+    evaluation:
+      evaluationText === null ? null : parseJson<EvaluationSummary>(evaluationText, `${name}/evaluation.json`),
+    trust: trustText === null ? null : parseJson<TrustFile>(trustText, `${name}/trust.json`),
+    macros: macrosText === null ? null : parseJson<ActionSpec[]>(macrosText, `${name}/macros.json`),
+  }
 }
 
 /** URL of the screen the controller saw when it decided `tick`. */

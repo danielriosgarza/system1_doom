@@ -890,7 +890,10 @@
  "files": [
   "episode.json",
   "ticks.jsonl",
-  "proposals.jsonl"
+  "proposals.jsonl",
+  "metrics.jsonl",
+  "evaluation.json",
+  "trust.json"
  ],
  "package_version": "0.2.0",
  "recorded_at": "2026-10-24T11:52:26.006284+00:00"

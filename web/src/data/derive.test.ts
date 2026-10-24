@@ -1,23 +1,32 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { EpisodeMeta, ProposalTrace, TickTrace } from '../schema/bundle'
+import type { EpisodeMeta, MetricsRow, ProposalTrace, TickTrace, TrustFile } from '../schema/bundle'
 import {
   admissions,
   aimBandHalfWidth,
   contextBuckets,
+  contextWords,
   describeStep,
+  encodeAction,
   explainPick,
   exploration,
   featuredTickIndex,
+  floorAt,
+  gateBlend,
   moduleVoteParts,
   motorSteps,
+  nStepReturns,
   pressureForArbiter,
   pressureReading,
   prunedReasonText,
   rankedActions,
+  rolling,
   tickEvents,
   towerLevels,
+  trustActions,
+  trustLambda,
+  trustRows,
 } from './derive'
 import { parseJsonl } from './loader'
 
@@ -219,5 +228,92 @@ describe('exploration pressure', () => {
       const used = pressureReading(pressureForArbiter(all, index))
       expect(used.pressure).toBeCloseTo(tick.arbiter?.exploration_pressure ?? NaN, 3)
     })
+  })
+})
+
+describe('learning across episodes', async () => {
+  const LEARNED = fileURLToPath(new URL('../../public/episodes/deadly_corridor-learned-9/', import.meta.url))
+  const learned = parseJsonl<TickTrace>(await readFile(`${LEARNED}ticks.jsonl`, 'utf8'), 'ticks.jsonl')
+  const trust = JSON.parse(await readFile(`${LEARNED}trust.json`, 'utf8')) as TrustFile
+  const learnedMeta = JSON.parse(await readFile(`${LEARNED}episode.json`, 'utf8')) as EpisodeMeta
+  const metrics = parseJsonl<MetricsRow>(await readFile(`${LEARNED}metrics.jsonl`, 'utf8'), 'metrics.jsonl')
+
+  it('sums the next eight rewards discounted by 0.9, truncated at the last tick', () => {
+    const last = learned.length - 1
+    expect(learned[last]?.tick).toBe(51)
+    for (const tick of [0, 17, 40, 48, 51]) {
+      const index = learned.findIndex((t) => t.tick === tick)
+      const returns = nStepReturns(learned, index)
+      for (const m of ['survival', 'combat', 'navigation', 'resource', 'goal'] as const) {
+        let expected = 0
+        for (let k = 0; k < 8 && index + k <= last; k += 1) {
+          expected += 0.9 ** k * (learned[index + k]?.outcome?.module_rewards?.[m] ?? 0)
+        }
+        expect(returns[m].total).toBeCloseTo(expected, 9)
+        expect(returns[m].terms).toHaveLength(Math.min(8, last - index + 1))
+      }
+    }
+  })
+
+  it('gives every legal action the trust its training count implies, as the modules recorded it', () => {
+    let checked = 0
+    for (const tick of learned) {
+      for (const action of tick.available_actions) {
+        const n = trust.action_counts[`${tick.context_signature}|${action}`] ?? 0
+        for (const m of Object.keys(tick.module_outputs)) {
+          expect(trustLambda(n)).toBeCloseTo(tick.module_outputs[m]?.trust?.[action] ?? NaN, 3)
+        }
+        checked += 1
+      }
+      const contextN = trust.context_counts[tick.context_signature] ?? 0
+      expect(trustLambda(contextN)).toBeCloseTo(tick.arbiter?.gate_share ?? NaN, 3)
+    }
+    expect(checked).toBeGreaterThan(400)
+  })
+
+  it("recomputes the arbiter's module weights from the table, the gate and g on every tick", () => {
+    let checked = 0
+    for (const tick of learned) {
+      const blend = gateBlend(tick)
+      if (!blend) continue
+      for (const [m, w] of Object.entries(blend.used)) expect(blend.recomputed[m]).toBeCloseTo(w, 3)
+      checked += 1
+    }
+    expect(checked).toBe(learned.length)
+    expect(gateBlend(at(0))).toBeNull()
+  })
+
+  it('lays out the trust map: the actions ever tried, contexts by experience', () => {
+    const actions = trustActions(trust, learnedMeta)
+    expect(actions).toHaveLength(15)
+    expect(actions).not.toContain('use')
+    const rows = trustRows(trust, actions)
+    expect(rows).toHaveLength(121)
+    expect(rows[0]?.n).toBe(4668)
+    expect(rows.reduce((s, r) => s + r.n, 0)).toBe(25204)
+    expect(contextWords('hp:healthy|ammo:stocked|enemies:2:mid|dmg:clear|pickup:pickup_visible')).toBe(
+      'healthy · stocked · 2 enemies mid · clear · pickup visible',
+    )
+    expect(contextWords('hp:medium|ammo:low|enemies:0:none|dmg:under_fire|pickup:no_pickup')).toBe(
+      'medium · low · no enemies · under fire · no pickup',
+    )
+  })
+
+  it('reproduces the exploration floor of every training episode and rolls means over 20', () => {
+    for (const row of metrics) expect(floorAt(row.episode)).toBeCloseTo(row.exploration_floor, 4)
+    expect(rolling([2, 4, 6], 2)).toEqual([2, 3, 5])
+  })
+
+  it('encodes an action by its composition, as the networks see it', () => {
+    for (const id of ['weave_fire', 'circle_strafe_left', 'move_forward', 'retreat_to_cover']) {
+      const action = learnedMeta.actions[id]
+      if (!action) throw new Error(id)
+      expect(encodeAction(action.primitives, action.is_macro)).toEqual(action.encoding.map((v) => expect.closeTo(v, 4)))
+    }
+    // An admitted macro is described the same way, the moment it joins the vocabulary.
+    const burst = meta.actions.evasive_burst_1
+    if (!burst) throw new Error('evasive_burst_1')
+    expect(encodeAction(burst.primitives, burst.is_macro)).toEqual([0, 0.25, 0.25, 0.25, 0, 0, 0.25, 0, 0, 0.25, 1, 0])
+    expect(burst.encoding).toEqual([0, 0.25, 0.25, 0.25, 0, 0, 0.25, 0, 0, 0.25, 1, 0])
   })
 })
