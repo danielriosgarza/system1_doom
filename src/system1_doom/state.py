@@ -39,6 +39,8 @@ class PickupObservation(BaseModel):
     angle_offset: float = 0.0
     screen_x: int = 160
     screen_y: int = 120
+    width: int = 12
+    height: int = 12
 
 
 class Observation(BaseModel):

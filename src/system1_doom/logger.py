@@ -5,9 +5,26 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
+from system1_doom.admission import AdmissionStageResult
+from system1_doom.tracing import (
+    ArbiterTrace,
+    ModuleTrace,
+    OutcomeTrace,
+    ProjectionChainTrace,
+    SlowPathRequestTrace,
+    StateTrace,
+    SteeringTrace,
+)
+
+TRACE_SCHEMA_VERSION = 1
+
 
 class TickTrace(BaseModel):
-    """Compact per-tick decision trace (Spec Section 17)."""
+    """Compact per-tick decision trace (Spec Section 17).
+
+    The fields after `learning` are the decision's anatomy (see `tracing.py`). They are optional,
+    so traces written before they existed still parse.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -17,7 +34,7 @@ class TickTrace(BaseModel):
     context_signature: str
     budget_mode: Literal["full", "reduced", "critical"]
     available_actions: List[str]
-    module_outputs: Dict[str, Dict[str, Any]]
+    module_outputs: Dict[str, ModuleTrace]
     projection_results_used: Dict[str, Dict[str, float]]
     arbiter_distribution: Dict[str, float]
     selected_action: str
@@ -28,6 +45,15 @@ class TickTrace(BaseModel):
     used_d1_ultra: bool = False
     d1_arbiter_distribution: Dict[str, float] = Field(default_factory=dict)
     learning: Dict[str, Any] = Field(default_factory=dict)
+    state: Optional[StateTrace] = None
+    pruned_actions: Dict[str, str] = Field(default_factory=dict)
+    arbiter: Optional[ArbiterTrace] = None
+    projection_chain: Optional[ProjectionChainTrace] = None
+    steering: Optional[SteeringTrace] = None
+    outcome: Optional[OutcomeTrace] = None
+    slow_path_request: Optional[SlowPathRequestTrace] = None
+    budget_sec: Optional[float] = None
+    timing_ms: Dict[str, float] = Field(default_factory=dict)
 
 
 class ProposalTrace(BaseModel):
@@ -44,6 +70,12 @@ class ProposalTrace(BaseModel):
     admitted_action_id: Optional[str] = None
     d1_admission_probability: Optional[float] = None
     subsequent_performance: List[float] = Field(default_factory=list)
+    tick: Optional[int] = None
+    source: Optional[Literal["codex", "template", "custom"]] = None
+    source_module: Optional[str] = None
+    stage_results: List[AdmissionStageResult] = Field(default_factory=list)
+    sandbox_summary: Optional[Dict[str, float]] = None
+    admitted_strategy_id: Optional[str] = None
 
 
 class DecisionLogger:

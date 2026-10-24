@@ -38,6 +38,9 @@ class StrategyDecision(BaseModel):
     probabilities: Dict[str, float]
     confidence: float
     used_d1_ultra: bool = False
+    # The utility of each meta-choice before normalisation and the strategy active before deciding, for traces.
+    scores: Dict[str, float] = Field(default_factory=dict)
+    previous_strategy_id: Optional[str] = None
 
 
 DEFAULT_STRATEGIES: Tuple[StrategyEntry, ...] = (
@@ -146,6 +149,7 @@ class StrategyArchive:
         use_d1_sync: bool = False,
     ) -> StrategyDecision:
         active = self.active_strategy()
+        previous_id = self._active_id
         used_d1 = False
 
         # Bounded utility scores over the 4 finite strategy meta-choices
@@ -198,4 +202,6 @@ class StrategyArchive:
             probabilities=probs,
             confidence=max(probs.values()),
             used_d1_ultra=used_d1,
+            scores={k: round(v, 4) for k, v in scores.items()},
+            previous_strategy_id=previous_id,
         )

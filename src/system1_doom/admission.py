@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from system1_doom.actions import (
@@ -33,6 +33,20 @@ class MacroActionProposal(BaseModel):
     strategy_id: Optional[str] = None
 
 
+AdmissionStage = Literal["parse", "legality", "sandbox", "d1", "admit"]
+
+
+class AdmissionStageResult(BaseModel):
+    """Outcome of one admission stage (parse, legality, sandbox, d1, admit), for traces."""
+
+    model_config = ConfigDict(frozen=True)
+
+    stage: AdmissionStage
+    passed: bool
+    skipped: bool = False
+    reason: str = ""
+
+
 class AdmissionDecisionResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -46,6 +60,10 @@ class AdmissionDecisionResult(BaseModel):
     d1_quality_score: Optional[float] = None
     used_d1_ultra: bool = False
     rejection_reason: str = ""
+    stage_results: List[AdmissionStageResult] = Field(default_factory=list)
+    # Set by the slow worker: which generator wrote the proposal and which module asked for it.
+    source: Optional[Literal["codex", "template", "custom"]] = None
+    source_module: Optional[str] = None
 
 
 class ProposalAdmissionPipeline:
@@ -91,6 +109,11 @@ class ProposalAdmissionPipeline:
         reference_state: WorldState,
         problem_description: str = "",
     ) -> AdmissionDecisionResult:
+        stages: List[AdmissionStageResult] = []
+
+        def fail(stage: AdmissionStage, reason: str) -> List[AdmissionStageResult]:
+            return stages + [AdmissionStageResult(stage=stage, passed=False, reason=reason)]
+
         # Step 1: Parse into typed schema
         try:
             data = self._extract_json_object(raw_proposal)
@@ -100,7 +123,9 @@ class ProposalAdmissionPipeline:
                 admitted=False,
                 raw_proposal=raw_proposal,
                 rejection_reason=f"Schema parse error: {exc}",
+                stage_results=fail("parse", f"Schema parse error: {exc}"),
             )
+        stages.append(AdmissionStageResult(stage="parse", passed=True, reason="Parsed into MacroActionProposal."))
 
         # Step 2: Verify identifier safety and verify referenced primitives exist & finite execution bounds
         if not re.match(r"^[a-z][a-z0-9_]{1,62}$", proposal.id):
@@ -109,6 +134,7 @@ class ProposalAdmissionPipeline:
                 raw_proposal=raw_proposal,
                 parsed_proposal=proposal,
                 rejection_reason=f"Invalid action id '{proposal.id}'.",
+                stage_results=fail("legality", f"Invalid action id '{proposal.id}'."),
             )
 
         if proposal.id in PRIMITIVE_ACTION_IDS:
@@ -117,6 +143,7 @@ class ProposalAdmissionPipeline:
                 raw_proposal=raw_proposal,
                 parsed_proposal=proposal,
                 rejection_reason=f"Proposal '{proposal.id}' cannot overwrite built-in primitive action.",
+                stage_results=fail("legality", f"Proposal '{proposal.id}' cannot overwrite built-in primitive action."),
             )
 
         try:
@@ -136,7 +163,18 @@ class ProposalAdmissionPipeline:
                 raw_proposal=raw_proposal,
                 parsed_proposal=proposal,
                 rejection_reason=f"ActionSpec finite/primitive validation failed: {exc}",
+                stage_results=fail("legality", f"ActionSpec finite/primitive validation failed: {exc}"),
             )
+        stages.append(
+            AdmissionStageResult(
+                stage="legality",
+                passed=True,
+                reason=(
+                    f"Valid id, known primitives only, {len(action_spec.primitive_expansion)} steps "
+                    f"within maximum_duration {action_spec.maximum_duration}."
+                ),
+            )
+        )
 
         # Step 3: Sandbox evaluation via BoundedSimulator
         sandbox_outcome = self.simulator.project_action(reference_state, action_spec)
@@ -147,7 +185,18 @@ class ProposalAdmissionPipeline:
                 parsed_proposal=proposal,
                 sandbox_outcome=sandbox_outcome,
                 rejection_reason="Sandbox rollout predicted fatal outcome from non-critical state.",
+                stage_results=fail("sandbox", "Sandbox rollout predicted fatal outcome from non-critical state."),
             )
+        stages.append(
+            AdmissionStageResult(
+                stage="sandbox",
+                passed=True,
+                reason=(
+                    f"Rollout survives (survival {sandbox_outcome.survival_probability:.2f}, "
+                    f"expected value {sandbox_outcome.expected_value:+.2f})."
+                ),
+            )
+        )
 
         # Step 4: Bounded d1-ultra admission decision (when d1-ultra client is enabled)
         d1_prob: Optional[float] = None
@@ -190,6 +239,7 @@ class ProposalAdmissionPipeline:
                 if "tactical_quality" in resp.raw_answers:
                     d1_score = resp.score("tactical_quality").score
                 if d1_prob < self.min_d1_admission_prob and (d1_score is None or d1_score < 0.85 or d1_prob < 0.20):
+                    reason = f"Rejected by d1-ultra admission gate (p={d1_prob:.3f} < {self.min_d1_admission_prob})."
                     return AdmissionDecisionResult(
                         admitted=False,
                         raw_proposal=raw_proposal,
@@ -198,8 +248,17 @@ class ProposalAdmissionPipeline:
                         d1_admission_probability=d1_prob,
                         d1_quality_score=d1_score,
                         used_d1_ultra=True,
-                        rejection_reason=f"Rejected by d1-ultra admission gate (p={d1_prob:.3f} < {self.min_d1_admission_prob}).",
+                        rejection_reason=reason,
+                        stage_results=fail("d1", reason),
                     )
+        if used_d1:
+            stages.append(
+                AdmissionStageResult(stage="d1", passed=True, reason=f"d1-ultra admission probability {d1_prob:.2f}.")
+            )
+        else:
+            stages.append(
+                AdmissionStageResult(stage="d1", passed=True, skipped=True, reason="d1-ultra off or unanswered; gate skipped.")
+            )
 
         # Step 5: Admit into ActionVocabulary and StrategyArchive
         self.vocabulary.register_admitted_macro(action_spec)
@@ -217,6 +276,13 @@ class ProposalAdmissionPipeline:
             )
         )
 
+        stages.append(
+            AdmissionStageResult(
+                stage="admit",
+                passed=True,
+                reason=f"Registered '{action_spec.id}' in the vocabulary and '{strat_id}' in the strategy archive.",
+            )
+        )
         return AdmissionDecisionResult(
             admitted=True,
             raw_proposal=raw_proposal,
@@ -227,4 +293,5 @@ class ProposalAdmissionPipeline:
             d1_admission_probability=d1_prob,
             d1_quality_score=d1_score,
             used_d1_ultra=used_d1,
+            stage_results=stages,
         )

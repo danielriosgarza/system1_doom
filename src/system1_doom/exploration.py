@@ -20,6 +20,8 @@ class ExplorationState(BaseModel):
     performance_plateau_signal: bool = False
     exploration_pressure: float = Field(default=0.25, ge=0.0, le=1.0)
     temperature: float = Field(default=0.35, gt=0.0)
+    # The four quarter-terms of the pressure and the three dampers (1.0 when not applied), for traces.
+    terms: Dict[str, float] = Field(default_factory=dict)
 
 
 class ExplorationController:
@@ -85,14 +87,18 @@ class ExplorationController:
         high_risk = obs.health <= 30.0 or (obs.recent_incoming_damage >= 15.0 and len(obs.visible_enemies) > 0)
 
         # Base exploration pressure from Spec Section 10
-        pressure = (
-            0.25 * mean_module_uncertainty
-            + 0.25 * min(1.0, self._recent_failures / 4.0)
-            + 0.25 * (1.0 if plateau else 0.0)
-            + 0.25 * novelty
-        )
+        terms: Dict[str, float] = {
+            "uncertainty": 0.25 * mean_module_uncertainty,
+            "failures": 0.25 * min(1.0, self._recent_failures / 4.0),
+            "plateau": 0.25 * (1.0 if plateau else 0.0),
+            "novelty": 0.25 * novelty,
+        }
+        pressure = terms["uncertainty"] + terms["failures"] + terms["plateau"] + terms["novelty"]
 
         # Decrease pressure when strategy is producing reliable progress, in high-risk state, or winning sequence found
+        terms["progress_damper"] = 0.55 if self._recent_progress_ema > 1.0 else 1.0
+        terms["risk_damper"] = 0.35 if high_risk else 1.0
+        terms["winning_damper"] = 0.25 if near_term_winning_sequence else 1.0
         if self._recent_progress_ema > 1.0:
             pressure *= 0.55
         if high_risk:
@@ -118,6 +124,7 @@ class ExplorationController:
             if resp is not None and "explore_level" in resp.raw_answers:
                 d1_pressure = min(1.0, max(0.0, resp.score("explore_level").score / 2.0))
                 pressure = 0.5 * pressure + 0.5 * d1_pressure
+                terms["d1_pressure"] = d1_pressure
 
         pressure = min(1.0, max(0.02, pressure))
         # Map exploration_pressure in [0, 1] to sampler temperature in [0.10, 1.10]
@@ -132,5 +139,6 @@ class ExplorationController:
             performance_plateau_signal=plateau,
             exploration_pressure=round(pressure, 4),
             temperature=round(temperature, 4),
+            terms={k: round(v, 4) for k, v in terms.items()},
         )
         return self._current_state

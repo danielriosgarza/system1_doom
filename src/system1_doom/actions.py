@@ -56,6 +56,29 @@ class PreconditionSpec(BaseModel):
             return False
         return True
 
+    def failing_condition(self, state: WorldState) -> Optional[str]:
+        """Name of the first precondition `state` fails, in the order `is_satisfied` checks them; None if all pass."""
+        obs = state.observation
+        if obs.ammo < self.min_ammo:
+            return "min_ammo"
+        if obs.ammo > self.max_ammo:
+            return "max_ammo"
+        if obs.health < self.min_health:
+            return "min_health"
+        if obs.health > self.max_health:
+            return "max_health"
+        if self.requires_visible_enemy and len(obs.visible_enemies) == 0:
+            return "requires_visible_enemy"
+        if self.requires_visible_pickup and len(obs.visible_pickups) == 0:
+            return "requires_visible_pickup"
+        if obs.wall_distance_front < self.min_wall_distance_front:
+            return "min_wall_distance_front"
+        if obs.wall_distance_front > self.max_wall_distance_front:
+            return "max_wall_distance_front"
+        if self.excluded_weapons and obs.current_weapon in self.excluded_weapons:
+            return "excluded_weapons"
+        return None
+
 
 class ActionSpec(BaseModel):
     """Finite, bounded executable action specification (primitive or macro-action)."""

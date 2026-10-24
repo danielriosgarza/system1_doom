@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import threading
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Literal, Optional, Tuple
 from pydantic import BaseModel, ConfigDict
 
 from system1_doom.actions import PRIMITIVE_ACTION_IDS
@@ -189,21 +189,27 @@ class SlowLLMWorker:
             seq_num = self._proposal_counter
 
         raw_proposal: str
+        source: Literal["codex", "template", "custom"]
         if self.custom_generator is not None:
             raw_proposal = self.custom_generator(req)
+            source = "custom"
         elif self.use_codex_cli:
             try:
                 raw_proposal = self._invoke_codex_cli(req, seq_num)
+                source = "codex"
             except Exception:
                 raw_proposal = self._fallback_template_proposal(req, seq_num)
+                source = "template"
         else:
             raw_proposal = self._fallback_template_proposal(req, seq_num)
+            source = "template"
 
-        return self.admission_pipeline.evaluate_and_admit(
+        result = self.admission_pipeline.evaluate_and_admit(
             raw_proposal=raw_proposal,
             reference_state=req.world_state,
             problem_description=req.problem_description,
         )
+        return result.model_copy(update={"source": source, "source_module": req.source_module})
 
     def enqueue_request(self, req: ExpansionRequest) -> bool:
         """Non-blocking enqueue of an action-expansion request from the fast loop."""
