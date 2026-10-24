@@ -1,0 +1,5 @@
+dist
+public
+src/schema/bundle.ts
+src/data/__fixtures__
+schema

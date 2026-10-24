@@ -19,9 +19,9 @@ import numpy as np
 import torch
 from torch import nn
 
-from system1_doom.features import ACTION_DIM, STATE_DIM
+# module_rewards lives with the torch-free encodings so traces can report it without importing torch.
+from system1_doom.features import ACTION_DIM, MODULE_NAMES, STATE_DIM, module_rewards
 
-MODULE_NAMES = ("survival", "combat", "navigation", "resource", "goal")
 GOAL_INDEX = MODULE_NAMES.index("goal")
 CHECKPOINT_FORMAT = 1
 ARCHITECTURE_FIELDS = ("hidden", "gate_hidden")
@@ -44,21 +44,6 @@ class LearnerConfig:
     trust_count: float = 25.0
     gate_temperature: float = 0.5
     seed: int = 0
-
-
-def module_rewards(result: Any) -> np.ndarray:
-    """Per-module reward for one executed decision, ordered like MODULE_NAMES."""
-    died = 1.0 if getattr(result, "died", False) else 0.0
-    return np.asarray(
-        [
-            -float(result.damage_taken) / 25.0 - 3.0 * died,
-            0.5 * float(result.hits_delta) + 2.0 * float(result.kills_delta),
-            float(result.new_cells),
-            float(result.health_gain) / 25.0 + float(result.armor_gain) / 25.0 + float(result.ammo_gain) / 10.0,
-            float(result.reward),
-        ],
-        dtype=np.float32,
-    )
 
 
 def n_step_returns(rewards: np.ndarray, gamma: float, n: int) -> np.ndarray:

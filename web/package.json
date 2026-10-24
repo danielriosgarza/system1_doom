@@ -1,0 +1,32 @@
+{
+  "name": "system1-doom-explainer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint --deny-warnings src e2e",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "schema": "cd .. && python -m system1_doom.export --schema web/schema/bundle.schema.json",
+    "types": "node scripts/gen-types.mjs"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "json-schema-to-typescript": "^16.0.0",
+    "oxlint": "^1.88.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

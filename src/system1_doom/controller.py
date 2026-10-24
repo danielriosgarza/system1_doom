@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from system1_doom.actions import DEFAULT_MACROS, DEFAULT_PRIMITIVES, ActionSpec, ActionVocabulary
-from system1_doom.admission import ProposalAdmissionPipeline
+from system1_doom.admission import AdmissionDecisionResult, ProposalAdmissionPipeline
 from system1_doom.arbiter import ArbiterDecision, FinalArbiter
 from system1_doom.archive import StrategyArchive
 from system1_doom.d1_client import D1UltraClient, load_api_key
@@ -15,6 +16,18 @@ from system1_doom.logger import DecisionLogger, ProposalTrace, TickTrace
 from system1_doom.modules import BatchModuleEvaluator, DecisionModule, DecisionOutput
 from system1_doom.simulator import BoundedSimulator, ProjectedOutcome, ProjectionLimits
 from system1_doom.state import WorldState
+from system1_doom.tracing import (
+    SlowPathRequestTrace,
+    arbiter_trace,
+    critical_arbiter_trace,
+    module_trace,
+    outcome_trace,
+    projection_chain,
+    projection_summary,
+    pruned_actions,
+    state_trace,
+    steering_trace,
+)
 from system1_doom.visualizer import EpisodeRecorder
 from system1_doom.visualizer import LiveDecisionDashboard, render_decision_dashboard
 from system1_doom.vizdoom_env import ViZDoomBridge
@@ -23,6 +36,7 @@ if TYPE_CHECKING:
     from system1_doom.learning import Learner
 
 BUILTIN_ACTION_IDS = frozenset(a.id for a in DEFAULT_PRIMITIVES + DEFAULT_MACROS)
+MODULE_MEMORY_COUNTERS = ("consecutive_damage_ticks", "repeated_failures", "consecutive_stalls", "plateau_ticks")
 
 
 class ControllerConfig(BaseModel):
@@ -114,7 +128,10 @@ class DoomDecisionController:
                 self.vocabulary.register_admitted_macro(spec)
 
     def _drain_slow_llm_proposals(self) -> None:
-        for res in self.llm_worker.drain_completed_results():
+        self._log_proposals(self.llm_worker.drain_completed_results())
+
+    def _log_proposals(self, results: List[AdmissionDecisionResult], tick: Optional[int] = None) -> None:
+        for res in results:
             self.logger.log_proposal(
                 ProposalTrace(
                     timestamp=DecisionLogger.now_iso(),
@@ -125,6 +142,12 @@ class DoomDecisionController:
                     admission_decision=res.admitted,
                     admitted_action_id=res.admitted_action_id,
                     d1_admission_probability=res.d1_admission_probability,
+                    tick=tick,
+                    source=res.source,
+                    source_module=res.source_module,
+                    stage_results=list(res.stage_results),
+                    sandbox_summary=projection_summary(res.sandbox_outcome) if res.sandbox_outcome else None,
+                    admitted_strategy_id=res.admitted_strategy_id,
                 )
             )
 
@@ -136,20 +159,30 @@ class DoomDecisionController:
         return "full"
 
     def step(self, budget_override_sec: Optional[float] = None) -> TickTrace:
+        tick_start = time.perf_counter()
+        timing_ms: Dict[str, float] = {}
         budget_sec = budget_override_sec if budget_override_sec is not None else self.config.tick_budget_sec
         budget_mode = self._select_budget_mode(budget_sec)
 
         # 1. Drain any completed proposals from the asynchronous slow LLM worker
-        self._drain_slow_llm_proposals()
+        drained = self.llm_worker.drain_completed_results()
 
         # 2. Acquire immutable WorldState S_t
         strat_refs = tuple(e.strategy_id for e in self.archive.entries())
         world_state: WorldState = self.env.acquire_world_state(strategy_refs=strat_refs)
+        self._log_proposals(drained, tick=world_state.observation.tick)
         supported = tuple(
             action for action in self.vocabulary.available_actions(world_state) if self.env.action_supported(action)
         )
         available_actions = supported or tuple(self.vocabulary.available_actions(world_state))
         avail_ids = [a.id for a in available_actions]
+        pruned = pruned_actions(self.vocabulary.all_actions(), avail_ids, world_state, self.env.action_supported)
+        memories_in = {
+            name: {key: int(memory.get(key, 0)) for key in MODULE_MEMORY_COUNTERS}
+            for name, memory in self._module_memories.items()
+        }
+        slow_request: Optional[SlowPathRequestTrace] = None
+        arb_decision: Optional[ArbiterDecision] = None
 
         # 3. Execute according to budget degradation policy (Spec Section 14)
         projections: Dict[str, ProjectedOutcome] = {}
@@ -195,8 +228,11 @@ class DoomDecisionController:
             used_d1 = False
         else:
             if budget_mode == "full":
+                stage_start = time.perf_counter()
                 projections = self.simulator.project_candidates(world_state, list(available_actions))
+                timing_ms["projection"] = (time.perf_counter() - stage_start) * 1000.0
 
+            stage_start = time.perf_counter()
             module_outputs = self.module_evaluator.evaluate_all(
                 world_state=world_state,
                 available_actions=available_actions,
@@ -207,6 +243,7 @@ class DoomDecisionController:
                 learned_utilities=learned_utilities,
                 learned_trust=learned_trust,
             )
+            timing_ms["modules"] = (time.perf_counter() - stage_start) * 1000.0
 
             # Check if any module requested asynchronous action expansion
             for m_name, m_out in module_outputs.items():
@@ -214,7 +251,7 @@ class DoomDecisionController:
                 if m_out.request_action_expansion and not self.llm_worker.is_busy():
                     desc = m_out.expansion_problem_description or f"Module {m_name} requested new macro-action."
                     self._last_pending_request_context = f"{m_name}:{world_state.context_signature()}:{desc}"
-                    self.llm_worker.enqueue_request(
+                    enqueued = self.llm_worker.enqueue_request(
                         ExpansionRequest(
                             source_module=m_name,
                             problem_description=desc,
@@ -222,8 +259,11 @@ class DoomDecisionController:
                             existing_action_ids=tuple(a.id for a in self.vocabulary.all_actions()),
                         )
                     )
+                    if enqueued:
+                        slow_request = SlowPathRequestTrace(module=m_name, description=desc)
 
-            arb_decision: ArbiterDecision = self.arbiter.arbitrate(
+            stage_start = time.perf_counter()
+            arb_decision = self.arbiter.arbitrate(
                 world_state=world_state,
                 available_actions=available_actions,
                 module_outputs=module_outputs,
@@ -238,6 +278,7 @@ class DoomDecisionController:
                 learned_share=gate_share,
                 exploration_floor=self.exploration_floor,
             )
+            timing_ms["arbiter"] = (time.perf_counter() - stage_start) * 1000.0
             selected_id = arb_decision.selected_action_id
             arb_dist = arb_decision.arbiter_distribution
             d1_arb_dist = dict(arb_decision.d1_distribution)
@@ -246,9 +287,13 @@ class DoomDecisionController:
             self._cached_reactive_action_id = selected_id
             used_d1 = arb_decision.used_d1_ultra or any(m.used_d1_ultra for m in module_outputs.values())
 
+        timing_ms["decision"] = (time.perf_counter() - tick_start) * 1000.0
+
         # 4. Execute selected bounded action in ViZDoom
         selected_spec: ActionSpec = self.vocabulary.get(selected_id) or available_actions[0]
+        stage_start = time.perf_counter()
         exec_res = self.env.execute_action(selected_spec)
+        timing_ms["motor"] = (time.perf_counter() - stage_start) * 1000.0
 
         if self.learner is not None and self.config.record_experience:
             top_actions = (
@@ -291,7 +336,7 @@ class DoomDecisionController:
             near_term_winning_sequence=exec_res.kills_delta > 0.0 or exec_res.armor >= 100.0,
             use_d1_sync=(self.config.execution_mode == "sync_d1" and budget_mode == "full"),
         )
-        self.archive.decide_strategy_action(
+        strategy_decision = self.archive.decide_strategy_action(
             state=world_state,
             exploration_pressure=exp_state.exploration_pressure,
             recent_failures=exp_state.recent_failures,
@@ -324,32 +369,9 @@ class DoomDecisionController:
             budget_mode=budget_mode,
             available_actions=avail_ids,
             module_outputs={
-                m_name: {
-                    "top_action": m_out.ranked_actions[0] if m_out.ranked_actions else None,
-                    "confidence": round(m_out.confidence, 4),
-                    "uncertainty": round(m_out.uncertainty, 4),
-                    "request_action_expansion": m_out.request_action_expansion,
-                    "expansion_problem": m_out.expansion_problem_description,
-                    "used_d1_ultra": m_out.used_d1_ultra,
-                    "probabilities": {k: round(v, 6) for k, v in m_out.action_probabilities.items()},
-                    "d1_top_action": (
-                        max(m_out.d1_action_probabilities, key=m_out.d1_action_probabilities.get)
-                        if m_out.d1_action_probabilities
-                        else None
-                    ),
-                    "d1_probabilities": {k: round(v, 6) for k, v in m_out.d1_action_probabilities.items()},
-                }
-                for m_name, m_out in module_outputs.items()
+                m_name: module_trace(m_out, memories_in.get(m_name, {})) for m_name, m_out in module_outputs.items()
             },
-            projection_results_used={
-                aid: {
-                    "expected_value": round(p.expected_value, 4),
-                    "expected_damage_taken": round(p.expected_damage_taken, 4),
-                    "expected_damage_dealt": round(p.expected_damage_dealt, 4),
-                    "survival_probability": round(p.survival_probability, 4),
-                }
-                for aid, p in projections.items()
-            },
+            projection_results_used={aid: projection_summary(p) for aid, p in projections.items()},
             arbiter_distribution={k: round(v, 6) for k, v in arb_dist.items()},
             selected_action=selected_spec.id,
             primitive_steps_executed=exec_res.primitive_steps_executed,
@@ -369,6 +391,27 @@ class DoomDecisionController:
                 if self.learner is not None
                 else {}
             ),
+            state=state_trace(world_state),
+            pruned_actions=pruned,
+            arbiter=(
+                arbiter_trace(
+                    arb_decision,
+                    gate_weights=gate_weights,
+                    gate_share=gate_share,
+                    exploration_floor=self.exploration_floor,
+                    deterministic=self.config.deterministic_arbiter,
+                )
+                if arb_decision is not None
+                else critical_arbiter_trace(self.exploration_floor, self.config.deterministic_arbiter)
+            ),
+            projection_chain=(
+                projection_chain(projections[selected_spec.id], selected_spec) if selected_spec.id in projections else None
+            ),
+            steering=steering_trace(strategy_decision, self.archive.entries()),
+            outcome=outcome_trace(exec_res),
+            slow_path_request=slow_request,
+            budget_sec=budget_sec,
+            timing_ms={k: round(v, 3) for k, v in timing_ms.items()},
         )
         self.logger.log_tick(trace)
         if self.config.record_frames:

@@ -65,6 +65,12 @@ class DecisionOutput(BaseModel):
     local_memory_update: Dict[str, Any] = Field(default_factory=dict)
     used_d1_ultra: bool = False
     d1_action_probabilities: Dict[str, float] = Field(default_factory=dict)
+    # Decision anatomy for traces: the heuristic and learned utilities behind `utility_estimates`,
+    # the trust that blended them, and the weight d1-ultra would get against the local distribution.
+    heuristic_utilities: Dict[str, float] = Field(default_factory=dict)
+    learned_utilities: Dict[str, float] = Field(default_factory=dict)
+    trust: Dict[str, float] = Field(default_factory=dict)
+    d1_weight: float = 0.0
 
 
 class DecisionModule(ABC):
@@ -111,6 +117,7 @@ class DecisionModule(ABC):
 
     def build_output(self, inp: DecisionInput, d1_response: Optional[D1Response] = None) -> DecisionOutput:
         local_utils = self.compute_local_utilities(inp)
+        heuristic_utils = dict(local_utils)
         if inp.learned_utilities:
             local_utils = {
                 aid: (1.0 - inp.learned_trust.get(aid, 0.0)) * u
@@ -183,6 +190,10 @@ class DecisionModule(ABC):
             local_memory_update=mem_update,
             used_d1_ultra=used_d1,
             d1_action_probabilities=d1_probs,
+            heuristic_utilities=heuristic_utils,
+            learned_utilities={aid: v for aid, v in inp.learned_utilities.items() if aid in local_utils},
+            trust={aid: inp.learned_trust.get(aid, 0.0) for aid in local_utils} if inp.learned_utilities else {},
+            d1_weight=d1_weight,
         )
 
     def evaluate(self, inp: DecisionInput, use_d1_sync: bool = False) -> DecisionOutput:

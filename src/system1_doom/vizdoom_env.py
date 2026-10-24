@@ -309,6 +309,8 @@ class ViZDoomBridge:
                                 angle_offset=round(angle_offset, 1),
                                 screen_x=cx,
                                 screen_y=cy,
+                                width=int(lbl.width),
+                                height=int(lbl.height),
                             )
                         )
 

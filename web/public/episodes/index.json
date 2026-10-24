@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "episodes": [
+    {
+      "name": "deadly_corridor-heuristics-9",
+      "title": "Deadly corridor, heuristics only, seed 9",
+      "scenario": "deadly_corridor.cfg",
+      "model": "heuristics",
+      "seed": 9,
+      "cleared": false,
+      "died": true,
+      "reward": 89.33,
+      "ticks": 36
+    },
+    {
+      "name": "deadly_corridor-learned-9",
+      "title": "Deadly corridor, learned networks after 300 training episodes, seed 9",
+      "scenario": "deadly_corridor.cfg",
+      "model": "latest",
+      "seed": 9,
+      "cleared": true,
+      "died": false,
+      "reward": 2280.76,
+      "ticks": 52
+    }
+  ]
+}

@@ -13,6 +13,8 @@ from system1_doom.modules import DecisionOutput
 from system1_doom.simulator import ProjectedOutcome
 from system1_doom.state import WorldState
 
+PickRule = Literal["committed", "explored", "greedy", "sampled", "critical_cached"]
+
 
 class ArbiterDecision(BaseModel):
     """Finite arbitration decision over currently valid actions (Spec Section 9)."""
@@ -29,6 +31,13 @@ class ArbiterDecision(BaseModel):
     d1_distribution: Dict[str, float] = Field(default_factory=dict)
     module_weights: Dict[str, float] = Field(default_factory=dict)
     explored: bool = False
+    # How the pick was made, for traces: which of the picking rules fired, the top-2 score margin,
+    # the module (if any) that committed it, and the inputs the weights and sampler were built from.
+    pick_rule: PickRule = "greedy"
+    score_margin: float = 0.0
+    committed_by: Optional[str] = None
+    heuristic_weights: Dict[str, float] = Field(default_factory=dict)
+    exploration_pressure_used: float = 0.0
 
 
 class FinalArbiter:
@@ -121,6 +130,7 @@ class FinalArbiter:
         exploration_floor: float = 0.0,
     ) -> ArbiterDecision:
         mod_weights = self._module_context_weights(world_state, module_outputs, learned_gate_weights, learned_share)
+        heuristic_weights = self._heuristic_module_weights(world_state, module_outputs)
         ctx_sig = world_state.context_signature()
 
         # Query or retrieve cached d1-ultra arbiter decision
@@ -207,6 +217,13 @@ class FinalArbiter:
                 "execution_cost": round(exec_cost, 4),
                 "d1_arbiter_prob": round(float(d1_probs.get(act.id, 0.0)), 4),
                 "total_score": round(total_score, 4),
+                # The terms inside expected_value and the bonuses, so a trace can show the arithmetic.
+                "module_votes": round(mod_ev, 4),
+                "projection_term": round(proj_ev, 4),
+                "strategy_bonus": round(strat_bonus, 4),
+                "d1_bonus": round(d1_bonus, 4),
+                "module_disagreement": round(mod_disagreement, 4),
+                "novelty": round(novelty_raw, 4),
             }
 
         # Convert scores into probability distribution controlled by exploration_state.temperature
@@ -221,7 +238,8 @@ class FinalArbiter:
         # A module that is nearly certain and far ahead of its own alternatives can commit
         # the arbiter. This is how an admitted macro gets reused once a module adopts it.
         committed_id: Optional[str] = None
-        for out in module_outputs.values():
+        committed_by: Optional[str] = None
+        for m_name, out in module_outputs.items():
             if not out.utility_estimates:
                 continue
             top = max(out.utility_estimates, key=out.utility_estimates.get)
@@ -234,23 +252,29 @@ class FinalArbiter:
                 and out.action_probabilities.get(top, 0.0) >= 0.9
             ):
                 committed_id = top
+                committed_by = m_name
                 break
         # Otherwise sample only when the modules disagree and exploration pressure is actually high.
         explored = False
+        pick_rule: PickRule
         if committed_id is not None:
             selected_id = committed_id
+            pick_rule = "committed"
         elif exploration_floor > 0.0 and self._rng.random() < exploration_floor:
             explore_temp = max(0.5, temp)
             explore_exps = {k: math.exp((s - max_s) / explore_temp) for k, s in action_scores.items()}
             keys = list(explore_exps.keys())
             selected_id = self._rng.choices(keys, weights=[explore_exps[k] for k in keys], k=1)[0]
             explored = True
+            pick_rule = "explored"
         elif deterministic or score_margin >= 0.08 or exploration_state.exploration_pressure < 0.45:
             selected_id = ranked_ids[0]
+            pick_rule = "greedy"
         else:
             keys = list(dist.keys())
             weights = [dist[k] for k in keys]
             selected_id = self._rng.choices(keys, weights=weights, k=1)[0]
+            pick_rule = "sampled"
 
         exploration_controller.record_action_execution(ctx_sig, selected_id)
 
@@ -265,4 +289,9 @@ class FinalArbiter:
             d1_distribution={k: float(v) for k, v in d1_probs.items()},
             module_weights={k: round(v, 4) for k, v in mod_weights.items()},
             explored=explored,
+            pick_rule=pick_rule,
+            score_margin=score_margin,
+            committed_by=committed_by,
+            heuristic_weights={k: round(v, 4) for k, v in heuristic_weights.items()},
+            exploration_pressure_used=exploration_state.exploration_pressure,
         )

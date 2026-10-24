@@ -7,7 +7,7 @@ scored by the networks the moment it enters the vocabulary.
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -29,6 +29,7 @@ HISTORY_TOKENS = ("shoot", "move_forward", "strafe", "turn")
 
 STATE_DIM = 32
 ACTION_DIM = len(ACTION_PRIMITIVES) + 4
+MODULE_NAMES = ("survival", "combat", "navigation", "resource", "goal")
 
 
 def _clip(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -102,3 +103,18 @@ def encode_action(action: ActionSpec) -> np.ndarray:
 
 def encode_actions(actions: Sequence[ActionSpec]) -> np.ndarray:
     return np.stack([encode_action(a) for a in actions]).astype(np.float32)
+
+
+def module_rewards(result: Any) -> np.ndarray:
+    """Per-module reward for one executed decision, ordered like MODULE_NAMES."""
+    died = 1.0 if getattr(result, "died", False) else 0.0
+    return np.asarray(
+        [
+            -float(result.damage_taken) / 25.0 - 3.0 * died,
+            0.5 * float(result.hits_delta) + 2.0 * float(result.kills_delta),
+            float(result.new_cells),
+            float(result.health_gain) / 25.0 + float(result.armor_gain) / 25.0 + float(result.ammo_gain) / 10.0,
+            float(result.reward),
+        ],
+        dtype=np.float32,
+    )
