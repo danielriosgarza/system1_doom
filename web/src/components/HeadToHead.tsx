@@ -1,4 +1,4 @@
-import { admissions, fmt, pct, tickEvents } from '../data/derive'
+import { admissions, fmt, pct, stillPlaying, tickEvents } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
 import type { BundleIndexEntry, EpisodeMeta, EvaluationSummary } from '../schema/bundle'
 import { openEpisode, setTickIndex, useApp } from '../store'
@@ -22,7 +22,9 @@ function brainLabel(meta: Pick<EpisodeMeta, 'model'>): string {
   return meta.model === 'heuristics' ? 'the heuristics alone' : 'with the networks'
 }
 
-function ending(result: { cleared: boolean; died: boolean; reward: number }, ticks: number): string {
+function ending(meta: EpisodeMeta): string {
+  const { result, tick_count: ticks } = meta
+  if (stillPlaying(meta)) return `played ${ticks} decisions so far, and the episode is still running`
   const verb = result.cleared ? 'cleared the level' : result.died ? 'died' : 'ran out of time'
   return `${verb} after ${ticks} decisions with reward ${fmt(result.reward, 0)}`
 }
@@ -55,7 +57,7 @@ function Strip({
     <div className={`h2h-strip ${current ? 'current' : 'other'}`} ref={ref} data-episode={bundle.name}>
       <div className="h2h-strip-head">
         <strong>{bundle.meta.model === 'heuristics' ? 'Heuristics only' : 'With the networks'}</strong>{' '}
-        <span className="muted">{ending(bundle.meta.result, bundle.meta.tick_count)}</span>
+        <span className="muted">{ending(bundle.meta)}</span>
         {current ? (
           <span className="h2h-here">this recording</span>
         ) : (
@@ -162,9 +164,8 @@ export function HeadToHead({ bundle, evaluation }: { bundle: EpisodeBundle; eval
       )}
       {heuristic && learned ? (
         <p className="h2h-sentence">
-          Same scenario and seed, the same {builtin} built-in actions: the heuristics alone{' '}
-          {ending(heuristic.meta.result, heuristic.meta.tick_count)}; with the networks the controller{' '}
-          {ending(learned.meta.result, learned.meta.tick_count)}.
+          Same scenario and seed, the same {builtin} built-in actions: the heuristics alone {ending(heuristic.meta)};
+          with the networks the controller {ending(learned.meta)}.
         </p>
       ) : pair ? (
         <p className="h2h-sentence muted">Loading the other recording of seed {bundle.meta.seed}…</p>

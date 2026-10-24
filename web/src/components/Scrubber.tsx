@@ -78,7 +78,7 @@ export function Scrubber({
             type="button"
             onClick={() => {
               if (!playing && tickIndex >= n - 1) setTickIndex(0)
-              setState({ playing: !playing })
+              setState({ playing: !playing, following: false })
             }}
             aria-label={playing ? 'Pause' : 'Play'}
             title="Play or pause (space)"

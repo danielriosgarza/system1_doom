@@ -220,6 +220,84 @@ code,
   color: var(--text);
 }
 
+/* Live mode: the badge beside the tick counter, and Follow or "following" after it. */
+.live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid var(--neg);
+  border-radius: 999px;
+  color: var(--neg);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.live-badge.ended {
+  border-color: var(--border);
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--neg);
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.topbar .live-follow {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.live-following {
+  font-size: 12px;
+}
+
+/* At laptop widths a live episode makes room for its badge: a shorter picker, no newest-tick count. */
+@media (max-width: 1440px) {
+  .topbar.is-live .control select {
+    max-width: 110px;
+  }
+
+  .topbar.is-live .tick-last {
+    display: none;
+  }
+}
+
+/* The overview's line while the episode is live. */
+.live-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 10px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+}
+
 /* Screen tabs, left of the episode picker; later screens slot in here. */
 .screens {
   display: inline-flex;

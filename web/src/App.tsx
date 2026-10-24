@@ -4,6 +4,7 @@ import { Scrubber } from './components/Scrubber'
 import { TopBar } from './components/TopBar'
 import { Tour } from './components/Tour'
 import type { ExplainerContext } from './content/explainers'
+import { LIVE_COPY } from './content/live'
 import { admissions } from './data/derive'
 import { Hierarchy } from './screens/Hierarchy'
 import { Inspector } from './screens/Inspector'
@@ -14,6 +15,7 @@ import {
   SCREENS,
   closeDrawer,
   endTour,
+  followLive,
   getState,
   onHashChange,
   openDrawer,
@@ -89,12 +91,13 @@ export default function App() {
       else if (key === 'g') openDrawer('glossary')
       else if (key === 'i') openDrawer('recording')
       else if (key === '?') openDrawer('keys')
+      else if (key === 'l') followLive()
       else if (e.key === 'ArrowRight') step(e.shiftKey ? 10 : 1)
       else if (e.key === 'ArrowLeft') step(e.shiftKey ? -10 : -1)
       else if (e.key === 'Home') setTickIndex(0)
       else if (e.key === 'End') setTickIndex(count - 1)
       else if (e.key === ' ' && (e.target as HTMLElement | null)?.tagName !== 'BUTTON') {
-        setState({ playing: !playing })
+        setState({ playing: !playing, following: false })
       } else return
       e.preventDefault()
     }
@@ -128,6 +131,7 @@ export default function App() {
         </p>
       )}
       {!error && loading && !bundle && <p className="status">Loading the episode…</p>}
+      {!error && bundle && !tick && <p className="status">{LIVE_COPY.waiting}</p>}
       {bundle && tick && ctx && (
         <>
           {screen === 'overview' && <Overview bundle={bundle} tick={tick} ctx={ctx} />}

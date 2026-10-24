@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { fmt, pct } from '../data/derive'
+import { fmt, pct, stillPlaying } from '../data/derive'
 import type { EpisodeMeta } from '../schema/bundle'
 
 /** Which deciders were switched on for this recording. */
@@ -29,8 +29,14 @@ export function Brains({ meta, children }: { meta: EpisodeMeta; children?: React
       </span>
       <span className="brain">
         {meta.scenario.replace('.cfg', '').replaceAll('_', ' ')}, seed {meta.seed}:{' '}
-        {meta.result.cleared ? 'cleared' : meta.result.died ? 'died' : 'survived'} after {meta.tick_count} ticks, reward{' '}
-        {fmt(meta.result.reward, 0)}
+        {stillPlaying(meta) ? (
+          <>playing now, {meta.tick_count} ticks so far</>
+        ) : (
+          <>
+            {meta.result.cleared ? 'cleared' : meta.result.died ? 'died' : 'survived'} after {meta.tick_count} ticks,
+            reward {fmt(meta.result.reward, 0)}
+          </>
+        )}
       </span>
       {children}
     </div>
