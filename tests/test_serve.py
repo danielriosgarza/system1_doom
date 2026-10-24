@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import pytest
 
-from system1_doom import export, serve
+from system1_doom import export, llm_worker, serve
 from system1_doom.logger import TickTrace
 
 RECORDINGS = Path(__file__).resolve().parents[1] / "web" / "public" / "episodes"
@@ -261,3 +261,23 @@ def test_a_macro_admitted_mid_episode_reaches_the_catalog_with_its_proposal(tmp_
     on_disk = [json.loads(line) for line in (config.out / "live-1" / "proposals.jsonl").read_text().splitlines()]
     assert on_disk == proposals[-1]["proposals"]
     assert [kind for kind, _ in events][-2:] == ["end", "stopped"]
+
+
+def test_a_slow_path_answer_still_in_flight_at_the_end_is_logged_in_its_own_episode(tmp_path, monkeypatch):
+    # The run above cut after tick 17, where survival asks for a macro, with the answer taking half a second.
+    template = llm_worker.SlowLLMWorker._fallback_template_proposal
+
+    def slow_template(self, req, seq_num):
+        time.sleep(0.5)
+        return template(self, req, seq_num)
+
+    monkeypatch.setattr(llm_worker.SlowLLMWorker, "_fallback_template_proposal", slow_template)
+    config = serve.ServeConfig(
+        scenario="deadly_corridor.cfg", seed=9, run_dir=tmp_path / "no_run", max_ticks=18, deterministic=True,
+        episodes=1, pace=0.0, rest=0.0, out=tmp_path / "live",
+    )
+    serve.prepare_live_dir(config.out)
+    serve.play(config, serve.LiveHub(config), threading.Event())
+    on_disk = [json.loads(line) for line in (config.out / "live-1" / "proposals.jsonl").read_text().splitlines()]
+    assert [p["admitted_action_id"] for p in on_disk] == ["evasive_burst_1"]
+    assert export.check_bundle(config.out / "live-1") == []

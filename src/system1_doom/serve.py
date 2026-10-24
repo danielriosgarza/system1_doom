@@ -431,6 +431,12 @@ def play_live_episode(player: Player, config: ServeConfig, hub: LiveHub, stop: t
         return stop.is_set()
 
     result, traces = play_episode(player, seed, on_tick)
+    # A slow-path request still in flight was asked by this episode, so its answer belongs here, not in the
+    # next one: wait for it, at most as long as Codex is given, unless play is stopping.
+    worker = player.ctrl.llm_worker
+    deadline = time.monotonic() + worker.codex_timeout_sec + 5.0
+    while worker.is_busy() and time.monotonic() < deadline and not stop.wait(0.05):
+        pass
     player.ctrl.drain_slow_path()  # what `close` does after a recording
     publish_proposals()
     meta = finish_bundle(player, out, name, title, seed, result, traces, files, checkpoint)

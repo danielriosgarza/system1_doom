@@ -19,7 +19,7 @@
 
 **Package:** `system1-doom` 0.2.0 · **Python:** ≥ 3.11 · **Source layout:**
 `src/system1_doom/` (24 modules, ≈ 7,400 LOC) · **Tests:** `tests/`
-(15 files, 66 tests) · **Web explainer:** `web/` (Vite + React + TypeScript)
+(15 files, 67 tests) · **Web explainer:** `web/` (Vite + React + TypeScript)
 
 ---
 
@@ -232,7 +232,7 @@ system1_doom/
 │       ├── specs/2026-10-23-learning-controller-design.md
 │       └── plans/2026-10-23-d1-ultra-doom-controller.md
 ├── src/system1_doom/               # the package (see table below)
-├── tests/                          # 15 files, 66 tests (§16)
+├── tests/                          # 15 files, 67 tests (§16)
 ├── web/                            # the web explainer: Vite + React app and demo bundles (§8.15)
 ├── runs/<scenario>/                # training output, per scenario (§13)
 ├── bundles/                        # episode bundles from `system1_doom.export` (§13)
@@ -1123,8 +1123,10 @@ static deployment looks exactly as before. With a status, the picker
 gains a Live group, the bar a LIVE badge, and the cursor follows the
 newest tick, riding into each new episode, until the viewer moves it;
 Follow or the key l resumes, and `#live/<screen>` links to whatever is
-playing. Ctrl+C finishes the current episode's files with `finished`
-false. A finished live episode is an ordinary bundle: `export --check
+playing. A slow-path request still in flight when an episode ends is
+waited for (at most the Codex timeout), so its proposal is logged in the
+episode that asked. Ctrl+C finishes the current episode's files with
+`finished` false. A finished live episode is an ordinary bundle: `export --check
 live/live-1` passes and the app opens it like a shipped recording.
 
 ---
@@ -1414,7 +1416,7 @@ Two empirical findings worth knowing before tuning:
 ## 16. Testing
 
 ```bash
-python -m pytest            # 66 tests, 15 files, from the repo root
+python -m pytest            # 67 tests, 15 files, from the repo root
 ```
 
 Tests use real ViZDoom headlessly, so the suite takes longer than a pure
@@ -1438,7 +1440,7 @@ and expect them to fail (by assertion, not skip) without one.
 | `test_level_clearance.py` | Heuristic controller clears `basic.cfg`; every executed step follows the selected action's own plan; learning controller records every decision |
 | `test_visualizer.py` | HUD frame render + GIF save; dashboard shows d1/Codex sections |
 | `test_export.py` | A 5-tick `basic.cfg` bundle has every file and a frame per tick; pruned + legal actions partition the vocabulary; each arbiter breakdown adds up to its score; module anatomy and outcome are recorded; the schema dump validates a trace; pre-anatomy traces still parse; `failing_condition` agrees with `is_satisfied`; admission records each stage |
-| `test_serve.py` | Two live `basic.cfg` episodes in-process: the event order (start, ticks from 0 in order, proposals only on change, end), every frame on disk before its tick event, the episode in progress served from memory, each finished episode a valid bundle equal to its `end` event, the next seed, the status and the untouched index; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog |
+| `test_serve.py` | Two live `basic.cfg` episodes in-process: the event order (start, ticks from 0 in order, proposals only on change, end), every frame on disk before its tick event, the episode in progress served from memory, each finished episode a valid bundle equal to its `end` event, the next seed, the status and the untouched index; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog; a slow-path answer still in flight at the end logged in its own episode |
 
 The web explainer has its own checks, run from `web/`: `npm run build`
 and `npm run lint` (type-check and oxlint), `npm test` (Vitest: the
