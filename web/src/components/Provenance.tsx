@@ -10,6 +10,7 @@ import {
   prettyId,
   serveCommand,
   stillPlaying,
+  stoppedEarly,
   utcStamp,
 } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
@@ -139,7 +140,17 @@ export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: Tick
       ) : (
         <dl className="prov-list">
           <dt>Outcome</dt>
-          <dd>{result.cleared ? 'cleared the level' : result.died ? 'died' : 'survived to the tick cap'}</dd>
+          <dd>
+            {result.cleared
+              ? 'cleared the level'
+              : result.died
+                ? 'died'
+                : stoppedEarly(meta)
+                  ? 'stopped by hand (Ctrl+C in serve) before the end'
+                  : result.finished
+                    ? 'survived until the scenario ended'
+                    : 'survived to the tick cap'}
+          </dd>
           <dt>Ticks</dt>
           <dd>{result.ticks}</dd>
           <dt>Reward</dt>

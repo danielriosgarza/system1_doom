@@ -75,7 +75,11 @@ python -m system1_doom.serve --scenario deadly_corridor.cfg --model latest
 `serve` plays episodes one after another with the same deciders and
 settings as `export` (seeds 7, 8, 9, … by default), writes each one as an
 ordinary bundle in `live/live-<k>`, and streams every tick to the browser
-as it is decided. Its flags are in `docs/DOCUMENTATION.md`, §11.
+as it is decided. Its flags are in `docs/DOCUMENTATION.md`, §11. Each
+start clears the earlier `live-<k>` folders from `live/`; to keep one,
+copy it into `web/public/episodes/` and rebuild the index as under Add
+an episode below. Ctrl+C finishes the current episode's files as they
+stand, and the app then reads it as stopped by hand.
 
 A visit with no hash, or `#live`, lands on the episode being played and
 follows it: the bar shows a pulsing LIVE badge, the timeline grows, and

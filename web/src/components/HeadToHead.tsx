@@ -1,4 +1,4 @@
-import { admissions, fmt, pct, stillPlaying, tickEvents } from '../data/derive'
+import { admissions, fmt, pct, stillPlaying, stoppedEarly, tickEvents } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
 import type { BundleIndexEntry, EpisodeMeta, EvaluationSummary } from '../schema/bundle'
 import { openEpisode, setTickIndex, useApp } from '../store'
@@ -25,7 +25,13 @@ function brainLabel(meta: Pick<EpisodeMeta, 'model'>): string {
 function ending(meta: EpisodeMeta): string {
   const { result, tick_count: ticks } = meta
   if (stillPlaying(meta)) return `played ${ticks} decisions so far, and the episode is still running`
-  const verb = result.cleared ? 'cleared the level' : result.died ? 'died' : 'ran out of time'
+  const verb = result.cleared
+    ? 'cleared the level'
+    : result.died
+      ? 'died'
+      : stoppedEarly(meta)
+        ? 'was stopped by hand'
+        : 'ran out of time'
   return `${verb} after ${ticks} decisions with reward ${fmt(result.reward, 0)}`
 }
 

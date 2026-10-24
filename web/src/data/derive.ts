@@ -1420,6 +1420,16 @@ export function stillPlaying(meta: EpisodeMeta): boolean {
   return meta.result.ticks !== meta.tick_count
 }
 
+/**
+ * True for an episode serve stopped by hand (Ctrl+C): it neither ended in the game nor reached the
+ * tick cap, so its result is the state of play when it was stopped.
+ */
+export function stoppedEarly(meta: EpisodeMeta): boolean {
+  const { result } = meta
+  if (stillPlaying(meta) || result.finished || result.cleared || result.died) return false
+  return meta.tick_count < meta.config.max_ticks
+}
+
 /** The command serve was started with, from its status: the flags that differ from the defaults. */
 export function serveCommand(config: LiveConfig): string {
   const parts = [

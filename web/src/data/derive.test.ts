@@ -39,6 +39,7 @@ import {
   trustLambda,
   serveCommand,
   stillPlaying,
+  stoppedEarly,
   trustRows,
   utcStamp,
 } from './derive'
@@ -493,6 +494,18 @@ describe('the command that makes a recording again', async () => {
     const base = await meta('deadly_corridor-heuristics-9')
     expect(stillPlaying(base)).toBe(false)
     expect(stillPlaying({ ...base, result: { ...base.result, ticks: 0 } })).toBe(true)
+  })
+
+  it('tells an episode serve stopped by hand from one that ended, died or reached the cap', async () => {
+    const base = await meta('deadly_corridor-heuristics-9')
+    expect(stoppedEarly(base)).toBe(false)
+    const open = { ...base.result, finished: false, cleared: false, died: false }
+    expect(stoppedEarly({ ...base, result: { ...open, ticks: 7 }, tick_count: 7 })).toBe(true)
+    // Still playing: serve's zero result, not a stop.
+    expect(stoppedEarly({ ...base, result: { ...open, ticks: 0 }, tick_count: 7 })).toBe(false)
+    const cap = base.config.max_ticks
+    expect(stoppedEarly({ ...base, result: { ...open, ticks: cap }, tick_count: cap })).toBe(false)
+    expect(stoppedEarly({ ...base, result: { ...open, ticks: 7, died: true }, tick_count: 7 })).toBe(false)
   })
 
   it('shows the recording time in UTC', () => {
