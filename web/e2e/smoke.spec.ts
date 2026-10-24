@@ -5,6 +5,8 @@ interface Trace {
   tick: number
   selected_action: string
   available_actions: string[]
+  context_signature: string
+  arbiter?: { gate_share?: number | null } | null
 }
 
 function ticksOf(episode: string): Trace[] {
@@ -169,4 +171,54 @@ test('the tour fits a phone screen', async ({ page }) => {
   }
   await expect(card).toHaveCount(0)
   expect(errors).toEqual([])
+})
+
+test('the learning screen shows the evaluation, the training run, trust and the gate at a tick', async ({ page }) => {
+  const errors = collectErrors(page)
+  const episode = 'deadly_corridor-learned-9'
+  const trace = ticksOf(episode).find((t) => t.tick === 17) as Trace
+  await page.goto(`./#${episode}/17/learning`)
+
+  const h2h = page.locator('#panel-headtohead')
+  await expect(h2h.locator('[data-brain]')).toHaveCount(3)
+  await expect(h2h.locator('.h2h-strip')).toHaveCount(2)
+  await expect(h2h).toContainText('the heuristics alone died after 36 decisions')
+  await expect(page.locator('#panel-curves')).toContainText('300 training episodes')
+  await expect(page.locator('#panel-curves .curve')).toHaveCount(8)
+  await expect(page.locator('#panel-trustmap tr.pinned')).toHaveAttribute('data-context', trace.context_signature)
+  await expect(page.locator('#panel-trustmap .th-table tbody tr')).toHaveCount(trace.available_actions.length)
+  const g = (trace.arbiter?.gate_share ?? NaN).toFixed(3)
+  await expect(page.locator('#panel-gateview')).toContainText(`× g = ${g}`)
+  await expect(page.locator('#panel-anatomy [data-module]')).toHaveCount(5)
+  expect(errors).toEqual([])
+})
+
+test('without networks the learning screen says so and links to the recording that has them', async ({ page }) => {
+  const errors = collectErrors(page)
+  await page.goto('./#deadly_corridor-heuristics-9/17/learning')
+  await expect(page.getByTestId('no-networks')).toHaveCount(2)
+  await expect(page.locator('#panel-curves .curve').first()).toBeVisible()
+  await page.getByTestId('no-networks').first().getByRole('button').click()
+  await expect(page).toHaveURL(/#deadly_corridor-learned-9\/17\/learning$/)
+  await expect(page.locator('#panel-trustmap tr.pinned')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('the replay buffer on the overview opens the training curves', async ({ page }) => {
+  await page.goto('./#deadly_corridor-learned-9/17/overview')
+  await page.locator('[data-box="replay"]').click()
+  await page
+    .locator('.arch-card')
+    .getByRole('button', { name: /Open in Learning/ })
+    .click()
+  await expect(page).toHaveURL(/\/17\/learning$/)
+  await expect(page.locator('#panel-curves')).toBeInViewport()
+})
+
+test('the learning screen fits a phone screen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('./#deadly_corridor-learned-9/17/learning')
+  await expect(page.locator('#panel-trustmap tr.pinned')).toBeVisible()
+  await expect(page.locator('#panel-headtohead .h2h-strip')).toHaveCount(2)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })

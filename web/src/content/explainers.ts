@@ -1,12 +1,16 @@
 // The copy for every panel's three-layer explainer: one sentence, a paragraph, and the formula
 // with the current tick's numbers substituted. Constants are the controller's own (see derive.ts).
-import type { EpisodeMeta, ProposalTrace, TickTrace } from '../schema/bundle'
+import type { EpisodeMeta, MetricsRow, ProposalTrace, TickTrace, TrustFile } from '../schema/bundle'
 import {
   AIM_BAND_DEG,
   ARCHIVE_ALPHA,
   ARCHIVE_SLOTS,
   BASE_TEMPERATURE,
+  FLOOR_SCHEDULE,
+  GAMMA,
+  LEARNER,
   MODULES,
+  N_STEP,
   MODULE_TEMPERATURE,
   NEAR_WALL,
   PRESSURE_FLOOR,
@@ -18,17 +22,22 @@ import {
   aimBandHalfWidth,
   contextBuckets,
   exploration,
+  floorAt,
   fmt,
+  gateBlend,
   gameSeconds,
   holdFor,
   learning,
   moduleVoteParts,
+  nStepReturns,
   pct,
   pressureReading,
   prettyId,
   rankedActions,
+  rolling,
   signed,
   slowPathAt,
+  trustLambda,
 } from '../data/derive'
 
 /** A number inside arithmetic: negatives in parentheses with a true minus sign. */
@@ -38,8 +47,14 @@ function term(value: number, digits = 2): string {
 }
 
 /** The inspector's panels; each is also an element id, `#panel-<id>`. */
-export type PanelId =
+export type InspectorPanelId =
   'scrubber' | 'game' | 'world' | 'legal' | 'projection' | 'modules' | 'arbiter' | 'motor' | 'outcome'
+
+/** The learning screen's panels. */
+export type LearningPanelId = 'curves' | 'trustmap' | 'gateview' | 'headtohead' | 'anatomy'
+
+/** Every panel of every screen; each is also an element id, `#panel-<id>`. */
+export type PanelId = InspectorPanelId | LearningPanelId
 
 /** Everything with an explainer: the panels, plus the boxes of the overview and the hierarchy. */
 export type ExplainerId =
@@ -72,6 +87,12 @@ export interface ExplainerContext {
   /** The tick before, whose closing exploration state this tick's arbiter used; null on the first. */
   prev: TickTrace | null
   proposals: ProposalTrace[]
+  /** The whole episode and this tick's place in it, for readings that look ahead. */
+  ticks: TickTrace[]
+  index: number
+  /** The training run behind the checkpoint, when the bundle carries it. */
+  metrics: MetricsRow[] | null
+  trust: TrustFile | null
 }
 
 export interface Explainer {
@@ -478,6 +499,120 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
     },
     code: 'admission.py · ProposalAdmissionPipeline.evaluate_and_admit',
   },
+  curves: {
+    title: 'Training, episode by episode',
+    sentence: `The networks earn their say slowly: each training episode is played, then learned from with ${LEARNER.trainSteps} gradient steps before the next one starts.`,
+    paragraphs: [
+      `Each point is one training episode. Inside an episode the networks are only read; afterwards its decisions join the replay buffer (the latest ${LEARNER.replay.toLocaleString('en')}) and the networks take ${LEARNER.trainSteps} gradient steps on batches of ${LEARNER.batch}. The solid lines are rolling means over 20 episodes.`,
+      'Network share is how much of play the networks steer: the trust λ of every decision taken so far, weighted by how often it was taken. It rises as the same situations come back. The exploration floor is the share of decisions forced to be a random draw; it falls from 0.6 to 0.05 over the first 100 episodes, so early training tries things and later training uses what it learned.',
+      "The losses are the networks' squared errors on standardised returns, after each episode's training; the gate's counts only the decisions where a module's advice was followed. The dashed line is this recording, an evaluation run played after training, not one of the training episodes.",
+    ],
+    formula: `floor(e) = ${FLOOR_SCHEDULE.start} + (${FLOOR_SCHEDULE.end} − ${FLOOR_SCHEDULE.start})·min(1, (e − 1) ÷ ${FLOOR_SCHEDULE.episodes});  network share = Σ n·λ(n) ÷ Σ n over every (situation, action)`,
+    substitute: ({ metrics, trust, meta }) => {
+      if (!metrics || metrics.length === 0)
+        return [{ label: 'this bundle', expr: 'carries no training run', result: '–' }]
+      const last = metrics[metrics.length - 1] as MetricsRow
+      const meanReward = rolling(metrics.map((r) => r.reward))[metrics.length - 1] ?? 0
+      return [
+        {
+          label: `floor in episode ${last.episode}`,
+          expr: `${FLOOR_SCHEDULE.start} + (${FLOOR_SCHEDULE.end} − ${FLOOR_SCHEDULE.start})·min(1, ${last.episode - 1} ÷ ${FLOOR_SCHEDULE.episodes})`,
+          result: fmt(floorAt(last.episode), 3),
+        },
+        { label: 'mean reward, last 20 episodes', expr: 'rolling mean', result: fmt(meanReward, 0) },
+        {
+          label: 'network share at the checkpoint',
+          expr: trust
+            ? `over ${Object.keys(trust.action_counts).length} (situation, action) pairs`
+            : 'no checkpoint in this bundle',
+          result: trust ? pct(trust.network_share, 1) : meta.checkpoint ? pct(meta.checkpoint.network_share, 1) : '–',
+        },
+      ]
+    },
+    code: 'train.py · exploration_schedule, learn_from_episode; learning.py · Learner.train, network_share',
+  },
+  trustmap: {
+    title: 'Trust, situation by situation',
+    sentence:
+      'How much say the networks have for each action in each situation, earned by how often that action was taken there in training.',
+    paragraphs: [
+      `λ = n ÷ (n + ${TRUST_COUNT}), where n counts the training decisions that took this action in this situation: ${TRUST_COUNT} times gives the networks half the say, ${3 * TRUST_COUNT} times three quarters. A situation never met is decided by the heuristics alone.`,
+      "A situation is the five-bucket context signature: health, ammo, the nearest enemy, incoming fire and pickups. Every module's score for an action is blended as (1 − λ)·heuristic + λ·learned, with the same λ for all five modules. The gate's own trust g follows the same rule, counting how often the situation itself was met.",
+      'Darker hatching is more trust. Actions never taken in training are left out; they would be blank columns.',
+    ],
+    formula: `λ = n ÷ (n + ${TRUST_COUNT});  utility = (1 − λ)·heuristic + λ·learned`,
+    substitute: ({ tick, trust, focus }) => {
+      if (!trust) return [{ label: 'this recording', expr: 'no checkpoint loaded', result: 'λ = 0' }]
+      const n = trust.action_counts[`${tick.context_signature}|${focus}`] ?? 0
+      const survival = tick.module_outputs.survival
+      const h = survival?.utility_heuristic?.[focus] ?? 0
+      const l = survival?.utility_learned?.[focus] ?? 0
+      const lambda = trustLambda(n)
+      return [
+        { label: `${prettyId(focus)} here`, expr: `${n} ÷ (${n} + ${TRUST_COUNT})`, result: fmt(lambda, 3) },
+        {
+          label: 'survival, blended',
+          expr: `(1 − ${fmt(lambda, 3)})·${term(h, 3)} + ${fmt(lambda, 3)}·${term(l, 3)}`,
+          result: fmt((1 - lambda) * h + lambda * l, 3),
+        },
+      ]
+    },
+    code: 'learning.py · Learner.action_trust; modules.py · DecisionModule.build_output',
+  },
+  gateview: {
+    title: 'Which module to listen to',
+    sentence:
+      "The arbiter weighs the five opinions with a hand-written table; a gate network proposes its own weights, and the two are blended by the gate's trust g.",
+    paragraphs: [
+      'The table favours combat when an enemy is in view and the gun is loaded, navigation otherwise, and scales each module by its confidence. The gate network reads the same world state and proposes five weights through a softmax at temperature 0.5.',
+      `The gate is trained between episodes to predict the goal module's return, separately for each module, and only on decisions where that module's own top pick was the action taken: it learns which module's advice led somewhere. Its trust g = n ÷ (n + ${TRUST_COUNT}), with n the training decisions in this situation.`,
+      'Either way the result is five weights that sum to 1. The gate never adds a module or an action; it only changes how loudly each opinion counts.',
+    ],
+    formula: 'w = normalise((1 − g)·w_table + g·w_gate)',
+    substitute: ({ tick }) => {
+      const blend = gateBlend(tick)
+      if (!blend) return [{ label: 'this tick', expr: 'no gate network loaded', result: 'w = w_table' }]
+      return MODULES.map((m) => ({
+        label: m,
+        expr: `(1 − ${fmt(blend.g, 3)})·${fmt(blend.table[m] ?? 0, 3)} + ${fmt(blend.g, 3)}·${fmt(blend.gate[m] ?? 0, 3)}, normalised`,
+        result: fmt(blend.used[m] ?? 0, 3),
+      }))
+    },
+    code: 'arbiter.py · FinalArbiter._module_context_weights; learning.py · Learner.gate_weights',
+  },
+  headtohead: {
+    title: 'With and without the networks',
+    sentence:
+      'The same scenario played by the hand-written heuristics alone and with the trained networks, over the same seeded episodes.',
+    paragraphs: [
+      'After training, each brain played the same evaluation episodes greedily: no exploration and no learning, so the only difference is the networks. Cleared means the corridor was finished; survived means the episode did not end in death.',
+      'The two recordings below share a seed, so they start from the same state; they part ways at the first decision the networks weigh differently. The menu, the levels and the bounds are identical: the networks only changed how the options were weighed.',
+    ],
+    code: 'train.py · evaluate',
+  },
+  anatomy: {
+    title: 'What each module learns from',
+    sentence: `Each module learns from its own reward, never a shared one, summed over the next ${N_STEP} decisions with a discount of ${GAMMA}.`,
+    paragraphs: [
+      'The outcome of every decision is split into five rewards: survival for avoiding damage and death, combat for hits and kills, navigation for new ground, resource for pickups, goal for the scenario’s own reward.',
+      `What a module's network learns to predict is the return: this decision's reward plus the next seven, each worth ${GAMMA} of the one before, cut short at the end of the episode. The learner then standardises each module's returns with a running mean and standard deviation kept in the checkpoint, so the app shows the raw return.`,
+    ],
+    formula: `R_m(t) = Σ_{k=0..${N_STEP - 1}} ${GAMMA}^k · r_m(t + k)`,
+    substitute: ({ ticks, index }) => {
+      const returns = nStepReturns(ticks, index)
+      return MODULES.map((m) => {
+        const r = returns[m]
+        return {
+          label: m,
+          expr: r.terms
+            .map((t) => (t.k === 0 ? term(t.reward) : `${fmt(t.discount, 3)}·${term(t.reward)}`))
+            .join(' + '),
+          result: fmt(r.total, 2),
+        }
+      })
+    },
+    code: 'learning.py · n_step_returns, Learner.end_episode; features.py · module_rewards',
+  },
   rewards: {
     title: 'Five rewards',
     sentence:
@@ -666,6 +801,14 @@ export const BOUNDS: Record<string, string> = {
     'The networks only learn between episodes, from the replay buffer; inside a tick they are read, never trained.',
   'advice only':
     "d1-ultra's answers are mixed into scores that already exist; it cannot add an action or pick outside the menu.",
+  'same seed, same menu':
+    'Both recordings start from the same seeded state with the same built-in actions and the same bounds; only the weighing differs.',
+  'λ < 1':
+    'Trust approaches 1 but never reaches it: the heuristic keeps 25 ÷ (n + 25) of every score, so a hand-written rule always has a say.',
+  'five weights, sum 1':
+    'The gate can only re-weigh the five modules that exist; the weights always sum to 1, and no module or action can be added.',
+  '8 steps · γ 0.9':
+    'A return looks at most 8 decisions ahead and each step counts 0.9 of the one before, so what a module learns stays local to what it just did.',
   'one proposal in flight':
     'The slow path works on one macro proposal at a time with a 20-second timeout, and the real-time loop never waits for it.',
 }

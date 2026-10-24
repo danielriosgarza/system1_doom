@@ -45,7 +45,8 @@ export function TopBar() {
       </label>
       {bundle && tick && (
         <span className="control tick-counter" aria-live="polite">
-          Tick {tick.tick} / {bundle.meta.last_tick} · {fmt(gameSeconds(tick.tick), 1)} s
+          Tick {tick.tick} / {bundle.meta.last_tick}
+          <span className="tick-seconds"> · {fmt(gameSeconds(tick.tick), 1)} s</span>
         </span>
       )}
       <button
@@ -58,7 +59,7 @@ export function TopBar() {
         Tour
       </button>
       <span className="control">
-        Depth
+        <span className="control-label">Depth</span>
         <span className="segmented" role="group" aria-label="Explanation depth">
           <button type="button" aria-pressed={depth === 'plain'} onClick={() => setState({ depth: 'plain' })}>
             Plain

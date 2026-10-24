@@ -23,7 +23,7 @@ import {
 } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
 import type { TickTrace } from '../schema/bundle'
-import { openInInspector, setState, useApp } from '../store'
+import { openInInspector, openPanel, setState, useApp } from '../store'
 
 const LEVEL_EXPLAINER: Record<LevelId, ExplainerId> = {
   gate: 'gate',
@@ -54,6 +54,7 @@ interface Source {
   /** Line style of its arrows: solid for hand-written, dashed for learned, dotted for d1. */
   line: 'solid' | 'learned' | 'dotted'
   panel?: PanelId
+  learning?: PanelId
 }
 
 const SOURCES: Source[] = [
@@ -82,6 +83,7 @@ const SOURCES: Source[] = [
     feeds: ['opinions', 'arbiter'],
     line: 'learned',
     panel: 'modules',
+    learning: 'trustmap',
   },
   {
     id: 'simulator',
@@ -146,6 +148,15 @@ function SideCard({
           {source.panel && (
             <button type="button" className="link-button" onClick={() => openInInspector(source.panel as string)}>
               See this in the inspector →
+            </button>
+          )}{' '}
+          {source.learning && (
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => openPanel('learning', source.learning as string)}
+            >
+              See it in Learning →
             </button>
           )}
         </>

@@ -6,7 +6,7 @@ import { EXPLAINERS, type ExplainerContext, STORY } from '../content/explainers'
 import { fmt, pct } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
 import type { EpisodeMeta, TickTrace } from '../schema/bundle'
-import { type Screen, openInInspector, setScreen, startTour, useApp } from '../store'
+import { type Screen, openInInspector, openPanel, setScreen, startTour, useApp } from '../store'
 
 /** Which deciders were switched on for this recording. */
 function Brains({ meta }: { meta: EpisodeMeta }) {
@@ -146,11 +146,22 @@ export function Overview({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: T
               </header>
               <p className="sentence">{EXPLAINERS[box.explainer].sentence}</p>
               <ExplainerBody id={box.explainer} ctx={ctx} />
-              {box.panel && (
-                <button type="button" className="link-button" onClick={() => openInInspector(box.panel as string)}>
-                  Open in the inspector →
-                </button>
-              )}
+              <p className="arch-links">
+                {box.panel && (
+                  <button type="button" className="link-button" onClick={() => openInInspector(box.panel as string)}>
+                    Open in the inspector →
+                  </button>
+                )}
+                {box.learning && (
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => openPanel('learning', box.learning as string)}
+                  >
+                    Open in Learning →
+                  </button>
+                )}
+              </p>
             </>
           ) : (
             <>

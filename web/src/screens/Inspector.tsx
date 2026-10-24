@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { ArbiterPanel } from '../components/ArbiterPanel'
 import { GameView } from '../components/GameView'
 import { LegalActions } from '../components/LegalActions'
@@ -8,12 +7,12 @@ import { OutcomeCard } from '../components/OutcomeCard'
 import { Panel } from '../components/Panel'
 import { ProjectionStrip } from '../components/ProjectionStrip'
 import { WorldState } from '../components/WorldState'
-import { flashPanel } from '../components/flash'
+import { flashPanel, useFocusPanel } from '../components/flash'
 import { BEATS, type ExplainerContext, STORY } from '../content/explainers'
 import type { Admission } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
 import type { TickTrace } from '../schema/bundle'
-import { setState, useApp } from '../store'
+import { useApp } from '../store'
 
 /** The inspector's compact header: how to use it, and the six beats as links into its panels. */
 function InspectorHeader() {
@@ -58,13 +57,7 @@ export function Inspector({
   ctx: ExplainerContext
 }) {
   const loading = useApp((s) => s.loading)
-  const focusPanel = useApp((s) => s.focusPanel)
-
-  useEffect(() => {
-    if (!focusPanel) return
-    flashPanel(focusPanel)
-    setState({ focusPanel: null })
-  }, [focusPanel])
+  useFocusPanel()
 
   return (
     <>

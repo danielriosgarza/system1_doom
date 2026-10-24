@@ -1,8 +1,11 @@
-import { type PointerEvent, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { type PointerEvent, useEffect, useId, useState } from 'react'
 import type { TickTrace } from '../schema/bundle'
-import { type Admission, type TickEvent, type TickEventKind, fmt, tickEvents } from '../data/derive'
+import { type Admission, type TickEvent, fmt, tickEvents } from '../data/derive'
 import { setState, setTickIndex, step, useApp } from '../store'
+import { Mark } from './Marks'
+import { KIND_LANE, MARK_LEGEND } from './markKinds'
 import { ExplainerBody } from './Panel'
+import { useWidth } from './useWidth'
 import { EXPLAINERS, type ExplainerContext } from '../content/explainers'
 
 const HEIGHT = 64
@@ -11,63 +14,6 @@ const SLOT_TOP = 16
 const SLOT_BOTTOM = 42
 const LANE_BOTTOM = 54
 const PAD = 8
-
-const KIND_LANE: Record<TickEventKind, 'top' | 'bottom'> = {
-  damage: 'top',
-  kill: 'top',
-  death: 'top',
-  sampled: 'bottom',
-  committed: 'bottom',
-  expansion: 'bottom',
-  admission: 'bottom',
-  strategy: 'bottom',
-}
-
-const MARK_LEGEND: Array<{ kind: TickEventKind; label: string }> = [
-  { kind: 'damage', label: 'damage' },
-  { kind: 'kill', label: 'kill' },
-  { kind: 'death', label: 'death' },
-  { kind: 'sampled', label: 'sampled pick' },
-  { kind: 'committed', label: 'module committed' },
-  { kind: 'expansion', label: 'asked for a macro' },
-  { kind: 'admission', label: 'macro admitted' },
-  { kind: 'strategy', label: 'strategy switch' },
-]
-
-function Mark({ kind, x, y }: { kind: TickEventKind; x: number; y: number }) {
-  switch (kind) {
-    case 'damage':
-      return <path d={`M${x - 4},${y - 3} h8 l-4,6 z`} fill="var(--neg)" />
-    case 'kill':
-      return <path d={`M${x},${y - 5} l4,5 l-4,5 l-4,-5 z`} fill="var(--combat)" />
-    case 'death':
-      return <path d={`M${x - 4},${y - 4} l8,8 M${x + 4},${y - 4} l-8,8`} stroke="var(--neg)" strokeWidth={2} />
-    case 'sampled':
-      return <circle cx={x} cy={y} r={3.5} fill="none" stroke="var(--n1)" strokeWidth={1.5} />
-    case 'committed':
-      return <rect x={x - 3.5} y={y - 3.5} width={7} height={7} fill="var(--accent)" />
-    case 'expansion':
-      return <path d={`M${x - 3},${y + 5} v-10 l7,3 l-7,3`} fill="var(--goal)" stroke="var(--goal)" strokeWidth={1} />
-    case 'admission':
-      return <path d={`M${x - 4},${y} h8 M${x},${y - 4} v8`} stroke="var(--goal)" strokeWidth={2.5} />
-    case 'strategy':
-      return <rect x={x - 1} y={y - 5} width={2.5} height={10} fill="var(--navigation)" />
-  }
-}
-
-function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
-  const ref = useRef<T | null>(null)
-  const [width, setWidth] = useState(800)
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const observer = new ResizeObserver(([entry]) => entry && setWidth(entry.contentRect.width))
-    observer.observe(el)
-    setWidth(el.getBoundingClientRect().width)
-    return () => observer.disconnect()
-  }, [])
-  return [ref, width]
-}
 
 export function Scrubber({
   ticks,
