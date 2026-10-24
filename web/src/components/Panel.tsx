@@ -1,6 +1,7 @@
 import { type ReactNode, useId, useState } from 'react'
 import { BOUNDS, EXPLAINERS, type ExplainerContext, type ExplainerId, type PanelId } from '../content/explainers'
 import { useApp } from '../store'
+import { linkTerms } from './Terms'
 
 interface PanelProps {
   id: PanelId
@@ -78,10 +79,12 @@ export function ExplainerBody({ id, bodyId, ctx }: { id: ExplainerId; bodyId?: s
   const explainer = EXPLAINERS[id]
   const depth = useApp((s) => s.depth)
   const lines = depth === 'formula' && ctx && explainer.substitute ? explainer.substitute(ctx) : []
+  // Each glossary word is linked once per explanation, at its first mention.
+  const seen = new Set<string>()
   return (
     <div className="explainer" id={bodyId}>
       {explainer.paragraphs.map((p) => (
-        <p key={p.slice(0, 32)}>{p}</p>
+        <p key={p.slice(0, 32)}>{linkTerms(p, seen)}</p>
       ))}
       {depth === 'formula' && explainer.formula && (
         <div className="formula">

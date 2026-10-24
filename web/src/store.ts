@@ -7,6 +7,8 @@ import { type EpisodeBundle, type EpisodeIndex, loadEpisode, loadIndex } from '.
 export type Depth = 'plain' | 'formula'
 export type Theme = 'dark' | 'light'
 export type Screen = 'overview' | 'tick' | 'hierarchy' | 'learning' | 'menu'
+/** The reference drawer's four tabs. */
+export type DrawerSection = 'glossary' | 'principles' | 'recording' | 'keys'
 
 export const SCREENS: Array<{ id: Screen; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -38,6 +40,10 @@ export interface AppState {
   tourSeen: boolean
   /** A panel to scroll to and flash once its screen is showing. */
   focusPanel: string | null
+  /** The reference drawer's open tab, or null when it is closed; not in the URL. */
+  drawer: DrawerSection | null
+  /** The glossary entry to scroll to and mark. */
+  term: string | null
 }
 
 type Settings = Partial<Pick<AppState, 'depth' | 'theme' | 'tourSeen'>>
@@ -83,6 +89,8 @@ let state: AppState = {
   tour: null,
   tourSeen: saved.tourSeen === true,
   focusPanel: null,
+  drawer: null,
+  term: null,
 }
 
 const listeners = new Set<() => void>()
@@ -161,6 +169,15 @@ export function setScreen(screen: Screen): void {
 export function openPanel(screen: Screen, panel: string): void {
   setScreen(screen)
   setState({ focusPanel: panel })
+}
+
+/** Open the reference drawer on one tab; for the glossary, optionally at one entry. Playback is left alone. */
+export function openDrawer(section: DrawerSection, term: string | null = null): void {
+  setState({ drawer: section, term })
+}
+
+export function closeDrawer(): void {
+  if (state.drawer !== null) setState({ drawer: null, term: null })
 }
 
 export function openInInspector(panel: string): void {

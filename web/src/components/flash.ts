@@ -5,7 +5,8 @@ import { setState, useApp } from '../store'
 export function flashPanel(panel: string): void {
   const el = document.getElementById(`panel-${panel}`)
   if (!el) return
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  // The timeline is pinned to the bottom of the window: flash it where it is.
+  if (getComputedStyle(el).position !== 'sticky') el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   el.classList.remove('flash')
   void el.offsetWidth
   el.classList.add('flash')

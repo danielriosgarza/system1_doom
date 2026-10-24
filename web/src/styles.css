@@ -161,10 +161,20 @@ code,
   }
 }
 
-/* At laptop widths the bar keeps to one row: shorter picker, no label before Depth, no seconds. */
+/* At laptop widths the bar keeps to one row: tighter gaps, a shorter picker, no label before Depth, no seconds. */
 @media (max-width: 1440px) {
+  .topbar {
+    gap: 8px 10px;
+    padding: 10px 16px;
+  }
+
   .control select {
-    max-width: 230px;
+    max-width: 180px;
+  }
+
+  .topbar .segmented button,
+  .topbar .icon-button {
+    padding: 5px 8px;
   }
 
   .control-label,
@@ -172,8 +182,8 @@ code,
     display: none;
   }
 
-  .screens button {
-    padding: 4px 9px;
+  .topbar .screens button {
+    padding: 4px 7px;
   }
 }
 
@@ -246,7 +256,7 @@ code,
     max-width: 100%;
   }
 
-  .screens button {
+  .topbar .screens button {
     padding: 4px 8px;
   }
 }
@@ -403,7 +413,8 @@ code,
   scroll-margin-top: 70px;
 }
 
-.panel.flash {
+.panel.flash,
+.scrubber.flash {
   animation: flash 1.2s ease-out;
 }
 
@@ -1822,7 +1833,8 @@ code,
     display: none;
   }
 
-  .panel.flash {
+  .panel.flash,
+  .scrubber.flash {
     animation: none;
   }
 }
@@ -3694,4 +3706,419 @@ tr.pinned td {
   margin: 0 0 6px;
   font-size: 12px;
   color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ reference drawer */
+
+/* The ⓘ button: a glyph, so the bar keeps one row at laptop widths. */
+.topbar .glyph-button {
+  padding: 3px 8px;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.reference-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+}
+
+.reference {
+  position: fixed;
+  z-index: 46;
+  top: var(--drawer-top, 0px);
+  right: 0;
+  bottom: 0;
+  width: min(440px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  animation: drawer-in 0.16s ease-out;
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.reference-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+}
+
+.reference-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.reference-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 0 16px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.reference-tabs button {
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.reference-tabs button:hover {
+  color: var(--text);
+}
+
+.reference-tabs button[aria-selected='true'] {
+  background: var(--panel-3);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.reference-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding: 12px 16px 24px;
+}
+
+/* On a phone the drawer is the whole screen; there is nothing outside it to click. */
+@media (max-width: 640px) {
+  .reference {
+    top: 0;
+    width: 100vw;
+    border-left: 0;
+  }
+
+  .reference-backdrop {
+    display: none;
+  }
+
+  .reference-tabs button {
+    padding: 5px 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reference {
+    animation: none;
+  }
+}
+
+.gloss-filter {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.gloss-count {
+  margin: 6px 0 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.gloss-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gloss-entry {
+  margin: 0 -8px;
+  padding: 10px 8px 12px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px;
+  scroll-margin-top: 6px;
+}
+
+.gloss-entry:focus {
+  outline: none;
+}
+
+.gloss-entry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The entry asked for: a bar on its left and a tint, not the tint alone. */
+.gloss-entry[aria-current='true'] {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.gloss-entry.flash {
+  animation: flash 1.2s ease-out;
+}
+
+.gloss-entry h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.gloss-also {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.gloss-now {
+  margin: 6px 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 13px;
+}
+
+.gloss-now-label {
+  color: var(--muted);
+  margin-right: 4px;
+}
+
+.gloss-meaning {
+  margin: 6px 0;
+}
+
+.gloss-see {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+.gloss-entry .code-ref {
+  margin: 4px 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gloss-entry.flash {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ glossary words in the copy */
+
+/* A linked word keeps the text colour; a dotted underline, not colour, says it is a link. */
+.term-tip {
+  display: inline;
+}
+
+.term {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted var(--muted);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.term:hover {
+  text-decoration-color: var(--text);
+}
+
+.invariant {
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--panel-2);
+}
+
+.invariant p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.invariant footer {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.principle-list {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.principle-list li {
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.principle-list li::marker {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.principle-list h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.principle-list p {
+  margin: 4px 0;
+}
+
+.principles-closing {
+  color: var(--muted);
+  margin: 12px 0 0;
+}
+
+.provenance h4 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.prov-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.prov-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 12px;
+  margin: 0;
+}
+
+.prov-list dt {
+  color: var(--muted);
+}
+
+.prov-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.provenance .brains {
+  margin: 0;
+}
+
+.prov-modules,
+.prov-files,
+.prov-others {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prov-modules li,
+.prov-others li {
+  margin: 0 0 5px;
+}
+
+.prov-modules .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.prov-files li {
+  margin: 0 0 2px;
+}
+
+.command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 8px;
+  margin: 6px 0 10px;
+}
+
+.command pre {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.command-status {
+  flex-basis: 100%;
+  font-size: 12.5px;
+}
+
+.command-status:empty {
+  display: none;
+}
+
+.keys-tab h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.keys-tab section:first-child h4 {
+  margin-top: 2px;
+}
+
+.key-list {
+  margin: 0;
+}
+
+.key-row {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.key-row dt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.key-row dd {
+  margin: 0;
+}
+
+/* Key caps in the drawer keep to the 12 px floor. */
+.reference .keycap {
+  font-family: inherit;
+  font-size: 12px;
+  min-width: 22px;
+  text-align: center;
 }

@@ -138,7 +138,7 @@ export const STORY = {
   invariant:
     'Each level chooses from a short menu it cannot leave. Learning changes how the menus are weighed, never their shape.',
   howto:
-    'Step through the episode with ← and → (Shift for ten) or press play; hover any bar or chip for its numbers; press ? on a panel for the full explanation; switch Depth to Formula for this tick\u2019s arithmetic.',
+    'Step through the episode with ← and → (Shift for ten) or press play; hover any bar or chip for its numbers; click ? on a panel for the full explanation, and a dotted word in it for the glossary; press ? for the keys; switch Depth to Formula for this tick\u2019s arithmetic.',
 }
 
 export const EXPLAINERS: Record<ExplainerId, Explainer> = {

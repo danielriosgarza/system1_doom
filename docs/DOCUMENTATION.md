@@ -1079,6 +1079,19 @@ and the closest call, with a link to the recording of the same seed that
 asked. A Plain/Formula toggle hides or shows the arithmetic on every
 screen. Two demo bundles ship in `web/public/episodes/`.
 
+**The reference drawer** opens over any screen from the Glossary button,
+the ⓘ button beside the episode picker, or the keys g, i and ?. Its four
+tabs are the glossary (the terms of §18 and the words the app's own copy
+leans on, each with its meaning, this tick's value where there is one,
+links to the panels that show it, and its place in the code; every
+explanation links its glossary words, once each), the seven principles
+of §1 with where the app shows each, this recording (from `episode.json`
+and the index: which brains were on, how it was played, the checkpoint,
+the result, the files, and the `python -m system1_doom.export` command
+that makes it again), and the keyboard (1 to 5 switch screens, t starts
+the tour, f toggles the depth). It is a modal dialog: focus stays inside
+until Esc or a click outside closes it, and it is not in the URL hash.
+
 ---
 
 ## 9. The slow path end-to-end
@@ -1375,7 +1388,8 @@ The web explainer has its own checks, run from `web/`: `npm run build`
 and `npm run lint` (type-check and oxlint), `npm test` (Vitest: the
 loader and the trace readings on a five-tick fixture bundle) and
 `npm run e2e` (Playwright: scrubbing to tick 5 shows the traced action
-in every panel).
+in every panel). The unit tests also hold the app's glossary to §18 and
+check the export command each bundle's This recording tab shows.
 
 ---
 
@@ -1434,6 +1448,10 @@ and reused by `cli.py`).
 
 ## 18. Glossary
 
+The web app's glossary (`web/src/content/glossary.ts`) carries every term
+below in its own words, and a test reads this table, so a term added here
+fails the app's tests until the glossary has it.
+
 | Term | Meaning |
 |---|---|
 | **Action / `ActionSpec`** | The only executable unit: a bounded tuple of primitives with preconditions, a duration cap and a termination condition. Primitives are 1-step actions; macros are named multi-step ones. |
@@ -1444,7 +1462,7 @@ and reused by `cli.py`).
 | **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions. Advisory everywhere it appears. |
 | **Exploration floor** | Flat probability of a tempered exploratory arbiter pick (training-time), distinct from exploration *pressure*. |
 | **Exploration pressure / temperature** | State-dependent exploration intensity from `ExplorationController`; temperature = 0.10 + pressure drives arbiter sampling. |
-| **Gate** | Learned `state → 5` network estimating how much following each module pays off in goal return; blended into arbiter module weights. |
+| **Gate network** | Learned `state → 5` network estimating how much following each module pays off in goal return; blended into arbiter module weights. |
 | **Macro** | Multi-primitive `ActionSpec` (`is_macro=True`); built-in, hand-added, or Codex-proposed-and-admitted. |
 | **Module** | One of survival/combat/navigation/resource/goal; a `DecisionModule` producing a distribution over the same candidate set. |
 | **Network share** | Experience-weighted mean trust λ — how much of play the learned networks currently steer. |

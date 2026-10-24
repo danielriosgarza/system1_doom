@@ -12,6 +12,7 @@ import {
   describeStep,
   encodeAction,
   explainPick,
+  exportCommand,
   exploration,
   featuredTickIndex,
   floorAt,
@@ -37,6 +38,7 @@ import {
   trustActions,
   trustLambda,
   trustRows,
+  utcStamp,
 } from './derive'
 import { parseJsonl } from './loader'
 
@@ -420,5 +422,38 @@ describe('growing the menu across the episode', async () => {
       expect(action).toBeDefined()
       expect(encodeAction(action?.primitives ?? [], action?.is_macro ?? false)).toEqual(action?.encoding)
     }
+  })
+})
+
+describe('the command that makes a recording again', async () => {
+  const meta = async (name: string) =>
+    JSON.parse(
+      await readFile(fileURLToPath(new URL(`../../public/episodes/${name}/episode.json`, import.meta.url)), 'utf8'),
+    ) as EpisodeMeta
+
+  it('gives the shipped recordings their export commands', async () => {
+    expect(exportCommand(await meta('deadly_corridor-heuristics-9'))).toBe(
+      'python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --model heuristics --out web/public/episodes/deadly_corridor-heuristics-9',
+    )
+    expect(exportCommand(await meta('deadly_corridor-learned-9'))).toBe(
+      'python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --model latest --out web/public/episodes/deadly_corridor-learned-9',
+    )
+  })
+
+  it('adds only the flags that differ from the defaults', async () => {
+    const base = await meta('deadly_corridor-learned-9')
+    const changed: EpisodeMeta = {
+      ...base,
+      brains: { ...base.brains, d1_ultra: true, slow_path: 'codex' },
+      config: { ...base.config, deterministic_arbiter: true, max_ticks: 200 },
+    }
+    expect(exportCommand(changed)).toBe(`${exportCommand(base)} --deterministic --d1 --codex --max-ticks 200`)
+    const quiet = { ...base, brains: { ...base.brains, slow_path: 'off' as const } }
+    expect(exportCommand(quiet)).toBe(`${exportCommand(base)} --no-slow-path`)
+  })
+
+  it('shows the recording time in UTC', () => {
+    expect(utcStamp('2026-10-24T11:52:30.200613+00:00')).toBe('24 Oct 2026, 11:52 UTC')
+    expect(utcStamp('not a time')).toBe('not a time')
   })
 })
