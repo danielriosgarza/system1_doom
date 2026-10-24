@@ -361,7 +361,9 @@ export async function start(): Promise<void> {
     const name =
       wanted.episode && names.includes(wanted.episode) ? wanted.episode : (index.episodes[0]?.name ?? names[0])
     if (!name) {
-      setState({ loading: false, error: 'episodes/index.json lists no episodes.' })
+      // Serve is still setting up its first episode and nothing is shipped: it is opened when it starts.
+      if (wantsLive) setState({ following: true })
+      else setState({ loading: false, error: 'episodes/index.json lists no episodes.' })
       return
     }
     await openEpisode(name, wanted.tick)

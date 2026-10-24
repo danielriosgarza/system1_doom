@@ -120,6 +120,31 @@ test('every screen renders the live episode without console errors', async ({ pa
   expect(errors).toEqual([])
 })
 
+test('a visit while serve sets up its first episode, with no recordings, rides in when it starts', async ({ page }) => {
+  const errors = collectErrors(page)
+  // No shipped recordings, nothing played yet, and a first stream that says so before it drops; the
+  // browser's reconnect reaches the stand-in, mid-episode.
+  await page.route('**/episodes/index.json', (route) => route.fulfill({ status: 404, body: 'Not found' }))
+  await page.route('**/live/status.json', async (route) => {
+    const response = await route.fetch()
+    const status = (await response.json()) as Record<string, unknown>
+    await route.fulfill({ response, json: { ...status, current: null, tick: null, episodes: [] } })
+  })
+  let first = true
+  await page.route('**/live/events', (route) => {
+    if (!first) return route.continue()
+    first = false
+    const hello = JSON.stringify({ current: null, tick: null, episodes: [] })
+    return route.fulfill({ contentType: 'text/event-stream', body: `retry: 500\nevent: hello\ndata: ${hello}\n\n` })
+  })
+  await page.goto('./')
+  await expect(badge(page)).toHaveText('LIVE', { timeout: 10_000 })
+  await expect(page.locator('.live-following')).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page).toHaveURL(/#live\/overview$/)
+  expect(errors.filter((e) => !e.includes('404'))).toEqual([])
+})
+
 test('a shipped recording still opens from the picker, and l comes back to the live episode', async ({ page }) => {
   await followEarly(page)
   await picker(page).selectOption('deadly_corridor-learned-9')
