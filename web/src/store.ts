@@ -2,6 +2,14 @@
 import { useSyncExternalStore } from 'react'
 import { TOUR } from './content/tour'
 import { featuredTickIndex } from './data/derive'
+import {
+  type LiveEvent,
+  type LiveStatus,
+  applyLiveEvent,
+  fetchLiveStatus,
+  mergedEpisodes,
+  subscribeLive,
+} from './data/live'
 import { type EpisodeBundle, type EpisodeIndex, loadEpisode, loadIndex } from './data/loader'
 
 export type Depth = 'plain' | 'formula'
@@ -44,6 +52,12 @@ export interface AppState {
   drawer: DrawerSection | null
   /** The glossary entry to scroll to and mark. */
   term: string | null
+  /** What `python -m system1_doom.serve` is playing; null when there is no live mode here. */
+  live: LiveStatus | null
+  /** The cursor stays on the newest tick of the live episode as ticks arrive. */
+  following: boolean
+  /** The live episode the viewer has open, kept after it ends so the bar can say so; null otherwise. */
+  liveOpen: string | null
 }
 
 type Settings = Partial<Pick<AppState, 'depth' | 'theme' | 'tourSeen'>>
@@ -91,6 +105,9 @@ let state: AppState = {
   focusPanel: null,
   drawer: null,
   term: null,
+  live: null,
+  following: false,
+  liveOpen: null,
 }
 
 const listeners = new Set<() => void>()
@@ -120,10 +137,14 @@ export function useApp<T>(selector: (s: AppState) => T): T {
 
 // ---------------------------------------------------------------------------------------------
 // The URL hash: `#<episode name>/<tick>/<screen>`. Without a screen it means the tick inspector,
-// so links written before the other screens existed still open the same tick.
+// so links written before the other screens existed still open the same tick. `#live/<screen>`
+// follows the live episode, whichever it is; plain `#live` lands on the overview.
+
+const LIVE_HASH = 'live'
 
 function readHash(): { episode: string | null; tick: number | null; screen: Screen | null } {
-  const [episode, tick, screen] = decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/')
+  const parts = decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/')
+  const [episode, tick, screen] = parts[0] === LIVE_HASH ? [LIVE_HASH, '', parts[1]] : parts
   const parsed = tick === undefined || tick === '' ? NaN : Number(tick)
   return {
     episode: episode || null,
@@ -134,10 +155,14 @@ function readHash(): { episode: string | null; tick: number | null; screen: Scre
 
 /** Ticks replace the history entry; a change of screen adds one, so Back returns to the last screen. */
 function writeHash(push = false): void {
-  const { bundle, tickIndex, screen } = state
+  const { bundle, tickIndex, screen, following, live } = state
   if (!bundle) return
   const tick = bundle.ticks[tickIndex]?.tick ?? 0
-  const hash = `#${encodeURIComponent(bundle.name)}/${tick}${screen === 'tick' ? '' : `/${screen}`}`
+  const where = screen === 'tick' ? '' : `/${screen}`
+  const hash =
+    following && live?.current === bundle.name
+      ? `#${LIVE_HASH}/${screen}`
+      : `#${encodeURIComponent(bundle.name)}/${tick}${where}`
   if (window.location.hash === hash) return
   if (push) window.history.pushState(null, '', hash)
   else window.history.replaceState(null, '', hash)
@@ -146,11 +171,12 @@ function writeHash(push = false): void {
 // ---------------------------------------------------------------------------------------------
 // Actions.
 
+/** Move the cursor; any move the viewer makes stops following the live episode. */
 export function setTickIndex(index: number): void {
   const count = state.bundle?.ticks.length ?? 0
   if (count === 0) return
   const clamped = Math.max(0, Math.min(count - 1, index))
-  if (clamped !== state.tickIndex) setState({ tickIndex: clamped })
+  if (clamped !== state.tickIndex || state.following) setState({ tickIndex: clamped, following: false })
   writeHash()
 }
 
@@ -184,32 +210,155 @@ export function openInInspector(panel: string): void {
   openPanel('tick', panel)
 }
 
-export async function openEpisode(name: string, tick: number | null = null): Promise<void> {
-  setState({ loading: true, error: null, playing: false, hoveredAction: null })
+/** Counts calls to openEpisode, so a slow load never replaces a later one. */
+let opening = 0
+/** Live events that arrive while the live episode's files load; applied once they have. */
+let pending: LiveEvent[] | null = null
+/** The viewer asked to follow while serve was between episodes: the next one to start is opened. */
+let awaitingLive = false
+
+/**
+ * Open an episode at a tick, or at the first. The episode in progress is loaded as it stands and then
+ * kept up to date by the live events; with `follow`, the cursor rides its newest tick.
+ */
+export async function openEpisode(name: string, tick: number | null = null, follow = false): Promise<void> {
+  const mine = ++opening
+  awaitingLive = false
+  const live = state.live?.current === name
+  setState({ loading: true, error: null, playing: false, hoveredAction: null, following: false })
+  pending = live ? [] : null
   try {
-    const bundle = await loadEpisode(name)
+    let bundle = await loadEpisode(name, 'episodes', undefined, { live })
+    if (mine !== opening) return
+    for (const event of pending ?? []) bundle = applyLiveEvent(bundle, event)
+    pending = null
     const found = tick === null ? -1 : bundle.ticks.findIndex((t) => t.tick === tick)
-    setState({ bundle, loading: false, tickIndex: Math.max(0, found) })
+    setState({
+      bundle,
+      loading: false,
+      tickIndex: live && follow ? Math.max(0, bundle.ticks.length - 1) : Math.max(0, found),
+      following: live && follow,
+      liveOpen: live || name === state.liveOpen ? name : null,
+    })
     writeHash()
   } catch (error) {
+    if (mine !== opening) return
+    pending = null
     setState({ loading: false, error: error instanceof Error ? error.message : String(error) })
   }
 }
 
+/** Follow the live episode: open it if another is open, and put the cursor on its newest tick. */
+export function followLive(): void {
+  const { live, bundle, tour } = state
+  if (!live?.current) {
+    awaitingLive = !!live?.running
+    return
+  }
+  if (tour !== null) endTour()
+  if (bundle?.name !== live.current) {
+    void openEpisode(live.current, null, true)
+    return
+  }
+  setState({ following: true, playing: false, tickIndex: Math.max(0, bundle.ticks.length - 1) })
+  writeHash()
+}
+
+/** How many times the live stream has said hello: every connection, the first and each reconnect. */
+let hellos = 0
+/** Closes the live stream. */
+let stopLive: (() => void) | null = null
+
+function onLiveEvent(event: LiveEvent): void {
+  const { live, bundle, following, liveOpen } = state
+  if (!live) return
+  if (pending && 'name' in event) pending.push(event)
+  if (event.type === 'hello') {
+    hellos += 1
+    setState({ live: { ...live, current: event.current, tick: event.tick, episodes: event.episodes } })
+    // Nothing missed while disconnected is replayed: reload the open live episode instead.
+    if (hellos > 1 && liveOpen && bundle?.name === liveOpen) {
+      void openEpisode(liveOpen, bundle.ticks[state.tickIndex]?.tick ?? null, following)
+    }
+  } else if (event.type === 'start') {
+    setState({ live: { ...live, current: event.name, tick: null } })
+    // A viewer still following the episode that just ended rides on into the next one.
+    if (awaitingLive || (following && liveOpen && bundle?.name === liveOpen && liveOpen !== event.name)) {
+      void openEpisode(event.name, null, true)
+    }
+  } else if (event.type === 'tick') {
+    const patch: Partial<AppState> = {}
+    if (event.name === live.current) patch.live = { ...live, tick: event.trace.tick }
+    if (bundle?.name === event.name) {
+      const next = applyLiveEvent(bundle, event)
+      if (next !== bundle) {
+        patch.bundle = next
+        if (following) patch.tickIndex = next.ticks.length - 1
+      }
+    }
+    setState(patch)
+  } else if (event.type === 'proposals') {
+    if (bundle?.name === event.name) setState({ bundle: applyLiveEvent(bundle, event) })
+  } else if (event.type === 'end') {
+    setState({
+      live: {
+        ...live,
+        current: live.current === event.name ? null : live.current,
+        tick: live.current === event.name ? null : live.tick,
+        episodes: [event.entry, ...live.episodes.filter((e) => e.name !== event.name)],
+      },
+      ...(bundle?.name === event.name ? { bundle: applyLiveEvent(bundle, event) } : {}),
+    })
+    writeHash()
+  } else if (event.type === 'stopped') {
+    setState({ live: { ...live, running: false } })
+    stopLive?.()
+    stopLive = null
+  }
+}
+
+/** Listen to the live events; resolves at the first hello, or after two seconds without one. */
+function connectLive(): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, 2000)
+    stopLive = subscribeLive((event) => {
+      onLiveEvent(event)
+      if (event.type === 'hello') {
+        window.clearTimeout(timer)
+        resolve()
+      }
+    })
+  })
+}
+
 export async function start(): Promise<void> {
   try {
-    const index = await loadIndex()
-    setState({ index })
+    const [loaded, live] = await Promise.all([loadIndex().catch((error: unknown) => error), fetchLiveStatus()])
+    // Live mode can run without shipped recordings; without live mode, the index is required.
+    if (loaded instanceof Error && !live) throw loaded
+    const index: EpisodeIndex = loaded instanceof Error ? { schema_version: 1, episodes: [] } : (loaded as EpisodeIndex)
+    setState({ index, live })
+    if (live?.running) await connectLive()
     const wanted = readHash()
     // A fresh visit lands on the overview; a link without a screen opens the inspector.
-    setState({ screen: wanted.screen ?? (wanted.episode ? 'tick' : 'overview') })
-    const names = index.episodes.map((e) => e.name)
-    const name = wanted.episode && names.includes(wanted.episode) ? wanted.episode : names[0]
+    setState({ screen: wanted.screen ?? (wanted.episode && wanted.episode !== LIVE_HASH ? 'tick' : 'overview') })
+    // While serve is playing, a visit without a link, or with #live, follows the episode in progress;
+    // between two episodes it shows the one that just ended and follows the next when it starts.
+    const wantsLive = !!state.live?.running && (!wanted.episode || wanted.episode === LIVE_HASH)
+    const current = state.live?.current
+    if (wantsLive && current) {
+      await openEpisode(current, null, true)
+      return
+    }
+    const names = mergedEpisodes(index, state.live).map((e) => e.name)
+    const fallback = (wantsLive ? state.live?.episodes[0]?.name : undefined) ?? index.episodes[0]?.name ?? names[0]
+    const name = wanted.episode && names.includes(wanted.episode) ? wanted.episode : fallback
     if (!name) {
       setState({ loading: false, error: 'episodes/index.json lists no episodes.' })
       return
     }
-    await openEpisode(name, wanted.tick)
+    await openEpisode(name, wantsLive ? null : wanted.tick)
+    if (wantsLive && !state.live?.current) awaitingLive = true
   } catch (error) {
     setState({ loading: false, error: error instanceof Error ? error.message : String(error) })
   }
@@ -219,6 +368,12 @@ export function onHashChange(): void {
   const wanted = readHash()
   const { bundle } = state
   if (!wanted.episode) return
+  if (wanted.episode === LIVE_HASH) {
+    const screen = wanted.screen ?? 'overview'
+    if (screen !== state.screen) setState({ screen, hoveredAction: null })
+    if (!state.following) followLive()
+    return
+  }
   const screen = wanted.screen ?? 'tick'
   if (screen !== state.screen) setState({ screen, hoveredAction: null })
   if (!bundle || bundle.name !== wanted.episode) {
@@ -237,7 +392,7 @@ export function onHashChange(): void {
 export function startTour(): void {
   const ticks = state.bundle?.ticks ?? []
   if (ticks.length === 0) return
-  setState({ playing: false, hoveredAction: null, tickIndex: featuredTickIndex(ticks) })
+  setState({ playing: false, following: false, hoveredAction: null, tickIndex: featuredTickIndex(ticks) })
   setTourStep(0)
 }
 
