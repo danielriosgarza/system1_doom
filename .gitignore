@@ -14,5 +14,6 @@ runs/
 *.jsonl
 _vizdoom.ini
 bundles/
+live/
 !web/public/episodes/**/*.jsonl
 !web/src/data/__fixtures__/**/*.jsonl

@@ -593,24 +593,27 @@ def check_bundle(bundle: Path) -> List[str]:
     return problems
 
 
+def index_entry(name: str, meta: EpisodeMeta) -> BundleIndexEntry:
+    """The line `index.json` gives the bundle named `name`."""
+    return BundleIndexEntry(
+        name=name,
+        title=meta.title,
+        scenario=meta.scenario,
+        model=meta.model,
+        seed=meta.seed,
+        cleared=meta.result.cleared,
+        died=meta.result.died,
+        reward=meta.result.reward,
+        ticks=meta.tick_count,
+    )
+
+
 def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
     """Write `index.json` listing every bundle under `episodes_dir`, heuristics first."""
     entries = []
     for meta_path in sorted(episodes_dir.glob("*/episode.json")):
         meta = EpisodeMeta.model_validate_json(meta_path.read_text(encoding="utf-8"))
-        entries.append(
-            BundleIndexEntry(
-                name=meta_path.parent.name,
-                title=meta.title,
-                scenario=meta.scenario,
-                model=meta.model,
-                seed=meta.seed,
-                cleared=meta.result.cleared,
-                died=meta.result.died,
-                reward=meta.result.reward,
-                ticks=meta.tick_count,
-            )
-        )
+        entries.append(index_entry(meta_path.parent.name, meta))
     order = {"heuristics": 0, "best": 1, "latest": 2}
     entries.sort(key=lambda e: (e.scenario, order[e.model], e.seed))
     (episodes_dir / "index.json").write_text(
