@@ -1,6 +1,7 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { EXPLAINERS, type ExplainerContext } from '../content/explainers'
 import { GLOSSARY, type GlossaryEntry, type SeeLink } from '../content/glossary'
+import { CLOSING, INVARIANT, PRINCIPLES } from '../content/principles'
 import type { EpisodeBundle } from '../data/loader'
 import { type DrawerSection, SCREENS, closeDrawer, openDrawer, openPanel, setScreen, useApp } from '../store'
 import { linkTerms } from './Terms'
@@ -175,7 +176,7 @@ function SectionBody({
     case 'glossary':
       return <Glossary ctx={ctx} />
     case 'principles':
-      return <p className="empty-note">The seven principles.</p>
+      return <Principles />
     case 'recording':
       return <p className="empty-note">This recording.</p>
     case 'keys':
@@ -191,7 +192,7 @@ const SORTED = [...GLOSSARY].sort((a, b) => a.term.localeCompare(b.term, 'en', {
 /** Close the drawer and show the place; a link to another tab just switches tab. */
 function goTo(link: SeeLink): void {
   if ('tab' in link) {
-    openDrawer(link.tab)
+    openDrawer(link.tab, link.term ?? null)
     return
   }
   closeDrawer()
@@ -201,7 +202,7 @@ function goTo(link: SeeLink): void {
 
 function seeLabel(link: SeeLink): string {
   if (link.label) return link.label
-  if ('tab' in link) return link.tab
+  if ('tab' in link) return TABS.find((t) => t.id === link.tab)?.label ?? link.tab
   const screen = SCREENS.find((s) => s.id === link.screen)?.label ?? link.screen
   return link.panel ? `${screen} → ${EXPLAINERS[link.panel].title}` : screen
 }
@@ -285,17 +286,49 @@ function GlossaryItem({ entry, ctx, current }: { entry: GlossaryEntry; ctx: Expl
         </p>
       )}
       <p className="gloss-meaning">{linkTerms(entry.meaning, new Set([entry.id]))}</p>
-      <p className="gloss-see">
-        <span className="muted">Where to see it:</span>
-        {entry.see.map((link) => (
-          <button key={seeLabel(link)} type="button" className="link-button" onClick={() => goTo(link)}>
-            {seeLabel(link)} →
-          </button>
-        ))}
-      </p>
+      <SeeLinks links={entry.see} />
       <p className="code-ref">
         In the code: <code>{entry.code}</code>
       </p>
     </article>
+  )
+}
+
+function SeeLinks({ links }: { links: SeeLink[] }) {
+  return (
+    <p className="gloss-see">
+      <span className="muted">Where to see it:</span>
+      {links.map((link) => (
+        <button key={seeLabel(link)} type="button" className="link-button" onClick={() => goTo(link)}>
+          {seeLabel(link)} →
+        </button>
+      ))}
+    </p>
+  )
+}
+
+// ---------------------------------------------------------------------------------------------
+// Principles.
+
+function Principles() {
+  // Each glossary word is linked once on the tab.
+  const seen = new Set<string>()
+  return (
+    <div className="principles">
+      <blockquote className="invariant">
+        <p>“{INVARIANT}”</p>
+        <footer>The one invariant everything else follows from</footer>
+      </blockquote>
+      <ol className="principle-list">
+        {PRINCIPLES.map((p, i) => (
+          <li key={p.principle} data-principle={i + 1}>
+            <h3>{p.principle}</h3>
+            <p>{linkTerms(p.enforced, seen)}</p>
+            <SeeLinks links={p.see} />
+          </li>
+        ))}
+      </ol>
+      <p className="principles-closing">{CLOSING}</p>
+    </div>
   )
 }

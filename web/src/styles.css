@@ -413,7 +413,8 @@ code,
   scroll-margin-top: 70px;
 }
 
-.panel.flash {
+.panel.flash,
+.scrubber.flash {
   animation: flash 1.2s ease-out;
 }
 
@@ -1832,7 +1833,8 @@ code,
     display: none;
   }
 
-  .panel.flash {
+  .panel.flash,
+  .scrubber.flash {
     animation: none;
   }
 }
@@ -3939,4 +3941,53 @@ tr.pinned td {
 
 .term:hover {
   text-decoration-color: var(--text);
+}
+
+.invariant {
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--panel-2);
+}
+
+.invariant p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.invariant footer {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.principle-list {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.principle-list li {
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.principle-list li::marker {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.principle-list h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.principle-list p {
+  margin: 4px 0;
+}
+
+.principles-closing {
+  color: var(--muted);
+  margin: 12px 0 0;
 }

@@ -330,3 +330,22 @@ test('a linked word in an explanation opens its glossary entry', async ({ page }
   await expect(arbiter.locator('.term[data-term="trust-lambda"]')).toBeFocused()
   expect(errors).toEqual([])
 })
+
+test('the principles tab lists seven, and the last one opens the trust map', async ({ page }) => {
+  const errors = collectErrors(page)
+  await page.goto('./#deadly_corridor-learned-9/17')
+  await page.getByRole('button', { name: 'Glossary' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Reference' })
+  await dialog.getByRole('tab', { name: 'Principles' }).click()
+  await expect(dialog.locator('.invariant')).toContainText('bounded decision systems decide')
+  const rows = dialog.locator('[data-principle]')
+  await expect(rows).toHaveCount(7)
+  await rows
+    .nth(6)
+    .getByRole('button', { name: /Trust, situation by situation/ })
+    .click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page).toHaveURL(/\/17\/learning$/)
+  await expect(page.locator('#panel-trustmap')).toHaveClass(/flash/)
+  expect(errors).toEqual([])
+})

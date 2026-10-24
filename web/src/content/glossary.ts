@@ -18,8 +18,11 @@ import {
 import type { DrawerSection, Screen } from '../store'
 import type { ExplainerContext, PanelId } from './explainers'
 
-/** A “where to see it” link: a screen, optionally one of its panels to flash, or another tab of the drawer. */
-export type SeeLink = { label?: string } & ({ screen: Screen; panel?: PanelId } | { tab: DrawerSection })
+/**
+ * A “where to see it” link: a screen, optionally one of its panels to flash, or another tab of the drawer
+ * (for the glossary, optionally at one entry). Without a label, it is named after the screen and panel.
+ */
+export type SeeLink = { label?: string } & ({ screen: Screen; panel?: PanelId } | { tab: DrawerSection; term?: string })
 
 export interface GlossaryEntry {
   id: string
@@ -323,7 +326,7 @@ export const GLOSSARY: GlossaryEntry[] = [
   {
     id: 'learned-networks',
     term: 'learned networks',
-    aliases: ['networks', 'network', 'value network', 'value networks'],
+    aliases: ['networks', 'value network', 'value networks'],
     meaning:
       'Five value networks, one per module (hidden 64), plus the gate network (hidden 32), trained between episodes on the replay buffer with learning rate 0.001. They re-weigh the options by trust λ and g; they never add an option or skip a level.',
     see: [{ screen: 'learning', panel: 'trustmap' }, { screen: 'overview' }],

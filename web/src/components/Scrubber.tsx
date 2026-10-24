@@ -65,7 +65,7 @@ export function Scrubber({
   const hoverEvents = hover === null ? [] : (events[hover] ?? [])
   const current = ticks[tickIndex]
   return (
-    <footer className="scrubber">
+    <footer className="scrubber" id="panel-scrubber">
       <div className="scrubber-inner">
         <div className="transport" role="group" aria-label="Playback">
           <button type="button" onClick={() => setTickIndex(0)} aria-label="First tick" title="First tick (Home)">
