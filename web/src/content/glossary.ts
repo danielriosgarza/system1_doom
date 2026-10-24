@@ -377,7 +377,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     code: 'arbiter.py · FinalArbiter.arbitrate',
     now: ({ tick }) => {
       const rule = tick.arbiter?.pick_rule
-      return rule ? `This tick: ${PICK_RULES[rule] ?? rule}.` : 'This trace has no pick rule.'
+      return rule ? `This tick the rule was ${PICK_RULES[rule] ?? rule}.` : 'This trace has no pick rule.'
     },
   },
   {

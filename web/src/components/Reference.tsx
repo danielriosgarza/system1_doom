@@ -3,6 +3,7 @@ import { EXPLAINERS, type ExplainerContext } from '../content/explainers'
 import { GLOSSARY, type GlossaryEntry, type SeeLink } from '../content/glossary'
 import type { EpisodeBundle } from '../data/loader'
 import { type DrawerSection, SCREENS, closeDrawer, openDrawer, openPanel, setScreen, useApp } from '../store'
+import { linkTerms } from './Terms'
 
 const TABS: Array<{ id: DrawerSection; label: string }> = [
   { id: 'glossary', label: 'Glossary' },
@@ -234,8 +235,7 @@ function Glossary({ ctx }: { ctx: ExplainerContext }) {
     if (!term) return
     const el = document.getElementById(`term-${term}`)
     if (!el) return
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' })
+    el.scrollIntoView({ block: 'start' })
     el.focus({ preventScroll: true })
     el.classList.remove('flash')
     void el.offsetWidth
@@ -284,7 +284,7 @@ function GlossaryItem({ entry, ctx, current }: { entry: GlossaryEntry; ctx: Expl
           <span className="gloss-now-label">Tick {ctx.tick.tick}</span> {entry.now(ctx)}
         </p>
       )}
-      <p className="gloss-meaning">{entry.meaning}</p>
+      <p className="gloss-meaning">{linkTerms(entry.meaning, new Set([entry.id]))}</p>
       <p className="gloss-see">
         <span className="muted">Where to see it:</span>
         {entry.see.map((link) => (

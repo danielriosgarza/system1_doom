@@ -1,6 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { Fragment, type ReactNode, createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { linkTerms } from '../components/Terms'
 import { EXPLAINERS } from './explainers'
 import { GLOSSARY } from './glossary'
 
@@ -46,5 +49,36 @@ describe('the glossary', () => {
       expect([...word].length, word).toBeGreaterThan(1)
       expect(word).not.toBe('gate')
     }
+  })
+})
+
+describe('linkTerms', () => {
+  const html = (nodes: ReactNode[]) => renderToStaticMarkup(createElement(Fragment, null, ...nodes))
+  const links = (markup: string) =>
+    [...markup.matchAll(/data-term="([^"]+)"[^>]*>([^<]*)</g)].map((m) => [m[1], m[2]] as const)
+
+  it('links whole words, longest first, each entry once', () => {
+    const markup = html(
+      linkTerms('The arbiter blends the gate share g with trust λ; the ticket is not a tick.', new Set()),
+    )
+    expect(links(markup)).toEqual([
+      ['arbiter', 'arbiter'],
+      ['gate-network', 'gate share'],
+      ['trust-lambda', 'trust λ'],
+      ['tick', 'tick'],
+    ])
+    expect(markup).toContain('the ticket is not a <span')
+    expect(markup).not.toMatch(/data-term="[^"]+"[^>]*>g</)
+  })
+
+  it('never links a bare “gate”, and links a term once across paragraphs sharing a set', () => {
+    const seen = new Set<string>()
+    expect(links(html(linkTerms('The gate rejected it; the arbiter moved on.', seen)))).toEqual([
+      ['arbiter', 'arbiter'],
+    ])
+    expect(links(html(linkTerms('The Arbiter, again, and the admission gate.', seen)))).toEqual([
+      ['admission-gate', 'admission gate'],
+    ])
+    expect([...seen]).toEqual(['arbiter', 'admission-gate'])
   })
 })
