@@ -81,4 +81,12 @@ describe('linkTerms', () => {
     ])
     expect([...seen]).toEqual(['arbiter', 'admission-gate'])
   })
+
+  it('links a word at the very start and words one character apart', () => {
+    expect(links(html(linkTerms('Tick/arbiter', new Set())))).toEqual([
+      ['tick', 'Tick'],
+      ['arbiter', 'arbiter'],
+    ])
+    expect(html(linkTerms('Tick/arbiter', new Set()))).toMatch(/<\/span>\/<span/)
+  })
 })

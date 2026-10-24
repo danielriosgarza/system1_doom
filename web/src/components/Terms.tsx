@@ -9,9 +9,12 @@ const WORDS = GLOSSARY.flatMap((e) =>
   [e.term, ...e.aliases].map((word) => ({ word: word.toLowerCase(), id: e.id })),
 ).sort((a, b) => b.word.length - a.word.length)
 const OWNER = new Map(WORDS.map((w) => [w.word, w.id]))
-/** Whole words only: no letter, digit or underscore either side. Unicode-aware, since λ is not a \w to \b. */
+/**
+ * Whole words only: no letter, digit or underscore either side. Unicode-aware, since λ is not a \w to \b.
+ * The character before is matched as a group rather than a lookbehind, which Safari only has from 16.4.
+ */
 const PATTERN = new RegExp(
-  `(?<![\\p{L}\\p{N}_])(?:${WORDS.map((w) => escape(w.word)).join('|')})(?![\\p{L}\\p{N}_])`,
+  `(^|[^\\p{L}\\p{N}_])(${WORDS.map((w) => escape(w.word)).join('|')})(?![\\p{L}\\p{N}_])`,
   'giu',
 )
 
@@ -23,12 +26,14 @@ export function linkTerms(text: string, seen: Set<string>): ReactNode[] {
   const out: ReactNode[] = []
   let at = 0
   for (const match of text.matchAll(PATTERN)) {
-    const id = OWNER.get(match[0].toLowerCase())
+    const word = match[2] ?? ''
+    const start = match.index + (match[1] ?? '').length
+    const id = OWNER.get(word.toLowerCase())
     if (!id || seen.has(id)) continue
     seen.add(id)
-    if (match.index > at) out.push(text.slice(at, match.index))
-    out.push(<TermLink key={`${id}-${match.index}`} id={id} text={match[0]} />)
-    at = match.index + match[0].length
+    if (start > at) out.push(text.slice(at, start))
+    out.push(<TermLink key={`${id}-${start}`} id={id} text={word} />)
+    at = start + word.length
   }
   if (at < text.length) out.push(text.slice(at))
   return out
