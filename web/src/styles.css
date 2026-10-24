@@ -3991,3 +3991,91 @@ tr.pinned td {
   color: var(--muted);
   margin: 12px 0 0;
 }
+
+.provenance h4 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.prov-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.prov-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 12px;
+  margin: 0;
+}
+
+.prov-list dt {
+  color: var(--muted);
+}
+
+.prov-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.provenance .brains {
+  margin: 0;
+}
+
+.prov-modules,
+.prov-files,
+.prov-others {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prov-modules li,
+.prov-others li {
+  margin: 0 0 5px;
+}
+
+.prov-modules .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.prov-files li {
+  margin: 0 0 2px;
+}
+
+.command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 8px;
+  margin: 6px 0 10px;
+}
+
+.command pre {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.command-status {
+  flex-basis: 100%;
+  font-size: 12.5px;
+}
+
+.command-status:empty {
+  display: none;
+}

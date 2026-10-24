@@ -1379,3 +1379,45 @@ export function tickRange(ticks: number[]): string {
   if (last - first === ticks.length - 1) return `${first} to ${last}`
   return `${ticks.slice(0, -1).join(', ')} and ${last}`
 }
+
+// ---------------------------------------------------------------------------------------------
+// Provenance: how a recording was made, and the command that makes it again (export.py).
+
+/** export.py's --max-ticks default. */
+export const EXPORT_MAX_TICKS = 500
+
+/** The command that recorded this bundle: the flags that differ from the defaults, and nothing else. */
+export function exportCommand(meta: EpisodeMeta): string {
+  const parts = [
+    'python -m system1_doom.export',
+    `--scenario ${meta.scenario}`,
+    `--seed ${meta.seed}`,
+    `--model ${meta.model}`,
+    `--out web/public/episodes/${meta.name}`,
+  ]
+  if (meta.config.deterministic_arbiter) parts.push('--deterministic')
+  if (meta.brains.d1_ultra) parts.push('--d1')
+  if (meta.brains.slow_path === 'codex') parts.push('--codex')
+  if (meta.brains.slow_path === 'off') parts.push('--no-slow-path')
+  if (meta.config.max_ticks !== EXPORT_MAX_TICKS) parts.push(`--max-ticks ${meta.config.max_ticks}`)
+  return parts.join(' ')
+}
+
+/** Rebuilds episodes/index.json after a recording is added. */
+export const INDEX_COMMAND = 'python -m system1_doom.export --index web/public/episodes'
+
+export const BRAIN_WORDS: Record<EpisodeMeta['model'], string> = {
+  heuristics: 'heuristics only',
+  latest: 'the latest checkpoint',
+  best: 'the best checkpoint',
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "24 Oct 2026, 11:52 UTC" from an ISO time; the text itself when it does not parse. */
+export function utcStamp(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`
+}

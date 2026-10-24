@@ -349,3 +349,23 @@ test('the principles tab lists seven, and the last one opens the trust map', asy
   await expect(page.locator('#panel-trustmap')).toHaveClass(/flash/)
   expect(errors).toEqual([])
 })
+
+test('the ⓘ button says how each recording was made and how to make it again', async ({ page }) => {
+  const errors = collectErrors(page)
+  await page.goto('./#deadly_corridor-learned-9/17')
+  await page.getByRole('button', { name: 'About this recording' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Reference' })
+  await expect(dialog.getByRole('tab', { name: 'This recording' })).toHaveAttribute('aria-selected', 'true')
+  await expect(dialog).toContainText('seed 9')
+  const checkpoint = dialog.getByTestId('checkpoint')
+  await expect(checkpoint).toContainText('300')
+  await expect(checkpoint).toContainText('25,204')
+  await expect(dialog.locator('.command code').first()).toContainText('--model latest')
+  await expect(dialog.locator('[data-module]')).toHaveCount(5)
+
+  await dialog.getByRole('button', { name: /heuristics only, seed 9, at tick 17/ }).click()
+  await expect(page).toHaveURL(/#deadly_corridor-heuristics-9\/17$/)
+  await expect(dialog.getByTestId('checkpoint')).toContainText('the heuristics played alone')
+  await expect(dialog.locator('.command code').first()).toContainText('--model heuristics')
+  expect(errors).toEqual([])
+})

@@ -4,6 +4,7 @@ import { GLOSSARY, type GlossaryEntry, type SeeLink } from '../content/glossary'
 import { CLOSING, INVARIANT, PRINCIPLES } from '../content/principles'
 import type { EpisodeBundle } from '../data/loader'
 import { type DrawerSection, SCREENS, closeDrawer, openDrawer, openPanel, setScreen, useApp } from '../store'
+import { Provenance } from './Provenance'
 import { linkTerms } from './Terms'
 
 const TABS: Array<{ id: DrawerSection; label: string }> = [
@@ -171,14 +172,13 @@ function SectionBody({
   bundle: EpisodeBundle
   ctx: ExplainerContext
 }): ReactNode {
-  void bundle
   switch (section) {
     case 'glossary':
       return <Glossary ctx={ctx} />
     case 'principles':
       return <Principles />
     case 'recording':
-      return <p className="empty-note">This recording.</p>
+      return <Provenance bundle={bundle} tick={ctx.tick} />
     case 'keys':
       return <p className="empty-note">The keys.</p>
   }

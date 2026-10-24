@@ -1,46 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Architecture } from '../components/Architecture'
+import { Brains } from '../components/Brains'
 import { BOXES, type BoxId } from '../content/architecture'
 import { ExplainerBody } from '../components/Panel'
 import { EXPLAINERS, type ExplainerContext, STORY } from '../content/explainers'
-import { fmt, pct } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
-import type { EpisodeMeta, TickTrace } from '../schema/bundle'
-import { type Screen, openInInspector, openPanel, setScreen, startTour, useApp } from '../store'
-
-/** Which deciders were switched on for this recording. */
-function Brains({ meta }: { meta: EpisodeMeta }) {
-  const checkpoint = meta.checkpoint
-  return (
-    <div className="brains" aria-label="Which deciders were switched on">
-      <span className="brain on">
-        <span className="dot" /> Hand-written heuristics
-      </span>
-      <span className={`brain ${meta.brains.learned_networks ? 'on' : ''}`}>
-        <span className="dot" />
-        {meta.brains.learned_networks && checkpoint
-          ? `Learned networks: ${checkpoint.episodes} training episodes, earned ${pct(checkpoint.network_share)} of the say`
-          : 'Learned networks: off'}
-      </span>
-      <span className={`brain ${meta.brains.d1_ultra ? 'on' : ''}`}>
-        <span className="dot" /> d1-ultra advice: {meta.brains.d1_ultra ? 'on' : 'off'}
-      </span>
-      <span className={`brain ${meta.brains.slow_path !== 'off' ? 'on' : ''}`}>
-        <span className="dot" /> Slow path:{' '}
-        {meta.brains.slow_path === 'templates'
-          ? 'fallback templates'
-          : meta.brains.slow_path === 'codex'
-            ? 'Codex'
-            : 'off'}
-      </span>
-      <span className="brain">
-        {meta.scenario.replace('.cfg', '').replaceAll('_', ' ')}, seed {meta.seed}:{' '}
-        {meta.result.cleared ? 'cleared' : meta.result.died ? 'died' : 'survived'} after {meta.tick_count} ticks, reward{' '}
-        {fmt(meta.result.reward, 0)}
-      </span>
-    </div>
-  )
-}
+import type { TickTrace } from '../schema/bundle'
+import { type Screen, openDrawer, openInInspector, openPanel, setScreen, startTour, useApp } from '../store'
 
 /** Where the fast path sits across the diagram, as a fraction of its width. */
 const FAST_PATH_CENTRE = 560 / 1130
@@ -93,7 +59,11 @@ export function Overview({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: T
         <p className="story-line">
           <strong>{STORY.sentence}</strong> {STORY.invariant}
         </p>
-        <Brains meta={bundle.meta} />
+        <Brains meta={bundle.meta}>
+          <button type="button" className="link-button" onClick={() => openDrawer('recording')}>
+            About this recording →
+          </button>
+        </Brains>
         <div className="intro-actions">
           <button type="button" className="primary-button" onClick={startTour}>
             {tourSeen ? 'Take the tour again' : 'Take the tour'}
