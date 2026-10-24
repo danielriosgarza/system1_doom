@@ -992,8 +992,28 @@ drift apart. `--check` validates a bundle against the models and checks
 that every tick has a frame; `--index DIR` writes `DIR/index.json`, the
 list the app's episode picker reads.
 
-The app (`web/`, see `web/README.md`) shows, for the tick under the
-timeline cursor: the frame with enemy/pickup boxes, the ±12° aim band and
+The app (`web/`, see `web/README.md`) has three screens over one shared
+timeline, picked from tabs in the top bar. The URL hash is
+`#<episode>/<tick>/<screen>`; a link without a screen opens the tick
+inspector, and a fresh visit opens the overview.
+
+**Overview** is the whole controller on one diagram: the six-beat fast
+path down the middle (freeze the world, shorten the menu, five opinions,
+one decision, act, see and remember), the slow path on the right (a
+module asks, the slow worker writes, the admission gate, the macro joins
+the menu), learning on the left (five rewards, the replay buffer, the
+learned networks with their trust λ and gate share g), the bounded
+simulator, the strategy archive and d1-ultra. Every box shows the current
+tick's number and opens its explanation; the slow-path boxes light while
+a request is in flight or a proposal arrives; dashed arrows are learned,
+dotted ones d1-ultra. During playback a pulse runs down the fast path
+once per tick (not under reduced motion). The **tour** walks the six
+beats on the inspector over a featured tick (the first kill with an
+enemy in view, else the first tick with one), one coach mark per beat
+naming the invariant it shows, then ends on the hierarchy.
+
+**Tick** (the inspector) shows, for the tick under the timeline cursor:
+the frame with enemy/pickup boxes, the ±12° aim band and
 wall-distance arcs drawn from the trace; the world state and its five
 context buckets; the menu (legal, pruned with the failed precondition,
 and macros admitted during the episode); the simulator's projections and
@@ -1002,8 +1022,21 @@ into heuristic (solid) and learned (hatched, by trust λ) shares; the
 arbiter's score for each action stacked from its parts, the table and
 gate module-weight rings, and the pick rule in words; the motor's steps
 in words, with reflexes marked; and the outcome, its five module rewards
-and where it is filed. A Plain/Formula toggle hides or shows the
-arithmetic. Two demo bundles ship in `web/public/episodes/`.
+and where it is filed.
+
+**Hierarchy** draws the same tick as a tower of six levels, slowest at
+the top, each as the same decision card (its menu, a score per option,
+the rule that chose, its bounds, what it reads and writes): growing the
+menu (the admission gate's five stages, or the macros admitted so far),
+steering (the archive's four-way choice, decided after the action with
+that tick's pressure, and the 12 archive slots), the menu (legal and
+pruned), the five opinions, the arbiter's decision, and the motor's
+steps. Side cards feed the levels with drawn connectors: exploration
+pressure (its four terms, the dampers and the clamp, recomputed from
+`exploration_state` — the arbiter of tick t uses the state left by tick
+t − 1), d1-ultra, the learned networks and the simulator. A
+Plain/Formula toggle hides or shows the arithmetic on every screen. Two
+demo bundles ship in `web/public/episodes/`.
 
 ---
 

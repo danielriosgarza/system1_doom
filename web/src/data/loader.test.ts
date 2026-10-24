@@ -36,10 +36,10 @@ describe('loadEpisode', () => {
   it('reads the meta, every tick in order, and the proposals', async () => {
     const bundle = await loadEpisode('mini', 'episodes', diskFetcher())
     expect(bundle.meta.schema_version).toBe(1)
-    expect(bundle.ticks.map((t) => t.tick)).toEqual([0, 4, 17, 18, 22])
+    expect(bundle.ticks.map((t) => t.tick)).toEqual([0, 2, 4, 17, 18, 22])
     expect(bundle.proposals).toHaveLength(2)
     expect(bundle.proposals.every((p) => p.admission_decision && p.source === 'template')).toBe(true)
-    const tick = bundle.ticks[1]
+    const tick = bundle.ticks[2]
     expect(tick?.arbiter?.pick_rule).toBe('committed')
     expect(tick?.state?.screen_width).toBe(320)
   })
@@ -63,7 +63,7 @@ describe('loadEpisode', () => {
   it('refuses a bundle whose tick count disagrees with its meta', async () => {
     const ticks = await readFile(`${FIXTURES}episodes/mini/ticks.jsonl`, 'utf8')
     const fetcher = diskFetcher({ 'episodes/mini/ticks.jsonl': ticks.split('\n').slice(0, 2).join('\n') })
-    await expect(loadEpisode('mini', 'episodes', fetcher)).rejects.toThrow(/has 2 ticks, but episode.json says 5/)
+    await expect(loadEpisode('mini', 'episodes', fetcher)).rejects.toThrow(/has 2 ticks, but episode.json says 6/)
   })
 
   it('reports a missing bundle by URL', async () => {

@@ -1,5 +1,5 @@
 import { type ReactNode, useId, useState } from 'react'
-import { BOUNDS, EXPLAINERS, type ExplainerContext, type PanelId } from '../content/explainers'
+import { BOUNDS, EXPLAINERS, type ExplainerContext, type ExplainerId, type PanelId } from '../content/explainers'
 import { useApp } from '../store'
 
 interface PanelProps {
@@ -13,7 +13,6 @@ interface PanelProps {
 export function Panel({ id, ctx, bounds = [], children }: PanelProps) {
   const explainer = EXPLAINERS[id]
   const [open, setOpen] = useState(false)
-  const [bound, setBound] = useState<string | null>(null)
   const headingId = useId()
   const bodyId = useId()
   return (
@@ -42,31 +41,40 @@ export function Panel({ id, ctx, bounds = [], children }: PanelProps) {
         </button>
       </header>
       <p className="sentence">{explainer.sentence}</p>
-      {bounds.length > 0 && (
-        <div className="bounds" aria-label="Hard limits on this level">
-          <span className="bounds-label">Bounds</span>
-          {bounds.map((b) => (
-            <button
-              key={b}
-              type="button"
-              className="bound"
-              aria-expanded={bound === b}
-              title="A hard limit; click for why it exists"
-              onClick={() => setBound(bound === b ? null : b)}
-            >
-              {b}
-            </button>
-          ))}
-        </div>
-      )}
-      {bound && <p className="bound-note">{BOUNDS[bound] ?? bound}</p>}
+      <BoundBadges bounds={bounds} />
       {open && <ExplainerBody id={id} bodyId={bodyId} ctx={ctx} />}
       {children}
     </section>
   )
 }
 
-export function ExplainerBody({ id, bodyId, ctx }: { id: PanelId; bodyId: string; ctx: ExplainerContext | null }) {
+/** Bound badges; clicking one says why that limit exists. */
+export function BoundBadges({ bounds }: { bounds: string[] }) {
+  const [bound, setBound] = useState<string | null>(null)
+  if (bounds.length === 0) return null
+  return (
+    <>
+      <div className="bounds" aria-label="Hard limits on this level">
+        <span className="bounds-label">Bounds</span>
+        {bounds.map((b) => (
+          <button
+            key={b}
+            type="button"
+            className="bound"
+            aria-expanded={bound === b}
+            title="A hard limit; click for why it exists"
+            onClick={() => setBound(bound === b ? null : b)}
+          >
+            {b}
+          </button>
+        ))}
+      </div>
+      {bound && <p className="bound-note">{BOUNDS[bound] ?? bound}</p>}
+    </>
+  )
+}
+
+export function ExplainerBody({ id, bodyId, ctx }: { id: ExplainerId; bodyId?: string; ctx: ExplainerContext | null }) {
   const explainer = EXPLAINERS[id]
   const depth = useApp((s) => s.depth)
   const lines = depth === 'formula' && ctx && explainer.substitute ? explainer.substitute(ctx) : []

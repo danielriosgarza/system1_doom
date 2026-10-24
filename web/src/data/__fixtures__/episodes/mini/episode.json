@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "name": "mini",
- "title": "Fixture: five ticks from deadly corridor, heuristics, seed 9",
+ "title": "Fixture: six ticks from deadly corridor, heuristics, seed 9",
  "scenario": "deadly_corridor.cfg",
  "seed": 9,
  "model": "heuristics",
@@ -72,7 +72,7 @@
  },
  "first_tick": 0,
  "last_tick": 22,
- "tick_count": 5,
+ "tick_count": 6,
  "buttons": [
   "MOVE_LEFT",
   "MOVE_RIGHT",

@@ -1,11 +1,19 @@
 // The copy for every panel's three-layer explainer: one sentence, a paragraph, and the formula
 // with the current tick's numbers substituted. Constants are the controller's own (see derive.ts).
-import type { EpisodeMeta, TickTrace } from '../schema/bundle'
+import type { EpisodeMeta, ProposalTrace, TickTrace } from '../schema/bundle'
 import {
   AIM_BAND_DEG,
+  ARCHIVE_ALPHA,
+  ARCHIVE_SLOTS,
+  BASE_TEMPERATURE,
   MODULES,
   MODULE_TEMPERATURE,
   NEAR_WALL,
+  PRESSURE_FLOOR,
+  SAMPLE_MARGIN,
+  SAMPLE_PRESSURE,
+  STEERING_CHOICES,
+  STRATEGY_BONUS,
   TRUST_COUNT,
   aimBandHalfWidth,
   contextBuckets,
@@ -13,10 +21,14 @@ import {
   fmt,
   gameSeconds,
   holdFor,
+  learning,
   moduleVoteParts,
   pct,
+  pressureReading,
+  prettyId,
   rankedActions,
   signed,
+  slowPathAt,
 } from '../data/derive'
 
 /** A number inside arithmetic: negatives in parentheses with a true minus sign. */
@@ -25,8 +37,23 @@ function term(value: number, digits = 2): string {
   return value < 0 && text !== fmt(0, digits) ? `(−${text})` : text
 }
 
+/** The inspector's panels; each is also an element id, `#panel-<id>`. */
 export type PanelId =
   'scrubber' | 'game' | 'world' | 'legal' | 'projection' | 'modules' | 'arbiter' | 'motor' | 'outcome'
+
+/** Everything with an explainer: the panels, plus the boxes of the overview and the hierarchy. */
+export type ExplainerId =
+  | PanelId
+  | 'request'
+  | 'worker'
+  | 'gate'
+  | 'rewards'
+  | 'replay'
+  | 'networks'
+  | 'trust'
+  | 'steering'
+  | 'exploration'
+  | 'd1'
 
 export interface FormulaLine {
   /** What the line computes, in words. */
@@ -42,6 +69,9 @@ export interface ExplainerContext {
   meta: EpisodeMeta
   /** The action the viewer is pointing at, or the selected one. */
   focus: string
+  /** The tick before, whose closing exploration state this tick's arbiter used; null on the first. */
+  prev: TickTrace | null
+  proposals: ProposalTrace[]
 }
 
 export interface Explainer {
@@ -74,7 +104,7 @@ export const STORY = {
     'Step through the episode with ← and → (Shift for ten) or press play; hover any bar or chip for its numbers; press ? on a panel for the full explanation; switch Depth to Formula for this tick\u2019s arithmetic.',
 }
 
-export const EXPLAINERS: Record<PanelId, Explainer> = {
+export const EXPLAINERS: Record<ExplainerId, Explainer> = {
   scrubber: {
     title: 'Timeline',
     sentence:
@@ -395,6 +425,211 @@ export const EXPLAINERS: Record<PanelId, Explainer> = {
     },
     code: 'controller.py · step (bookkeeping), features.py · module_rewards',
   },
+  request: {
+    title: 'A module asks',
+    sentence:
+      "When a module's own memory shows a concrete, repeated failure, it asks the slow path for a new macro; the tick does not wait for an answer.",
+    paragraphs: [
+      'Each module keeps a few counters: damage streaks, failed steps, stalls, ticks without progress. Crossing its threshold (for survival, damage on 4 ticks in a row, or health under 35 under heavy fire) makes the module describe its problem in one sentence and hand it to the slow worker.',
+      'Only one request can be in flight. While the worker is busy, further requests are dropped and the module asks again on a later tick.',
+    ],
+    substitute: ({ tick }) => {
+      const request = tick.slow_path_request
+      return request
+        ? [{ label: `${request.module} asked`, expr: request.description, result: 'sent to the worker' }]
+        : [
+            {
+              label: 'this tick',
+              expr: 'no module crossed its threshold, or the worker was busy',
+              result: 'no request',
+            },
+          ]
+    },
+    code: 'modules.py · check_expansion_needed; controller.py · step',
+  },
+  worker: {
+    title: 'The slow worker',
+    sentence:
+      'Outside the real-time loop, a worker turns the problem into a proposed macro: a named, fixed sequence of primitives with preconditions.',
+    paragraphs: [
+      'In these recordings the worker uses its fallback templates, hand-written macro patterns filled in for the module that asked. With Codex switched on, a language model writes the proposal instead. Either way the result is only text until the admission gate accepts it.',
+      'The worker has 20 seconds per proposal and works on one at a time. The controller keeps deciding every tick meanwhile; the finished proposal is picked up at the start of a later tick.',
+    ],
+    code: 'llm_worker.py · SlowLLMWorker',
+  },
+  gate: {
+    title: 'The admission gate',
+    sentence: 'Five checks decide whether a proposed macro may join the menu: parse, legality, sandbox, d1 and admit.',
+    paragraphs: [
+      'Parse: the text must be a well-formed proposal. Legality: a new id, known primitives only, at most 16 steps and no more than its own maximum duration. Sandbox: the bounded simulator rolls the macro out, and it fails if the rollout predicts death from a state that was not already critical. d1: when d1-ultra is on it is asked whether the macro is worth adding; it is off here, so the stage is skipped. Admit: the macro is registered in the vocabulary and a matching strategy is added to the archive.',
+      'A failed stage stops the proposal and nothing changes. An admitted macro is scored like any other action from then on, and the only way it is used is by winning the same arbiter as everything else.',
+    ],
+    formula: 'admitted = parse ∧ legality ∧ sandbox ∧ (d1 or skipped) → admit',
+    substitute: ({ tick, proposals }) => {
+      const arrived = slowPathAt(tick, proposals).arrived
+      if (arrived.length === 0) return [{ label: 'this tick', expr: 'no proposal reached the gate', result: 'idle' }]
+      return arrived.flatMap((p) =>
+        (p.stage_results ?? []).map((s) => ({
+          label: s.stage,
+          expr: s.reason ?? '',
+          result: s.skipped ? 'skipped' : s.passed ? 'passed' : 'failed',
+        })),
+      )
+    },
+    code: 'admission.py · ProposalAdmissionPipeline.evaluate_and_admit',
+  },
+  rewards: {
+    title: 'Five rewards',
+    sentence:
+      "Every outcome is split into five rewards, one per module, so each module's network learns its own question.",
+    paragraphs: [
+      'Survival is paid for avoiding damage and death, combat for hits and kills, navigation for new ground, resource for pickups, and goal is the scenario’s own reward. A module is never trained on another module’s question.',
+    ],
+    formula:
+      'survival = −damage ÷ 25 − 3·died;  combat = 0.5·hits + 2·kills;  navigation = new cells;  resource = health ÷ 25 + armor ÷ 25 + ammo ÷ 10;  goal = reward',
+    substitute: ({ tick }) =>
+      MODULES.map((m) => ({ label: m, expr: 'this tick', result: fmt(tick.outcome?.module_rewards?.[m] ?? 0, 2) })),
+    code: 'features.py · module_rewards',
+  },
+  replay: {
+    title: 'Replay buffer',
+    sentence:
+      'During training every decision is stored with its five rewards; the networks learn from this buffer between episodes, never inside a tick.',
+    paragraphs: [
+      'The buffer keeps the latest 100,000 decisions. Because training happens only between episodes, the time a tick takes never depends on learning.',
+      'Replays like the ones in this app only read the trained networks; they add nothing to the buffer.',
+    ],
+    code: 'learning.py · ReplayBuffer, Learner.train',
+  },
+  networks: {
+    title: 'Learned networks',
+    sentence:
+      "Small networks learn each module's value for each action, and a gate network learns how far to trust each module; both only re-weigh what is already on the menu.",
+    paragraphs: [
+      `A module's learned value is blended with its heuristic score in proportion to trust, λ = n ÷ (n + ${TRUST_COUNT}), where n counts how often the action was tried in this kind of situation. The gate network proposes module weights for the arbiter; they are blended with the hand-written table by the gate's own trust, g.`,
+      'Neither network can add an action, remove one or skip a level. With no checkpoint loaded every bar is heuristic, and the controller plays exactly as it did before learning existed.',
+    ],
+    formula: `λ = n ÷ (n + ${TRUST_COUNT});  w = (1 − g)·w_table + g·w_gate`,
+    substitute: ({ tick, meta }) => {
+      if (!meta.brains.learned_networks) return [{ label: 'this episode', expr: 'no checkpoint loaded', result: 'off' }]
+      const view = learning(tick)
+      const lambda = view.network_share ?? 0
+      return [
+        {
+          label: `trust in the networks for ${prettyId(tick.selected_action)}`,
+          expr:
+            lambda < 1 ? `n ≈ ${fmt((TRUST_COUNT * lambda) / (1 - lambda), 0)}, so λ = n ÷ (n + ${TRUST_COUNT})` : 'λ',
+          result: fmt(lambda, 3),
+        },
+        { label: 'gate share g', expr: 'trust of the gate network here', result: fmt(view.gate_share ?? 0, 3) },
+      ]
+    },
+    code: 'learning.py · Learner',
+  },
+  trust: {
+    title: 'Trust λ',
+    sentence:
+      "Trust is how much of a module's score its network may set, earned by experience in this kind of situation.",
+    paragraphs: [
+      `λ = n ÷ (n + ${TRUST_COUNT}): an action tried ${TRUST_COUNT} times in this context gives the network half the say; ${3 * TRUST_COUNT} times, three quarters. A situation the networks have never met is decided by the heuristics alone.`,
+      'Trust is kept per situation and action, so the networks can be sure of themselves in a familiar corridor and silent in a new room.',
+    ],
+    formula: `λ = n ÷ (n + ${TRUST_COUNT})`,
+    substitute: ({ tick, meta }) => {
+      if (!meta.brains.learned_networks)
+        return [{ label: 'this episode', expr: 'no checkpoint loaded', result: 'λ = 0' }]
+      const lambda = learning(tick).network_share ?? 0
+      const n = lambda < 1 ? (TRUST_COUNT * lambda) / (1 - lambda) : Infinity
+      return [
+        {
+          label: prettyId(tick.selected_action),
+          expr: `${fmt(n, 0)} ÷ (${fmt(n, 0)} + ${TRUST_COUNT})`,
+          result: fmt(lambda, 3),
+        },
+      ]
+    },
+    code: 'learning.py · Learner.action_trust',
+  },
+  steering: {
+    title: 'Steering',
+    sentence:
+      'After each action, a four-way choice about strategy: keep the current one, switch to a stored one, vary it, or ask for a new one.',
+    paragraphs: [
+      `The strategy archive holds at most ${ARCHIVE_SLOTS} strategies, each a short sequence of actions with a running reward and success rate, both updated as ${fmt(1 - ARCHIVE_ALPHA, 1)} × old + ${fmt(ARCHIVE_ALPHA, 1)} × this outcome. A step counts as a failure when it costs more than 8 health or the player dies. Actions in the active strategy's sequence get a ${STRATEGY_BONUS} bonus in the arbiter's score.`,
+      "The choice is made after the action has run, with the exploration pressure that tick produced, so the strategy it settles on applies to the next tick's arbiter. When the archive is full, a new strategy evicts the stored one that is not active and has the lowest observed reward + 5 × success rate.",
+    ],
+    formula: STEERING_CHOICES.map((c) => `${c.label} = ${c.formula}`).join(';  '),
+    substitute: ({ tick }) => {
+      const s = tick.steering
+      if (!s) return []
+      const next = exploration(tick)
+      const entry = s.entries?.find((e) => e.strategy_id === s.active_before)
+      const failures = next.recent_failures ?? 0
+      const pressure = next.exploration_pressure ?? 0
+      const values: Record<string, string> = {
+        continue_current_strategy: `1.2 × ${fmt(entry?.success_rate ?? 0, 3)} − 0.35 × ${failures}`,
+        switch_to_archived_strategy: `0.4 + 0.25 × ${failures} + 0.3 × ${fmt(pressure, 3)}`,
+        explore_variation: `0.3 + 0.7 × ${fmt(pressure, 3)}`,
+        request_new_strategy_proposal: `0.2 + ${failures >= 3 ? '0.9' : '0'} + 0.4 × ${fmt(pressure, 3)}`,
+      }
+      return STEERING_CHOICES.map((c) => ({
+        label: `${c.label}${c.id === s.choice ? ' (chosen)' : ''}`,
+        expr: `${values[c.id]} = ${fmt(s.scores?.[c.id] ?? 0, 3)}`,
+        result: pct(s.probabilities?.[c.id] ?? 0, 1),
+      }))
+    },
+    code: 'archive.py · StrategyArchive.decide_strategy_action, admit_strategy',
+  },
+  exploration: {
+    title: 'Exploration pressure',
+    sentence:
+      'One number between 0.02 and 1 that says how far the arbiter may stray from its best guess, recomputed after every action.',
+    paragraphs: [
+      'Four quarter-terms add up: uncertainty (how unsure the modules were), failures (recent failed steps), plateau (no progress for a while) and novelty (how new this situation is). Each is at most 0.25.',
+      'Three dampers can cut the sum: steady progress multiplies it by 0.55, a risky moment (health 30 or less, or heavy fire with an enemy in view) by 0.35, and a kill or full armor just now by 0.25. The result is clamped to [0.02, 1].',
+      `Pressure sets the arbiter's softmax temperature, ${fmt(BASE_TEMPERATURE, 2)} + pressure, and scales its exploration and novelty bonuses. It also gates sampling: the arbiter draws from the softmax instead of taking the top score only when the top two are within ${SAMPLE_MARGIN} and pressure is at least ${SAMPLE_PRESSURE}. Because it is computed after each action, a tick's arbiter uses the value from the end of the tick before.`,
+    ],
+    formula: `pressure = clamp((uncertainty + failures + plateau + novelty) × dampers, ${PRESSURE_FLOOR}, 1);  temperature = ${fmt(BASE_TEMPERATURE, 2)} + pressure`,
+    substitute: ({ prev }) => {
+      const r = pressureReading(prev ? exploration(prev) : null)
+      if (r.initial) {
+        return [{ label: 'first tick', expr: 'no outcome yet: the starting values', result: fmt(r.pressure, 2) }]
+      }
+      return [
+        {
+          label: 'the four terms',
+          expr: r.terms.map((t) => fmt(t.value, 3)).join(' + '),
+          result: fmt(r.sum, 3),
+        },
+        {
+          label: 'times the dampers',
+          expr: `${fmt(r.sum, 3)} × ${r.dampers.map((d) => fmt(d.value, 2)).join(' × ')}`,
+          result: fmt(r.product, 3),
+        },
+        {
+          label: `clamped to [${PRESSURE_FLOOR}, 1]`,
+          expr: r.d1 === null ? fmt(r.product, 3) : `0.5 × ${fmt(r.product, 3)} + 0.5 × d1 ${fmt(r.d1, 3)}`,
+          result: fmt(r.pressure, 3),
+        },
+        {
+          label: 'temperature',
+          expr: `${fmt(BASE_TEMPERATURE, 2)} + ${fmt(r.pressure, 3)}`,
+          result: fmt(r.temperature, 3),
+        },
+      ]
+    },
+    code: 'exploration.py · ExplorationController.update_and_decide',
+  },
+  d1: {
+    title: 'd1-ultra advice',
+    sentence:
+      'An optional outside model that can advise the modules, the arbiter and the admission gate; off in these recordings.',
+    paragraphs: [
+      "When on, d1-ultra answers small multiple-choice questions: which actions a module should favour, which action the arbiter should pick, and whether a proposed macro is worth admitting. Its advice enters as a dotted share of a module's bar and as a bonus of 0.3 × its probability in the arbiter's score. In the synchronous mode it can also pull the exploration pressure halfway toward its own estimate.",
+      'It never adds an action or lifts a bound. It needs an API key and answers asynchronously, so a tick never waits for it; an unanswered question is simply skipped.',
+    ],
+    code: 'd1_client.py · D1UltraClient',
+  },
 }
 
 /** Why each bound exists, shown when a bound badge is clicked. */
@@ -417,6 +652,20 @@ export const BOUNDS: Record<string, string> = {
     'The strategy archive holds at most 12 entries; when full, the weakest one that is not active is evicted.',
   '≤ 100k transitions':
     'The replay buffer the networks train on keeps the latest 100,000 decisions, and training only happens between episodes, never inside a tick.',
+  '≤ 16 primitives per macro':
+    'Every action, built in or admitted, is a fixed list of at most 16 primitives, so the menu can be checked before anything runs.',
+  'five stages':
+    'A proposal passes parse, legality, sandbox, d1 and admit in order; the first failure stops it, so nothing half-checked joins the menu.',
+  'fixed reflexes':
+    'The motor may turn to aim or steer onto a pickup, but never changes the plan; the same plan in the same situation presses the same keys.',
+  'each term ≤ 0.25':
+    'Each of the four reasons to explore can add at most a quarter, so no single signal can push the arbiter into random play.',
+  'pressure 0.02 to 1':
+    'Pressure is clamped: never quite zero, so the arbiter can still notice a close call, and never above 1, so the temperature stays at most 1.10.',
+  'trains between episodes':
+    'The networks only learn between episodes, from the replay buffer; inside a tick they are read, never trained.',
+  'advice only':
+    "d1-ultra's answers are mixed into scores that already exist; it cannot add an action or pick outside the menu.",
   'one proposal in flight':
     'The slow path works on one macro proposal at a time with a 20-second timeout, and the real-time loop never waits for it.',
 }
