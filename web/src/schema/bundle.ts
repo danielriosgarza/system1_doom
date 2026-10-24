@@ -27,6 +27,39 @@ export interface ActionInfo {
   encoding: number[]
 }
 /**
+ * Finite, bounded executable action specification (primitive or macro-action).
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "ActionSpec".
+ */
+export interface ActionSpec {
+  id: string
+  description?: string
+  is_macro?: boolean
+  parameters?: {
+    [k: string]: unknown
+  }
+  preconditions?: PreconditionSpec
+  maximum_duration: number
+  termination_condition: string
+  primitive_expansion: string[]
+}
+/**
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "PreconditionSpec".
+ */
+export interface PreconditionSpec {
+  min_ammo?: number
+  max_ammo?: number
+  min_health?: number
+  max_health?: number
+  requires_visible_enemy?: boolean
+  requires_visible_pickup?: boolean
+  min_wall_distance_front?: number
+  max_wall_distance_front?: number
+  excluded_weapons?: string[]
+}
+/**
  * Outcome of one admission stage (parse, legality, sandbox, d1, admit), for traces.
  *
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
@@ -197,6 +230,68 @@ export interface FramesInfo {
   width?: number
   height?: number
   end_frame?: string | null
+}
+/**
+ * One brain's means over the evaluation episodes; cleared and survived are rates.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "EvaluationScores".
+ */
+export interface EvaluationScores {
+  reward: number
+  cleared: number
+  survived: number
+  kills: number
+  health: number
+  ticks: number
+}
+/**
+ * `evaluation.json`: `train.evaluate`, the same seeded episodes played greedily by each brain.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "EvaluationSummary".
+ */
+export interface EvaluationSummary {
+  scenario: string
+  episodes: number
+  trained_episodes?: number
+  heuristics: EvaluationScores
+  latest?: EvaluationScores | null
+  best?: EvaluationScores | null
+}
+/**
+ * One line of `metrics.jsonl`: a training episode as `train.learn_from_episode` recorded it.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "MetricsRow".
+ */
+export interface MetricsRow {
+  episode: number
+  scenario: string
+  reward: number
+  kills: number
+  health: number
+  armor: number
+  ticks: number
+  cleared: boolean
+  finished: boolean
+  died: boolean
+  transitions: number
+  replay_size: number
+  network_share: number
+  exploration_floor: number
+  explored_steps?: number
+  /**
+   * Mean loss per network over the episode's gradient steps
+   */
+  losses?: {
+    [k: string]: number
+  }
+  macros?: number
+  episode_sec?: number
+  train_sec?: number
+  d1_calls?: number
+  timestamp?: string
 }
 /**
  * One module's entry in `TickTrace.module_outputs`. Plain dict at runtime; typed for the schema.
@@ -470,6 +565,26 @@ export interface TickTrace {
   slow_path_request?: SlowPathRequestTrace | null
   budget_sec?: number | null
   timing_ms?: {
+    [k: string]: number
+  }
+}
+/**
+ * `trust.json`: how often each action was executed in each context during training (trust = n / (n + trust_count)).
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "TrustFile".
+ */
+export interface TrustFile {
+  trust_count: number
+  episodes: number
+  network_share: number
+  /**
+   * Keyed "<context signature>|<action id>"
+   */
+  action_counts: {
+    [k: string]: number
+  }
+  context_counts: {
     [k: string]: number
   }
 }

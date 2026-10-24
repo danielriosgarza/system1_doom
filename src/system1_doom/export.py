@@ -14,7 +14,8 @@ A bundle is one folder per episode:
     frames/00042.jpg  the 320x240 screen the controller saw when it decided tick 42
     frames/end.jpg    the screen after the last action
     metrics.jsonl, evaluation.json, macros.json   copied from the run folder when present
-    trust.json        the loaded checkpoint's experience counts, when a model was loaded
+                      (MetricsRow per line, EvaluationSummary, a list of ActionSpec)
+    trust.json        the loaded checkpoint's experience counts, when a model was loaded (TrustFile)
 """
 
 from __future__ import annotations
@@ -30,9 +31,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Sequence, 
 
 import numpy as np
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.json_schema import models_json_schema
 
+from system1_doom.actions import ActionSpec
 from system1_doom.controller import BUILTIN_ACTION_IDS, ControllerConfig, DoomDecisionController
 from system1_doom.features import encode_action
 from system1_doom.logger import TRACE_SCHEMA_VERSION, ProposalTrace, TickTrace
@@ -47,6 +49,8 @@ Model = Literal["heuristics", "best", "latest"]
 
 FRAME_QUALITY = 80
 COPIED_RUN_FILES = ("metrics.jsonl", "evaluation.json", "macros.json")
+# `macros.json` is `RunStore.save_macros`: the macros admitted during training, as action specs.
+MacroList = TypeAdapter(List[ActionSpec])
 
 
 def _package_version() -> str:
@@ -157,6 +161,72 @@ class EpisodeMeta(BaseModel):
     files: List[str]
     package_version: str = Field(default_factory=_package_version)
     recorded_at: str
+
+
+class MetricsRow(BaseModel):
+    """One line of `metrics.jsonl`: a training episode as `train.learn_from_episode` recorded it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    episode: int
+    scenario: str
+    reward: float
+    kills: float
+    health: float
+    armor: float
+    ticks: int
+    cleared: bool
+    finished: bool
+    died: bool
+    transitions: int
+    replay_size: int
+    network_share: float
+    exploration_floor: float
+    explored_steps: int = 0
+    losses: Dict[str, float] = Field(default_factory=dict, description="Mean loss per network over the episode's gradient steps")
+    macros: int = 0
+    episode_sec: float = 0.0
+    train_sec: float = 0.0
+    d1_calls: int = 0
+    timestamp: str = ""
+
+
+class EvaluationScores(BaseModel):
+    """One brain's means over the evaluation episodes; cleared and survived are rates."""
+
+    model_config = ConfigDict(frozen=True)
+
+    reward: float
+    cleared: float
+    survived: float
+    kills: float
+    health: float
+    ticks: float
+
+
+class EvaluationSummary(BaseModel):
+    """`evaluation.json`: `train.evaluate`, the same seeded episodes played greedily by each brain."""
+
+    model_config = ConfigDict(frozen=True)
+
+    scenario: str
+    episodes: int
+    trained_episodes: int = 0
+    heuristics: EvaluationScores
+    latest: Optional[EvaluationScores] = None
+    best: Optional[EvaluationScores] = None
+
+
+class TrustFile(BaseModel):
+    """`trust.json`: how often each action was executed in each context during training (trust = n / (n + trust_count))."""
+
+    model_config = ConfigDict(frozen=True)
+
+    trust_count: float
+    episodes: int
+    network_share: float
+    action_counts: Dict[str, int] = Field(description='Keyed "<context signature>|<action id>"')
+    context_counts: Dict[str, int]
 
 
 class BundleIndexEntry(BaseModel):
@@ -399,8 +469,23 @@ def check_bundle(bundle: Path) -> List[str]:
             except Exception as exc:  # noqa: BLE001
                 problems.append(f"proposals.jsonl line {i + 1}: {exc}")
     for file_name in meta.files:
-        if not (bundle / file_name).is_file():
+        path = bundle / file_name
+        if not path.is_file():
             problems.append(f"episode.json lists {file_name}, which is missing")
+            continue
+        try:
+            if file_name == "metrics.jsonl":
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        MetricsRow.model_validate_json(line)
+            elif file_name == "evaluation.json":
+                EvaluationSummary.model_validate_json(path.read_text(encoding="utf-8"))
+            elif file_name == "trust.json":
+                TrustFile.model_validate_json(path.read_text(encoding="utf-8"))
+            elif file_name == "macros.json":
+                MacroList.validate_json(path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"{file_name}: {exc}")
     return problems
 
 
@@ -433,8 +518,9 @@ def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
 
 def bundle_json_schema() -> Dict[str, Any]:
     """One JSON Schema document whose $defs hold every record a bundle contains."""
+    models = (EpisodeMeta, TickTrace, ProposalTrace, BundleIndexEntry, MetricsRow, EvaluationSummary, TrustFile, ActionSpec)
     _, schema = models_json_schema(
-        [(m, "serialization") for m in (EpisodeMeta, TickTrace, ProposalTrace, BundleIndexEntry)],
+        [(m, "serialization") for m in models],
         title="system1_doom episode bundle",
     )
     schema["description"] = (

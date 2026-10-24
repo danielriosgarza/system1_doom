@@ -96,6 +96,35 @@ def test_schema_dump_validates_a_recorded_trace(bundle, tmp_path):
     jsonschema.validate(meta, {"$defs": schema["$defs"], "$ref": "#/$defs/EpisodeMeta"})
 
 
+def test_copied_run_files_validate_against_their_models(tmp_path):
+    from system1_doom import train
+
+    run_dir = tmp_path / "run"
+    assert train.main(
+        ["--scenario", "basic.cfg", "--max-ticks", "5", "--run-dir", str(run_dir), "--seed", "3", "--train-steps", "2", "--episodes", "2"]
+    ) == 0
+    train.evaluate("basic.cfg", train.RunStore(run_dir), episodes=1, max_ticks=3)
+    out = tmp_path / "basic-latest-3"
+    meta = export.record_bundle(scenario="basic.cfg", seed=3, out=out, model="latest", run_dir=run_dir, max_ticks=3)
+
+    assert {"metrics.jsonl", "evaluation.json", "macros.json", "trust.json"} <= set(meta.files)
+    rows = [export.MetricsRow.model_validate_json(line) for line in (out / "metrics.jsonl").read_text().splitlines()]
+    assert [row.episode for row in rows] == [1, 2]
+    evaluation = export.EvaluationSummary.model_validate_json((out / "evaluation.json").read_text())
+    assert evaluation.trained_episodes == 2 and evaluation.latest is not None
+    trust = export.TrustFile.model_validate_json((out / "trust.json").read_text())
+    assert trust.episodes == 2 and trust.trust_count == 25.0
+    assert sum(trust.context_counts.values()) == sum(trust.action_counts.values()) == sum(row.transitions for row in rows)
+    assert export.MacroList.validate_json((out / "macros.json").read_text()) == []
+    assert export.check_bundle(out) == []
+
+    schema = export.bundle_json_schema()
+    jsonschema.validate(json.loads((out / "trust.json").read_text()), {"$defs": schema["$defs"], "$ref": "#/$defs/TrustFile"})
+    jsonschema.validate(
+        json.loads((out / "evaluation.json").read_text()), {"$defs": schema["$defs"], "$ref": "#/$defs/EvaluationSummary"}
+    )
+
+
 def test_index_lists_bundles(bundle):
     entries = export.write_index(bundle.parent)
     assert [e.name for e in entries] == [bundle.name]

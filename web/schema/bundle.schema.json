@@ -61,6 +61,62 @@
       "title": "ActionInfo",
       "type": "object"
     },
+    "ActionSpec": {
+      "description": "Finite, bounded executable action specification (primitive or macro-action).",
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "default": "Bounded executable Doom action",
+          "title": "Description",
+          "type": "string"
+        },
+        "is_macro": {
+          "default": false,
+          "title": "Is Macro",
+          "type": "boolean"
+        },
+        "parameters": {
+          "additionalProperties": true,
+          "title": "Parameters",
+          "type": "object"
+        },
+        "preconditions": {
+          "$ref": "#/$defs/PreconditionSpec"
+        },
+        "maximum_duration": {
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Maximum Duration",
+          "type": "integer"
+        },
+        "termination_condition": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Termination Condition",
+          "type": "string"
+        },
+        "primitive_expansion": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Primitive Expansion",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "maximum_duration",
+        "termination_condition",
+        "primitive_expansion"
+      ],
+      "title": "ActionSpec",
+      "type": "object"
+    },
     "AdmissionStageResult": {
       "description": "Outcome of one admission stage (parse, legality, sandbox, d1, admit), for traces.",
       "properties": {
@@ -587,6 +643,95 @@
       "title": "EpisodeResult",
       "type": "object"
     },
+    "EvaluationScores": {
+      "description": "One brain's means over the evaluation episodes; cleared and survived are rates.",
+      "properties": {
+        "reward": {
+          "title": "Reward",
+          "type": "number"
+        },
+        "cleared": {
+          "title": "Cleared",
+          "type": "number"
+        },
+        "survived": {
+          "title": "Survived",
+          "type": "number"
+        },
+        "kills": {
+          "title": "Kills",
+          "type": "number"
+        },
+        "health": {
+          "title": "Health",
+          "type": "number"
+        },
+        "ticks": {
+          "title": "Ticks",
+          "type": "number"
+        }
+      },
+      "required": [
+        "reward",
+        "cleared",
+        "survived",
+        "kills",
+        "health",
+        "ticks"
+      ],
+      "title": "EvaluationScores",
+      "type": "object"
+    },
+    "EvaluationSummary": {
+      "description": "`evaluation.json`: `train.evaluate`, the same seeded episodes played greedily by each brain.",
+      "properties": {
+        "scenario": {
+          "title": "Scenario",
+          "type": "string"
+        },
+        "episodes": {
+          "title": "Episodes",
+          "type": "integer"
+        },
+        "trained_episodes": {
+          "default": 0,
+          "title": "Trained Episodes",
+          "type": "integer"
+        },
+        "heuristics": {
+          "$ref": "#/$defs/EvaluationScores"
+        },
+        "latest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluationScores"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "best": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluationScores"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "scenario",
+        "episodes",
+        "heuristics"
+      ],
+      "title": "EvaluationSummary",
+      "type": "object"
+    },
     "FramesInfo": {
       "properties": {
         "dir": {
@@ -623,6 +768,123 @@
         }
       },
       "title": "FramesInfo",
+      "type": "object"
+    },
+    "MetricsRow": {
+      "description": "One line of `metrics.jsonl`: a training episode as `train.learn_from_episode` recorded it.",
+      "properties": {
+        "episode": {
+          "title": "Episode",
+          "type": "integer"
+        },
+        "scenario": {
+          "title": "Scenario",
+          "type": "string"
+        },
+        "reward": {
+          "title": "Reward",
+          "type": "number"
+        },
+        "kills": {
+          "title": "Kills",
+          "type": "number"
+        },
+        "health": {
+          "title": "Health",
+          "type": "number"
+        },
+        "armor": {
+          "title": "Armor",
+          "type": "number"
+        },
+        "ticks": {
+          "title": "Ticks",
+          "type": "integer"
+        },
+        "cleared": {
+          "title": "Cleared",
+          "type": "boolean"
+        },
+        "finished": {
+          "title": "Finished",
+          "type": "boolean"
+        },
+        "died": {
+          "title": "Died",
+          "type": "boolean"
+        },
+        "transitions": {
+          "title": "Transitions",
+          "type": "integer"
+        },
+        "replay_size": {
+          "title": "Replay Size",
+          "type": "integer"
+        },
+        "network_share": {
+          "title": "Network Share",
+          "type": "number"
+        },
+        "exploration_floor": {
+          "title": "Exploration Floor",
+          "type": "number"
+        },
+        "explored_steps": {
+          "default": 0,
+          "title": "Explored Steps",
+          "type": "integer"
+        },
+        "losses": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Mean loss per network over the episode's gradient steps",
+          "title": "Losses",
+          "type": "object"
+        },
+        "macros": {
+          "default": 0,
+          "title": "Macros",
+          "type": "integer"
+        },
+        "episode_sec": {
+          "default": 0.0,
+          "title": "Episode Sec",
+          "type": "number"
+        },
+        "train_sec": {
+          "default": 0.0,
+          "title": "Train Sec",
+          "type": "number"
+        },
+        "d1_calls": {
+          "default": 0,
+          "title": "D1 Calls",
+          "type": "integer"
+        },
+        "timestamp": {
+          "default": "",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "episode",
+        "scenario",
+        "reward",
+        "kills",
+        "health",
+        "armor",
+        "ticks",
+        "cleared",
+        "finished",
+        "died",
+        "transitions",
+        "replay_size",
+        "network_share",
+        "exploration_floor"
+      ],
+      "title": "MetricsRow",
       "type": "object"
     },
     "ModuleTrace": {
@@ -922,6 +1184,60 @@
         }
       },
       "title": "PositionTrace",
+      "type": "object"
+    },
+    "PreconditionSpec": {
+      "properties": {
+        "min_ammo": {
+          "default": 0,
+          "title": "Min Ammo",
+          "type": "integer"
+        },
+        "max_ammo": {
+          "default": 9999,
+          "title": "Max Ammo",
+          "type": "integer"
+        },
+        "min_health": {
+          "default": 0.0,
+          "title": "Min Health",
+          "type": "number"
+        },
+        "max_health": {
+          "default": 200.0,
+          "title": "Max Health",
+          "type": "number"
+        },
+        "requires_visible_enemy": {
+          "default": false,
+          "title": "Requires Visible Enemy",
+          "type": "boolean"
+        },
+        "requires_visible_pickup": {
+          "default": false,
+          "title": "Requires Visible Pickup",
+          "type": "boolean"
+        },
+        "min_wall_distance_front": {
+          "default": 0.0,
+          "title": "Min Wall Distance Front",
+          "type": "number"
+        },
+        "max_wall_distance_front": {
+          "default": 99999.0,
+          "title": "Max Wall Distance Front",
+          "type": "number"
+        },
+        "excluded_weapons": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Weapons",
+          "type": "array"
+        }
+      },
+      "title": "PreconditionSpec",
       "type": "object"
     },
     "ProjectionChainTrace": {
@@ -1607,6 +1923,47 @@
         "reward_outcome"
       ],
       "title": "TickTrace",
+      "type": "object"
+    },
+    "TrustFile": {
+      "description": "`trust.json`: how often each action was executed in each context during training (trust = n / (n + trust_count)).",
+      "properties": {
+        "trust_count": {
+          "title": "Trust Count",
+          "type": "number"
+        },
+        "episodes": {
+          "title": "Episodes",
+          "type": "integer"
+        },
+        "network_share": {
+          "title": "Network Share",
+          "type": "number"
+        },
+        "action_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Keyed \"<context signature>|<action id>\"",
+          "title": "Action Counts",
+          "type": "object"
+        },
+        "context_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Context Counts",
+          "type": "object"
+        }
+      },
+      "required": [
+        "trust_count",
+        "episodes",
+        "network_share",
+        "action_counts",
+        "context_counts"
+      ],
+      "title": "TrustFile",
       "type": "object"
     },
     "WallTrace": {
