@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react'
+import { Reference } from './components/Reference'
 import { Scrubber } from './components/Scrubber'
 import { TopBar } from './components/TopBar'
 import { Tour } from './components/Tour'
@@ -9,7 +10,18 @@ import { Inspector } from './screens/Inspector'
 import { Learning } from './screens/Learning'
 import { Menu } from './screens/Menu'
 import { Overview } from './screens/Overview'
-import { endTour, getState, onHashChange, setState, setTickIndex, setTourStep, start, step, useApp } from './store'
+import {
+  closeDrawer,
+  endTour,
+  getState,
+  onHashChange,
+  setState,
+  setTickIndex,
+  setTourStep,
+  start,
+  step,
+  useApp,
+} from './store'
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -45,8 +57,16 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const { tour: tourStep, bundle: current, playing, drawer } = getState()
+      // While the reference drawer is open, only Esc (here) and Tab (inside the dialog) reach the app.
+      if (drawer !== null) {
+        if (e.key === 'Escape') {
+          closeDrawer()
+          e.preventDefault()
+        }
+        return
+      }
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
-      const { tour: tourStep, bundle: current, playing } = getState()
       if (tourStep !== null) {
         // During the tour the arrows walk the tour, not the episode.
         if (e.key === 'ArrowRight') setTourStep(tourStep + 1)
@@ -105,6 +125,7 @@ export default function App() {
           {screen === 'menu' && <Menu bundle={bundle} tick={tick} ctx={ctx} />}
           <Scrubber ticks={bundle.ticks} admitted={admitted} ctx={ctx} />
           {tour !== null && <Tour step={tour} bundle={bundle} tick={tick} />}
+          <Reference bundle={bundle} ctx={ctx} />
         </>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { fmt, gameSeconds } from '../data/derive'
-import { SCREENS, openEpisode, setScreen, setState, startTour, useApp } from '../store'
+import { SCREENS, openDrawer, openEpisode, setScreen, setState, startTour, useApp } from '../store'
 
 export function TopBar() {
   const index = useApp((s) => s.index)
@@ -43,6 +43,17 @@ export function TopBar() {
           ))}
         </select>
       </label>
+      <button
+        type="button"
+        className="icon-button glyph-button"
+        data-opens="recording"
+        aria-haspopup="dialog"
+        aria-label="About this recording"
+        title="About this recording (i)"
+        onClick={() => openDrawer('recording')}
+      >
+        ⓘ
+      </button>
       {bundle && tick && (
         <span className="control tick-counter" aria-live="polite">
           Tick {tick.tick} / {bundle.meta.last_tick}
@@ -57,6 +68,16 @@ export function TopBar() {
         title="A six-step walk through one real tick"
       >
         Tour
+      </button>
+      <button
+        type="button"
+        className="icon-button"
+        data-opens="glossary"
+        aria-haspopup="dialog"
+        title="Every word the app uses: what it means, where to see it, where it lives in the code (g)"
+        onClick={() => openDrawer('glossary')}
+      >
+        Glossary
       </button>
       <span className="control">
         <span className="control-label">Depth</span>
