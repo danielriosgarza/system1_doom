@@ -1,0 +1,15 @@
+.env
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+logs/
+runs/
+*.log
+*.jsonl
+_vizdoom.ini

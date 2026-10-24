@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "system1-doom"
+version = "0.2.0"
+description = "Bounded decision controller for ViZDoom with learned per-module value networks, Liquid AI d1-ultra, and asynchronous Codex proposal generation"
+readme = "docs/spec.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26.0",
+    "pillow>=10.0.0",
+    "pydantic>=2.6.0",
+    "requests>=2.31.0",
+    "vizdoom>=1.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+learn = [
+    "torch>=2.2",
+    "matplotlib>=3.8",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
