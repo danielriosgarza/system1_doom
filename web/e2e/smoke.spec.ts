@@ -292,7 +292,8 @@ test('the admission gate on the overview opens Growing the menu, and the screen 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('./#deadly_corridor-heuristics-9/27/menu')
   await expect(page.locator('#panel-followup [data-macro]')).toHaveCount(2)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  // The charts take the new width a frame or two after the follow-up renders, later on a busy machine.
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
 
 test('the glossary filters, and a “where to see it” link flashes the panel', async ({ page }) => {
