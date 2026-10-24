@@ -103,11 +103,17 @@ export async function loadEpisode(
   fetcher: Fetcher = defaultFetcher,
 ): Promise<EpisodeBundle> {
   const base = `${root}/${name}`
-  const [metaText, ticksText, proposalsText] = await Promise.all([
+  // Fetched together, but a failure is reported for the first file in this order, so a missing
+  // bundle always names its episode.json rather than whichever request happened to fail first.
+  const settled = await Promise.allSettled([
     fetchText(`${base}/episode.json`, fetcher),
     fetchText(`${base}/ticks.jsonl`, fetcher),
     fetchText(`${base}/proposals.jsonl`, fetcher, true),
   ])
+  const [metaText = '', ticksText = '', proposalsText = ''] = settled.map((r) => {
+    if (r.status === 'rejected') throw r.reason
+    return r.value
+  })
   const meta = parseJson<EpisodeMeta>(metaText, `${name}/episode.json`)
   checkSchemaVersion(meta.schema_version, `${name}/episode.json`)
   const ticks = parseJsonl<TickTrace>(ticksText, `${name}/ticks.jsonl`)
