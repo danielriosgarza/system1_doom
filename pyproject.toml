@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
+    "jsonschema>=4.0",
 ]
 learn = [
     "torch>=2.2",
