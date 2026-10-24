@@ -21,13 +21,14 @@ A bundle is one folder per episode:
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import importlib.metadata
 import json
 from pathlib import Path
 import shutil
 import sys
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
 
 import numpy as np
 from PIL import Image
@@ -262,8 +263,17 @@ class RecordingBridge(ViZDoomBridge):
 
     def __init__(self, frames_dir: Path, **kwargs: Any) -> None:
         self.frames_dir = frames_dir
-        self.frames_dir.mkdir(parents=True, exist_ok=True)
         super().__init__(**kwargs)
+
+    @property
+    def frames_dir(self) -> Path:
+        return self._frames_dir
+
+    @frames_dir.setter
+    def frames_dir(self, path: Path) -> None:
+        """Where the next frames go; `serve` points it at each episode's folder in turn."""
+        path.mkdir(parents=True, exist_ok=True)
+        self._frames_dir = path
 
     def acquire_world_state(self, strategy_refs: Tuple[str, ...] = ()) -> WorldState:
         world_state = super().acquire_world_state(strategy_refs=strategy_refs)
@@ -320,25 +330,38 @@ def _prepare_out_dir(out: Path) -> None:
     (out / "frames").mkdir(parents=True)
 
 
-def record_bundle(
+@dataclass
+class Player:
+    """Everything that plays episodes, built once: the run folder, the brain, the bridge and the controller."""
+
+    scenario: str
+    model: Model
+    max_ticks: int
+    slow_path: bool
+    store: RunStore
+    learner: Optional["Learner"]
+    model_path: Optional[Path]
+    env: RecordingBridge
+    cfg: ControllerConfig
+    ctrl: DoomDecisionController
+    keeper: LastFrameKeeper
+
+
+def build_player(
     scenario: str,
     seed: int,
     out: Path,
-    model: Model = "heuristics",
-    run_dir: Optional[Path] = None,
+    model: Model,
+    store: RunStore,
+    learner: Optional["Learner"],
+    model_path: Optional[Path],
     max_ticks: int = 500,
     d1: bool = False,
     slow_path: bool = True,
     codex: bool = False,
     deterministic: bool = False,
-    name: Optional[str] = None,
-    title: Optional[str] = None,
-) -> EpisodeMeta:
-    """Play one seeded episode and write it as a bundle in `out`."""
-    store = RunStore(run_dir or default_run_dir(scenario))
-    learner, model_path = _load_model(store, model)
-    _prepare_out_dir(out)
-
+) -> Player:
+    """The bridge and controller a bundle is played with, writing its frames and logs into `out`."""
     env = RecordingBridge(
         frames_dir=out / "frames",
         scenario=scenario,
@@ -361,33 +384,33 @@ def record_bundle(
     keeper = LastFrameKeeper()
     ctrl.recorder = keeper  # type: ignore[assignment]
     ctrl.restore_macros(store.load_macros())
-    try:
-        env.restart_episode(seed=seed)
-        result = ctrl.run_episode(max_ticks=max_ticks)
-    finally:
-        ctrl.close()
+    return Player(scenario, model, max_ticks, slow_path, store, learner, model_path, env, cfg, ctrl, keeper)
 
+
+def play_episode(
+    player: Player, seed: int, on_tick: Optional[Callable[[TickTrace], Optional[bool]]] = None
+) -> Tuple[Dict[str, Any], List[TickTrace]]:
+    """Play one seeded episode; returns `run_episode`'s summary without the traces, and the traces."""
+    player.env.restart_episode(seed=seed)
+    result = player.ctrl.run_episode(max_ticks=player.max_ticks, on_tick=on_tick)
     traces: List[TickTrace] = result.pop("traces")
-    # record_macro_performance appends a fresh copy of a proposal each time its macro runs; keep the final ones.
-    (out / "proposals.jsonl").write_text(
-        "".join(p.model_dump_json() + "\n" for p in ctrl.logger.proposal_traces), encoding="utf-8"
-    )
-    end_frame = None
-    if keeper.last is not None:
-        _jpeg(keeper.last, out / "frames" / "end.jpg")
-        end_frame = "frames/end.jpg"
+    return result, traces
 
+
+def copy_run_files(player: Player, out: Path) -> Tuple[List[str], Optional[CheckpointInfo]]:
+    """Copy the run folder's files and write `trust.json`; returns the bundle's file list and the checkpoint."""
     files = ["episode.json", "ticks.jsonl", "proposals.jsonl"]
-    if store.root.is_dir():
+    if player.store.root.is_dir():
         for file_name in COPIED_RUN_FILES:
-            source = store.root / file_name
+            source = player.store.root / file_name
             if source.is_file():
                 shutil.copyfile(source, out / file_name)
                 files.append(file_name)
     checkpoint = None
-    if learner is not None and model_path is not None:
+    learner = player.learner
+    if learner is not None and player.model_path is not None:
         checkpoint = CheckpointInfo(
-            file=model_path.name,
+            file=player.model_path.name,
             episodes=learner.episodes,
             transitions_seen=learner.transitions_seen,
             network_share=round(learner.network_share, 4),
@@ -402,40 +425,121 @@ def record_bundle(
         }
         (out / "trust.json").write_text(json.dumps(trust), encoding="utf-8")
         files.append("trust.json")
+    return files, checkpoint
 
+
+def default_title(scenario: str, model: Model, seed: int) -> str:
     stem = Path(scenario).stem
-    meta = EpisodeMeta(
-        name=name or out.name,
-        title=title or f"{stem.replace('_', ' ')}, {'heuristics only' if model == 'heuristics' else model + ' checkpoint'}, seed {seed}",
-        scenario=scenario,
+    return f"{stem.replace('_', ' ')}, {'heuristics only' if model == 'heuristics' else model + ' checkpoint'}, seed {seed}"
+
+
+def episode_meta(
+    player: Player,
+    name: str,
+    title: str,
+    seed: int,
+    result: Dict[str, Any],
+    traces: Sequence[TickTrace],
+    files: List[str],
+    checkpoint: Optional[CheckpointInfo],
+    end_frame: Optional[str] = None,
+) -> EpisodeMeta:
+    """`episode.json` for an episode played by `player`; the action catalog is the vocabulary as it is now."""
+    ctrl, cfg = player.ctrl, player.cfg
+    return EpisodeMeta(
+        name=name,
+        title=title,
+        scenario=player.scenario,
         seed=seed,
-        model=model,
+        model=player.model,
         checkpoint=checkpoint,
         brains=BrainsInfo(
-            learned_networks=learner is not None,
+            learned_networks=player.learner is not None,
             d1_ultra=ctrl.d1_client.enabled,
-            slow_path="off" if not slow_path else ("codex" if ctrl.llm_worker.use_codex_cli else "templates"),
+            slow_path="off" if not player.slow_path else ("codex" if ctrl.llm_worker.use_codex_cli else "templates"),
         ),
         config=PlayConfigInfo(
             execution_mode=cfg.execution_mode,
             tick_budget_sec=cfg.tick_budget_sec,
             deterministic_arbiter=cfg.deterministic_arbiter,
             exploration_floor=cfg.exploration_floor,
-            max_ticks=max_ticks,
+            max_ticks=player.max_ticks,
         ),
         result=EpisodeResult(**result),
         first_tick=traces[0].tick if traces else 0,
         last_tick=traces[-1].tick if traces else 0,
         tick_count=len(traces),
-        buttons=list(env.button_names),
+        buttons=list(player.env.button_names),
         frames=FramesInfo(end_frame=end_frame),
         actions=_action_catalog(ctrl),
         modules={n: m.question_prompt for n, m in ctrl.module_evaluator.modules.items()},
         files=files,
         recorded_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+def finish_bundle(
+    player: Player,
+    out: Path,
+    name: str,
+    title: str,
+    seed: int,
+    result: Dict[str, Any],
+    traces: Sequence[TickTrace],
+    files: List[str],
+    checkpoint: Optional[CheckpointInfo],
+) -> EpisodeMeta:
+    """Write the final proposals, the end frame and `episode.json` for an episode just played into `out`."""
+    # record_macro_performance appends a fresh copy of a proposal each time its macro runs; keep the final ones.
+    (out / "proposals.jsonl").write_text(
+        "".join(p.model_dump_json() + "\n" for p in player.ctrl.logger.proposal_traces), encoding="utf-8"
+    )
+    end_frame = None
+    if player.keeper.last is not None:
+        _jpeg(player.keeper.last, out / "frames" / "end.jpg")
+        end_frame = "frames/end.jpg"
+    meta = episode_meta(player, name, title, seed, result, traces, files, checkpoint, end_frame)
     (out / "episode.json").write_text(meta.model_dump_json(indent=2), encoding="utf-8")
     return meta
+
+
+def record_bundle(
+    scenario: str,
+    seed: int,
+    out: Path,
+    model: Model = "heuristics",
+    run_dir: Optional[Path] = None,
+    max_ticks: int = 500,
+    d1: bool = False,
+    slow_path: bool = True,
+    codex: bool = False,
+    deterministic: bool = False,
+    name: Optional[str] = None,
+    title: Optional[str] = None,
+) -> EpisodeMeta:
+    """Play one seeded episode and write it as a bundle in `out`."""
+    store = RunStore(run_dir or default_run_dir(scenario))
+    learner, model_path = _load_model(store, model)
+    _prepare_out_dir(out)
+    player = build_player(
+        scenario, seed, out, model, store, learner, model_path, max_ticks, d1, slow_path, codex, deterministic
+    )
+    try:
+        result, traces = play_episode(player, seed)
+    finally:
+        player.ctrl.close()
+    files, checkpoint = copy_run_files(player, out)
+    return finish_bundle(
+        player,
+        out,
+        name or out.name,
+        title or default_title(scenario, model, seed),
+        seed,
+        result,
+        traces,
+        files,
+        checkpoint,
+    )
 
 
 def check_bundle(bundle: Path) -> List[str]:

@@ -175,6 +175,10 @@ class ViZDoomBridge:
         self._episode_tick = 0
         self._last_displacement = None
 
+    def reset_tick_count(self) -> None:
+        """Number the next observation tick 0, as a new bridge would; otherwise the count runs on across episodes."""
+        self._tick = 0
+
     def _current_cell(self) -> Tuple[int, int]:
         px = self._safe_var(vzd.GameVariable.POSITION_X, 0.0)
         py = self._safe_var(vzd.GameVariable.POSITION_Y, 0.0)
