@@ -11,14 +11,18 @@ import { Learning } from './screens/Learning'
 import { Menu } from './screens/Menu'
 import { Overview } from './screens/Overview'
 import {
+  SCREENS,
   closeDrawer,
   endTour,
   getState,
   onHashChange,
+  openDrawer,
+  setScreen,
   setState,
   setTickIndex,
   setTourStep,
   start,
+  startTour,
   step,
   useApp,
 } from './store'
@@ -77,7 +81,15 @@ export default function App() {
         return
       }
       const count = current?.ticks.length ?? 0
-      if (e.key === 'ArrowRight') step(e.shiftKey ? 10 : 1)
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+      const screen = /^[1-9]$/.test(key) ? SCREENS[Number(key) - 1] : undefined
+      if (screen) setScreen(screen.id)
+      else if (key === 't') startTour()
+      else if (key === 'f') setState({ depth: getState().depth === 'plain' ? 'formula' : 'plain' })
+      else if (key === 'g') openDrawer('glossary')
+      else if (key === 'i') openDrawer('recording')
+      else if (key === '?') openDrawer('keys')
+      else if (e.key === 'ArrowRight') step(e.shiftKey ? 10 : 1)
       else if (e.key === 'ArrowLeft') step(e.shiftKey ? -10 : -1)
       else if (e.key === 'Home') setTickIndex(0)
       else if (e.key === 'End') setTickIndex(count - 1)

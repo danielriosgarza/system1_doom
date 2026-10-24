@@ -4079,3 +4079,46 @@ tr.pinned td {
 .command-status:empty {
   display: none;
 }
+
+.keys-tab h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.keys-tab section:first-child h4 {
+  margin-top: 2px;
+}
+
+.key-list {
+  margin: 0;
+}
+
+.key-row {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.key-row dt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.key-row dd {
+  margin: 0;
+}
+
+/* Key caps in the drawer keep to the 12 px floor. */
+.reference .keycap {
+  font-family: inherit;
+  font-size: 12px;
+  min-width: 22px;
+  text-align: center;
+}

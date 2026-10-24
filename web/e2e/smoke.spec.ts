@@ -369,3 +369,64 @@ test('the ⓘ button says how each recording was made and how to make it again',
   await expect(dialog.locator('.command code').first()).toContainText('--model heuristics')
   expect(errors).toEqual([])
 })
+
+test('keys switch screens and open the reference, but not while typing', async ({ page }) => {
+  const errors = collectErrors(page)
+  await page.goto('./#deadly_corridor-learned-9/17')
+  await expect(page.locator('#panel-arbiter')).toBeVisible()
+  await page.keyboard.press('3')
+  await expect(page).toHaveURL(/\/17\/hierarchy$/)
+
+  await page.keyboard.press('g')
+  const dialog = page.getByRole('dialog', { name: 'Reference' })
+  await expect(dialog.getByRole('tab', { name: 'Glossary' })).toHaveAttribute('aria-selected', 'true')
+  const filter = dialog.getByRole('searchbox', { name: 'Filter the glossary' })
+  await filter.click()
+  await page.keyboard.type('3')
+  await expect(filter).toHaveValue('3')
+  await expect(page).toHaveURL(/\/17\/hierarchy$/)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Glossary' })).toBeFocused()
+
+  await page.keyboard.press('?')
+  await expect(dialog.getByRole('tab', { name: 'Keyboard' })).toHaveAttribute('aria-selected', 'true')
+  await expect(dialog.locator('.key-row')).not.toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('f')
+  await expect(page.getByRole('button', { name: 'Formula' })).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('f')
+  expect(errors).toEqual([])
+})
+
+test('on a phone the reference fills the screen and leaves no sideways scroll', async ({ page }) => {
+  const errors = collectErrors(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('./#deadly_corridor-learned-9/17')
+  await page.getByRole('button', { name: 'Glossary' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Reference' })
+  // Measured once the slide-in has finished.
+  await expect
+    .poll(async () => {
+      const box = await dialog.boundingBox()
+      return box ? [box.x, box.y, box.width, box.height].map(Math.round) : null
+    })
+    .toEqual([0, 0, 390, 844])
+  for (const tab of ['Principles', 'This recording', 'Keyboard']) {
+    await dialog.getByRole('tab', { name: tab }).click()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  }
+  await dialog.getByRole('button', { name: 'Close the reference' }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  expect(errors).toEqual([])
+})
+
+test('the top bar keeps to one row at 1280 px', async ({ page }) => {
+  await page.goto('./#deadly_corridor-learned-9/17')
+  await expect(page.locator('.tick-counter')).toBeVisible()
+  const tops = await page
+    .locator('.topbar > *')
+    .evaluateAll((items) => items.map((el) => el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2))
+  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(12)
+})

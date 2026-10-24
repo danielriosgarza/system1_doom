@@ -1,6 +1,7 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { EXPLAINERS, type ExplainerContext } from '../content/explainers'
 import { GLOSSARY, type GlossaryEntry, type SeeLink } from '../content/glossary'
+import { KEYS_NOTE, KEY_GROUPS, SETTINGS_NOTE } from '../content/keys'
 import { CLOSING, INVARIANT, PRINCIPLES } from '../content/principles'
 import type { EpisodeBundle } from '../data/loader'
 import { type DrawerSection, SCREENS, closeDrawer, openDrawer, openPanel, setScreen, useApp } from '../store'
@@ -180,7 +181,7 @@ function SectionBody({
     case 'recording':
       return <Provenance bundle={bundle} tick={ctx.tick} />
     case 'keys':
-      return <p className="empty-note">The keys.</p>
+      return <Keys />
   }
 }
 
@@ -329,6 +330,37 @@ function Principles() {
         ))}
       </ol>
       <p className="principles-closing">{CLOSING}</p>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------------------------
+// Keyboard.
+
+function Keys() {
+  return (
+    <div className="keys-tab">
+      {KEY_GROUPS.map((group) => (
+        <section key={group.title}>
+          <h4>{group.title}</h4>
+          <dl className="key-list">
+            {group.rows.map((row) => (
+              <div key={row.does} className="key-row">
+                <dt>
+                  {row.keys.map((k) => (
+                    <kbd key={k} className="keycap">
+                      {k}
+                    </kbd>
+                  ))}
+                </dt>
+                <dd>{row.does}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ))}
+      <p className="muted">{KEYS_NOTE}</p>
+      <p className="muted">{SETTINGS_NOTE}</p>
     </div>
   )
 }
