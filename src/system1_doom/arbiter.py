@@ -5,8 +5,6 @@ import random
 from typing import Dict, Literal, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
-PickRule = Literal["committed", "explored", "greedy", "sampled", "critical_cached"]
-
 from system1_doom.actions import ActionSpec
 from system1_doom.archive import StrategyEntry
 from system1_doom.d1_client import ChoiceQuestion, D1Response, D1UltraClient
@@ -14,6 +12,8 @@ from system1_doom.exploration import ExplorationController, ExplorationState
 from system1_doom.modules import DecisionOutput
 from system1_doom.simulator import ProjectedOutcome
 from system1_doom.state import WorldState
+
+PickRule = Literal["committed", "explored", "greedy", "sampled", "critical_cached"]
 
 
 class ArbiterDecision(BaseModel):
