@@ -1,0 +1,1636 @@
+{
+  "$defs": {
+    "ActionInfo": {
+      "description": "One vocabulary entry as the bundle describes it.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "is_macro": {
+          "title": "Is Macro",
+          "type": "boolean"
+        },
+        "builtin": {
+          "title": "Builtin",
+          "type": "boolean"
+        },
+        "primitives": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Primitives",
+          "type": "array"
+        },
+        "preconditions": {
+          "additionalProperties": true,
+          "title": "Preconditions",
+          "type": "object"
+        },
+        "maximum_duration": {
+          "title": "Maximum Duration",
+          "type": "integer"
+        },
+        "termination_condition": {
+          "title": "Termination Condition",
+          "type": "string"
+        },
+        "execution_cost": {
+          "title": "Execution Cost",
+          "type": "number"
+        },
+        "encoding": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Encoding",
+          "type": "array"
+        }
+      },
+      "required": [
+        "description",
+        "is_macro",
+        "builtin",
+        "primitives",
+        "preconditions",
+        "maximum_duration",
+        "termination_condition",
+        "execution_cost",
+        "encoding"
+      ],
+      "title": "ActionInfo",
+      "type": "object"
+    },
+    "AdmissionStageResult": {
+      "description": "Outcome of one admission stage (parse, legality, sandbox, d1, admit), for traces.",
+      "properties": {
+        "stage": {
+          "enum": [
+            "parse",
+            "legality",
+            "sandbox",
+            "d1",
+            "admit"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "skipped": {
+          "default": false,
+          "title": "Skipped",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "passed"
+      ],
+      "title": "AdmissionStageResult",
+      "type": "object"
+    },
+    "ArbiterTrace": {
+      "description": "The arbiter's arithmetic: one score per action, the weights behind it, and how the pick was made.",
+      "properties": {
+        "action_scores": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Action Scores",
+          "type": "object"
+        },
+        "component_breakdown": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "title": "Component Breakdown",
+          "type": "object"
+        },
+        "module_weights": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Module Weights",
+          "type": "object"
+        },
+        "module_weights_heuristic": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Module Weights Heuristic",
+          "type": "object"
+        },
+        "module_weights_gate": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Module Weights Gate"
+        },
+        "gate_share": {
+          "default": 0.0,
+          "title": "Gate Share",
+          "type": "number"
+        },
+        "temperature": {
+          "default": 0.0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "exploration_pressure": {
+          "default": 0.0,
+          "title": "Exploration Pressure",
+          "type": "number"
+        },
+        "exploration_floor": {
+          "default": 0.0,
+          "title": "Exploration Floor",
+          "type": "number"
+        },
+        "deterministic": {
+          "default": false,
+          "title": "Deterministic",
+          "type": "boolean"
+        },
+        "pick_rule": {
+          "default": "greedy",
+          "enum": [
+            "committed",
+            "explored",
+            "greedy",
+            "sampled",
+            "critical_cached"
+          ],
+          "title": "Pick Rule",
+          "type": "string"
+        },
+        "score_margin": {
+          "default": 0.0,
+          "title": "Score Margin",
+          "type": "number"
+        },
+        "committed_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Committed By"
+        },
+        "confidence": {
+          "default": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "title": "ArbiterTrace",
+      "type": "object"
+    },
+    "BrainsInfo": {
+      "description": "Which deciders were switched on for this episode.",
+      "properties": {
+        "heuristics": {
+          "default": true,
+          "title": "Heuristics",
+          "type": "boolean"
+        },
+        "learned_networks": {
+          "title": "Learned Networks",
+          "type": "boolean"
+        },
+        "d1_ultra": {
+          "title": "D1 Ultra",
+          "type": "boolean"
+        },
+        "slow_path": {
+          "enum": [
+            "off",
+            "templates",
+            "codex"
+          ],
+          "title": "Slow Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "learned_networks",
+        "d1_ultra",
+        "slow_path"
+      ],
+      "title": "BrainsInfo",
+      "type": "object"
+    },
+    "BundleIndexEntry": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "scenario": {
+          "title": "Scenario",
+          "type": "string"
+        },
+        "model": {
+          "enum": [
+            "heuristics",
+            "best",
+            "latest"
+          ],
+          "title": "Model",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "cleared": {
+          "title": "Cleared",
+          "type": "boolean"
+        },
+        "died": {
+          "title": "Died",
+          "type": "boolean"
+        },
+        "reward": {
+          "title": "Reward",
+          "type": "number"
+        },
+        "ticks": {
+          "title": "Ticks",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "title",
+        "scenario",
+        "model",
+        "seed",
+        "cleared",
+        "died",
+        "reward",
+        "ticks"
+      ],
+      "title": "BundleIndexEntry",
+      "type": "object"
+    },
+    "CheckpointInfo": {
+      "properties": {
+        "file": {
+          "title": "File",
+          "type": "string"
+        },
+        "episodes": {
+          "title": "Episodes",
+          "type": "integer"
+        },
+        "transitions_seen": {
+          "title": "Transitions Seen",
+          "type": "integer"
+        },
+        "network_share": {
+          "title": "Network Share",
+          "type": "number"
+        },
+        "best_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Best Score"
+        }
+      },
+      "required": [
+        "file",
+        "episodes",
+        "transitions_seen",
+        "network_share"
+      ],
+      "title": "CheckpointInfo",
+      "type": "object"
+    },
+    "EnemyTrace": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "distance": {
+          "title": "Distance",
+          "type": "number"
+        },
+        "angle_offset": {
+          "title": "Angle Offset",
+          "type": "number"
+        },
+        "screen_x": {
+          "title": "Screen X",
+          "type": "integer"
+        },
+        "screen_y": {
+          "title": "Screen Y",
+          "type": "integer"
+        },
+        "width": {
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "distance",
+        "angle_offset",
+        "screen_x",
+        "screen_y",
+        "width",
+        "height"
+      ],
+      "title": "EnemyTrace",
+      "type": "object"
+    },
+    "EpisodeMeta": {
+      "description": "`episode.json`: what a bundle contains and how it was recorded.",
+      "properties": {
+        "schema_version": {
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "scenario": {
+          "title": "Scenario",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "model": {
+          "enum": [
+            "heuristics",
+            "best",
+            "latest"
+          ],
+          "title": "Model",
+          "type": "string"
+        },
+        "checkpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CheckpointInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "brains": {
+          "$ref": "#/$defs/BrainsInfo"
+        },
+        "config": {
+          "$ref": "#/$defs/PlayConfigInfo"
+        },
+        "result": {
+          "$ref": "#/$defs/EpisodeResult"
+        },
+        "first_tick": {
+          "title": "First Tick",
+          "type": "integer"
+        },
+        "last_tick": {
+          "title": "Last Tick",
+          "type": "integer"
+        },
+        "tick_count": {
+          "title": "Tick Count",
+          "type": "integer"
+        },
+        "buttons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Buttons",
+          "type": "array"
+        },
+        "frames": {
+          "$ref": "#/$defs/FramesInfo"
+        },
+        "actions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ActionInfo"
+          },
+          "title": "Actions",
+          "type": "object"
+        },
+        "modules": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Modules",
+          "type": "object"
+        },
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "package_version": {
+          "title": "Package Version",
+          "type": "string"
+        },
+        "recorded_at": {
+          "title": "Recorded At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "title",
+        "scenario",
+        "seed",
+        "model",
+        "brains",
+        "config",
+        "result",
+        "first_tick",
+        "last_tick",
+        "tick_count",
+        "buttons",
+        "frames",
+        "actions",
+        "modules",
+        "files",
+        "recorded_at"
+      ],
+      "title": "EpisodeMeta",
+      "type": "object"
+    },
+    "EpisodeResult": {
+      "description": "`DoomDecisionController.run_episode` summary without the traces.",
+      "properties": {
+        "health": {
+          "title": "Health",
+          "type": "number"
+        },
+        "armor": {
+          "title": "Armor",
+          "type": "number"
+        },
+        "kills": {
+          "title": "Kills",
+          "type": "number"
+        },
+        "reward": {
+          "title": "Reward",
+          "type": "number"
+        },
+        "ticks": {
+          "title": "Ticks",
+          "type": "integer"
+        },
+        "finished": {
+          "title": "Finished",
+          "type": "boolean"
+        },
+        "cleared": {
+          "title": "Cleared",
+          "type": "boolean"
+        },
+        "died": {
+          "title": "Died",
+          "type": "boolean"
+        },
+        "transitions": {
+          "default": 0,
+          "title": "Transitions",
+          "type": "integer"
+        },
+        "explored_steps": {
+          "default": 0,
+          "title": "Explored Steps",
+          "type": "integer"
+        },
+        "network_share": {
+          "default": 0.0,
+          "title": "Network Share",
+          "type": "number"
+        },
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Actions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "health",
+        "armor",
+        "kills",
+        "reward",
+        "ticks",
+        "finished",
+        "cleared",
+        "died"
+      ],
+      "title": "EpisodeResult",
+      "type": "object"
+    },
+    "FramesInfo": {
+      "properties": {
+        "dir": {
+          "default": "frames",
+          "title": "Dir",
+          "type": "string"
+        },
+        "pattern": {
+          "default": "{tick:05d}.jpg",
+          "title": "Pattern",
+          "type": "string"
+        },
+        "width": {
+          "default": 320,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "default": 240,
+          "title": "Height",
+          "type": "integer"
+        },
+        "end_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Frame"
+        }
+      },
+      "title": "FramesInfo",
+      "type": "object"
+    },
+    "ModuleTrace": {
+      "description": "One module's entry in `TickTrace.module_outputs`. Plain dict at runtime; typed for the schema.",
+      "properties": {
+        "top_action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Top Action"
+        },
+        "confidence": {
+          "title": "Confidence",
+          "type": "number"
+        },
+        "uncertainty": {
+          "title": "Uncertainty",
+          "type": "number"
+        },
+        "request_action_expansion": {
+          "title": "Request Action Expansion",
+          "type": "boolean"
+        },
+        "expansion_problem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expansion Problem"
+        },
+        "used_d1_ultra": {
+          "title": "Used D1 Ultra",
+          "type": "boolean"
+        },
+        "probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Probabilities",
+          "type": "object"
+        },
+        "d1_top_action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "D1 Top Action"
+        },
+        "d1_probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "D1 Probabilities",
+          "type": "object"
+        },
+        "utility_heuristic": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Utility Heuristic",
+          "type": "object"
+        },
+        "utility_learned": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Utility Learned",
+          "type": "object"
+        },
+        "trust": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Trust",
+          "type": "object"
+        },
+        "utility_blended": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Utility Blended",
+          "type": "object"
+        },
+        "d1_weight": {
+          "title": "D1 Weight",
+          "type": "number"
+        },
+        "request_additional_simulation": {
+          "title": "Request Additional Simulation",
+          "type": "boolean"
+        },
+        "memory": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Memory",
+          "type": "object"
+        }
+      },
+      "title": "ModuleTrace",
+      "type": "object"
+    },
+    "OutcomeTrace": {
+      "description": "What the executed action changed in the game, and the per-module rewards it becomes.",
+      "properties": {
+        "reward": {
+          "default": 0.0,
+          "title": "Reward",
+          "type": "number"
+        },
+        "damage_taken": {
+          "default": 0.0,
+          "title": "Damage Taken",
+          "type": "number"
+        },
+        "hits_delta": {
+          "default": 0.0,
+          "title": "Hits Delta",
+          "type": "number"
+        },
+        "kills_delta": {
+          "default": 0.0,
+          "title": "Kills Delta",
+          "type": "number"
+        },
+        "health_gain": {
+          "default": 0.0,
+          "title": "Health Gain",
+          "type": "number"
+        },
+        "armor_gain": {
+          "default": 0.0,
+          "title": "Armor Gain",
+          "type": "number"
+        },
+        "ammo_gain": {
+          "default": 0.0,
+          "title": "Ammo Gain",
+          "type": "number"
+        },
+        "new_cells": {
+          "default": 0,
+          "title": "New Cells",
+          "type": "integer"
+        },
+        "displacement": {
+          "default": 0.0,
+          "title": "Displacement",
+          "type": "number"
+        },
+        "died": {
+          "default": false,
+          "title": "Died",
+          "type": "boolean"
+        },
+        "health_after": {
+          "default": 0.0,
+          "title": "Health After",
+          "type": "number"
+        },
+        "armor_after": {
+          "default": 0.0,
+          "title": "Armor After",
+          "type": "number"
+        },
+        "episode_finished": {
+          "default": false,
+          "title": "Episode Finished",
+          "type": "boolean"
+        },
+        "module_rewards": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Module Rewards",
+          "type": "object"
+        }
+      },
+      "title": "OutcomeTrace",
+      "type": "object"
+    },
+    "PickupTrace": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "distance": {
+          "title": "Distance",
+          "type": "number"
+        },
+        "angle_offset": {
+          "title": "Angle Offset",
+          "type": "number"
+        },
+        "screen_x": {
+          "title": "Screen X",
+          "type": "integer"
+        },
+        "screen_y": {
+          "title": "Screen Y",
+          "type": "integer"
+        },
+        "width": {
+          "default": 12,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "default": 12,
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category",
+        "distance",
+        "angle_offset",
+        "screen_x",
+        "screen_y"
+      ],
+      "title": "PickupTrace",
+      "type": "object"
+    },
+    "PlayConfigInfo": {
+      "properties": {
+        "execution_mode": {
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "tick_budget_sec": {
+          "title": "Tick Budget Sec",
+          "type": "number"
+        },
+        "deterministic_arbiter": {
+          "title": "Deterministic Arbiter",
+          "type": "boolean"
+        },
+        "exploration_floor": {
+          "title": "Exploration Floor",
+          "type": "number"
+        },
+        "max_ticks": {
+          "title": "Max Ticks",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "execution_mode",
+        "tick_budget_sec",
+        "deterministic_arbiter",
+        "exploration_floor",
+        "max_ticks"
+      ],
+      "title": "PlayConfigInfo",
+      "type": "object"
+    },
+    "PositionTrace": {
+      "properties": {
+        "x": {
+          "default": 0.0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0.0,
+          "title": "Y",
+          "type": "number"
+        },
+        "angle": {
+          "default": 0.0,
+          "title": "Angle",
+          "type": "number"
+        }
+      },
+      "title": "PositionTrace",
+      "type": "object"
+    },
+    "ProjectionChainTrace": {
+      "description": "The bounded simulator's rollout of the selected action, primitive by primitive (first branch).",
+      "properties": {
+        "action_id": {
+          "title": "Action Id",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/ProjectionStepTrace"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "branch_values": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Branch Values",
+          "type": "array"
+        },
+        "expected_value": {
+          "default": 0.0,
+          "title": "Expected Value",
+          "type": "number"
+        },
+        "empirical_samples": {
+          "default": 0,
+          "title": "Empirical Samples",
+          "type": "integer"
+        },
+        "depth_reached": {
+          "default": 0,
+          "title": "Depth Reached",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "action_id"
+      ],
+      "title": "ProjectionChainTrace",
+      "type": "object"
+    },
+    "ProjectionStepTrace": {
+      "properties": {
+        "primitive": {
+          "title": "Primitive",
+          "type": "string"
+        },
+        "health": {
+          "title": "Health",
+          "type": "number"
+        },
+        "damage_taken": {
+          "title": "Damage Taken",
+          "type": "number"
+        },
+        "damage_dealt": {
+          "title": "Damage Dealt",
+          "type": "number"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "angle": {
+          "title": "Angle",
+          "type": "number"
+        }
+      },
+      "required": [
+        "primitive",
+        "health",
+        "damage_taken",
+        "damage_dealt",
+        "x",
+        "y",
+        "angle"
+      ],
+      "title": "ProjectionStepTrace",
+      "type": "object"
+    },
+    "ProposalTrace": {
+      "description": "Audit trace for asynchronous LLM proposals and admission decisions (Spec Section 17).",
+      "properties": {
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "request_context": {
+          "title": "Request Context",
+          "type": "string"
+        },
+        "raw_proposal": {
+          "title": "Raw Proposal",
+          "type": "string"
+        },
+        "parsed_proposal": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parsed Proposal"
+        },
+        "validation_result": {
+          "title": "Validation Result",
+          "type": "string"
+        },
+        "admission_decision": {
+          "title": "Admission Decision",
+          "type": "boolean"
+        },
+        "admitted_action_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Admitted Action Id"
+        },
+        "d1_admission_probability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "D1 Admission Probability"
+        },
+        "subsequent_performance": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Subsequent Performance",
+          "type": "array"
+        },
+        "tick": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tick"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "codex",
+                "template",
+                "custom"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "source_module": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Module"
+        },
+        "stage_results": {
+          "items": {
+            "$ref": "#/$defs/AdmissionStageResult"
+          },
+          "title": "Stage Results",
+          "type": "array"
+        },
+        "sandbox_summary": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sandbox Summary"
+        },
+        "admitted_strategy_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Admitted Strategy Id"
+        }
+      },
+      "required": [
+        "timestamp",
+        "request_context",
+        "raw_proposal",
+        "validation_result",
+        "admission_decision"
+      ],
+      "title": "ProposalTrace",
+      "type": "object"
+    },
+    "SlowPathRequestTrace": {
+      "description": "An expansion request this tick handed to the slow worker.",
+      "properties": {
+        "module": {
+          "title": "Module",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "module",
+        "description"
+      ],
+      "title": "SlowPathRequestTrace",
+      "type": "object"
+    },
+    "StateTrace": {
+      "description": "The frozen world state every module saw this tick.",
+      "properties": {
+        "tick": {
+          "title": "Tick",
+          "type": "integer"
+        },
+        "episode_tick": {
+          "default": 0,
+          "title": "Episode Tick",
+          "type": "integer"
+        },
+        "health": {
+          "title": "Health",
+          "type": "number"
+        },
+        "armor": {
+          "title": "Armor",
+          "type": "number"
+        },
+        "ammo": {
+          "title": "Ammo",
+          "type": "integer"
+        },
+        "weapon": {
+          "title": "Weapon",
+          "type": "string"
+        },
+        "movement": {
+          "title": "Movement",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/PositionTrace"
+        },
+        "walls": {
+          "$ref": "#/$defs/WallTrace"
+        },
+        "enemies": {
+          "items": {
+            "$ref": "#/$defs/EnemyTrace"
+          },
+          "title": "Enemies",
+          "type": "array"
+        },
+        "pickups": {
+          "items": {
+            "$ref": "#/$defs/PickupTrace"
+          },
+          "title": "Pickups",
+          "type": "array"
+        },
+        "recent_incoming_damage": {
+          "default": 0.0,
+          "title": "Recent Incoming Damage",
+          "type": "number"
+        },
+        "recent_outgoing_damage": {
+          "default": 0.0,
+          "title": "Recent Outgoing Damage",
+          "type": "number"
+        },
+        "recent_kills": {
+          "default": 0,
+          "title": "Recent Kills",
+          "type": "integer"
+        },
+        "recent_actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Recent Actions",
+          "type": "array"
+        },
+        "episode_progress": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Episode Progress",
+          "type": "object"
+        },
+        "screen_width": {
+          "default": 320,
+          "title": "Screen Width",
+          "type": "integer"
+        },
+        "screen_height": {
+          "default": 240,
+          "title": "Screen Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tick",
+        "health",
+        "armor",
+        "ammo",
+        "weapon",
+        "movement",
+        "position",
+        "walls"
+      ],
+      "title": "StateTrace",
+      "type": "object"
+    },
+    "SteeringTrace": {
+      "description": "The four-way strategy meta-decision made after the action ran, and the archive it chose from.",
+      "properties": {
+        "choice": {
+          "title": "Choice",
+          "type": "string"
+        },
+        "probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Probabilities",
+          "type": "object"
+        },
+        "scores": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Scores",
+          "type": "object"
+        },
+        "confidence": {
+          "default": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "active_before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Before"
+        },
+        "active_after": {
+          "title": "Active After",
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/StrategyEntryTrace"
+          },
+          "title": "Entries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "choice",
+        "active_after"
+      ],
+      "title": "SteeringTrace",
+      "type": "object"
+    },
+    "StrategyEntryTrace": {
+      "properties": {
+        "strategy_id": {
+          "title": "Strategy Id",
+          "type": "string"
+        },
+        "context_signature": {
+          "title": "Context Signature",
+          "type": "string"
+        },
+        "action_sequence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Action Sequence",
+          "type": "array"
+        },
+        "observed_reward": {
+          "title": "Observed Reward",
+          "type": "number"
+        },
+        "success_rate": {
+          "title": "Success Rate",
+          "type": "number"
+        },
+        "usage_count": {
+          "title": "Usage Count",
+          "type": "integer"
+        },
+        "failure_modes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Modes",
+          "type": "array"
+        },
+        "novelty_signature": {
+          "default": "default",
+          "title": "Novelty Signature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_id",
+        "context_signature",
+        "action_sequence",
+        "observed_reward",
+        "success_rate",
+        "usage_count"
+      ],
+      "title": "StrategyEntryTrace",
+      "type": "object"
+    },
+    "TickTrace": {
+      "description": "Compact per-tick decision trace (Spec Section 17).\n\nThe fields after `learning` are the decision's anatomy (see `tracing.py`). They are optional,\nso traces written before they existed still parse.",
+      "properties": {
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "tick": {
+          "title": "Tick",
+          "type": "integer"
+        },
+        "state_hash": {
+          "title": "State Hash",
+          "type": "string"
+        },
+        "context_signature": {
+          "title": "Context Signature",
+          "type": "string"
+        },
+        "budget_mode": {
+          "enum": [
+            "full",
+            "reduced",
+            "critical"
+          ],
+          "title": "Budget Mode",
+          "type": "string"
+        },
+        "available_actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Available Actions",
+          "type": "array"
+        },
+        "module_outputs": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ModuleTrace"
+          },
+          "title": "Module Outputs",
+          "type": "object"
+        },
+        "projection_results_used": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "title": "Projection Results Used",
+          "type": "object"
+        },
+        "arbiter_distribution": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Arbiter Distribution",
+          "type": "object"
+        },
+        "selected_action": {
+          "title": "Selected Action",
+          "type": "string"
+        },
+        "primitive_steps_executed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Primitive Steps Executed",
+          "type": "array"
+        },
+        "exploration_state": {
+          "additionalProperties": true,
+          "title": "Exploration State",
+          "type": "object"
+        },
+        "active_strategy": {
+          "title": "Active Strategy",
+          "type": "string"
+        },
+        "reward_outcome": {
+          "title": "Reward Outcome",
+          "type": "number"
+        },
+        "used_d1_ultra": {
+          "default": false,
+          "title": "Used D1 Ultra",
+          "type": "boolean"
+        },
+        "d1_arbiter_distribution": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "D1 Arbiter Distribution",
+          "type": "object"
+        },
+        "learning": {
+          "additionalProperties": true,
+          "title": "Learning",
+          "type": "object"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StateTrace"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pruned_actions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Pruned Actions",
+          "type": "object"
+        },
+        "arbiter": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArbiterTrace"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "projection_chain": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectionChainTrace"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "steering": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SteeringTrace"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutcomeTrace"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "slow_path_request": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SlowPathRequestTrace"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "budget_sec": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Budget Sec"
+        },
+        "timing_ms": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Timing Ms",
+          "type": "object"
+        }
+      },
+      "required": [
+        "timestamp",
+        "tick",
+        "state_hash",
+        "context_signature",
+        "budget_mode",
+        "available_actions",
+        "module_outputs",
+        "projection_results_used",
+        "arbiter_distribution",
+        "selected_action",
+        "primitive_steps_executed",
+        "exploration_state",
+        "active_strategy",
+        "reward_outcome"
+      ],
+      "title": "TickTrace",
+      "type": "object"
+    },
+    "WallTrace": {
+      "properties": {
+        "front": {
+          "default": 0.0,
+          "title": "Front",
+          "type": "number"
+        },
+        "left": {
+          "default": 0.0,
+          "title": "Left",
+          "type": "number"
+        },
+        "right": {
+          "default": 0.0,
+          "title": "Right",
+          "type": "number"
+        }
+      },
+      "title": "WallTrace",
+      "type": "object"
+    }
+  },
+  "title": "system1_doom episode bundle",
+  "description": "Generated by `python -m system1_doom.export --schema` from the pydantic models (schema_version 1). Do not edit by hand."
+}
