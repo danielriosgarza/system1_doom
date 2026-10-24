@@ -18,8 +18,8 @@
 > section references like “Spec §9” point back to `spec.md`.
 
 **Package:** `system1-doom` 0.2.0 · **Python:** ≥ 3.11 · **Source layout:**
-`src/system1_doom/` (21 modules, ≈ 5,400 LOC) · **Tests:** `tests/`
-(13 files, 48 tests)
+`src/system1_doom/` (23 modules, ≈ 6,600 LOC) · **Tests:** `tests/`
+(14 files, 57 tests) · **Web explainer:** `web/` (Vite + React + TypeScript)
 
 ---
 
@@ -47,6 +47,7 @@
    - 8.12 [Admission pipeline — `admission.py`](#812-admission-pipeline--admissionpy)
    - 8.13 [Controller orchestration — `controller.py`](#813-controller-orchestration--controllerpy)
    - 8.14 [Logging & visualisation — `logger.py`, `visualizer.py`, `charts.py`](#814-logging--visualisation--loggerpy-visualizerpy-chartspy)
+   - 8.15 [Episode bundles & the web explainer — `tracing.py`, `export.py`, `web/`](#815-episode-bundles--the-web-explainer--tracingpy-exportpy-web)
 9. [The slow path end-to-end](#9-the-slow-path-end-to-end)
 10. [The learning loop end-to-end](#10-the-learning-loop-end-to-end)
 11. [Entry points & CLI reference](#11-entry-points--cli-reference)
@@ -225,8 +226,10 @@ system1_doom/
 │       ├── specs/2026-10-23-learning-controller-design.md
 │       └── plans/2026-10-23-d1-ultra-doom-controller.md
 ├── src/system1_doom/               # the package (see table below)
-├── tests/                          # 13 files, 48 tests (§16)
+├── tests/                          # 14 files, 57 tests (§16)
+├── web/                            # the web explainer: Vite + React app and demo bundles (§8.15)
 ├── runs/<scenario>/                # training output, per scenario (§13)
+├── bundles/                        # episode bundles from `system1_doom.export` (§13)
 ├── logs/                           # default decision logs (ticks/proposals.jsonl)
 └── _vizdoom.ini, _vizdoom/         # ViZDoom engine config / WAD search dir
 ```
@@ -248,7 +251,9 @@ system1_doom/
 | `llm_worker.py` | 236 | Async slow path: builds a bounded expansion prompt, runs `codex exec`, falls back to templates |
 | `admission.py` | 230 | Deterministic + sandbox + d1 admission gate for LLM macro proposals |
 | `controller.py` | 462 | `DoomDecisionController`: orchestrates one tick and one episode; budget degradation; module swapping |
-| `logger.py` | 89 | `TickTrace`/`ProposalTrace` JSONL logging |
+| `logger.py` | 121 | `TickTrace`/`ProposalTrace` JSONL logging |
+| `tracing.py` | 425 | Typed decision-anatomy records for traces (state, pruning, module and arbiter arithmetic, rollout, steering, outcome), read-only |
+| `export.py` | 519 | Episode bundles for the web explainer, bundle checks, index, JSON Schema (`python -m system1_doom.export`) |
 | `visualizer.py` | 386 | Split-screen HUD frames, GIF/MP4 recorder, live Tk decision dashboard |
 | `charts.py` | 118 | `learning_curves.png` from `metrics.jsonl` (matplotlib, dark theme) |
 | `cli.py` | 183 | Play/watch entry point (`python -m system1_doom.cli`) |
@@ -257,7 +262,8 @@ system1_doom/
 
 Dependencies point “downwards” only: `controller` wires everything;
 `modules`/`arbiter` depend on `state`, `actions`, `simulator`, `d1_client`;
-`learning` depends only on `features`; nothing depends on `cli`/`train`.
+`learning` depends only on `features`; `tracing` depends on `features`
+and only reads the others' records; nothing depends on `cli`/`train`/`export`.
 
 ---
 
@@ -919,6 +925,29 @@ proposal, validation/admission outcome, admitted id and d1 probability;
 the rewards later obtained by executing an admitted macro, so its
 subsequent performance is auditable.
 
+Since trace schema version 1 (`logger.TRACE_SCHEMA_VERSION`) each tick
+also carries the decision's *anatomy*, built by `tracing.py` from values
+the fast path already computes (nothing in it feeds back into control):
+`state` (vitals, position, walls, every visible enemy and pickup with
+angle, distance and screen box), `pruned_actions` (each vocabulary action
+left off the menu → the first precondition it failed, from
+`PreconditionSpec.failing_condition`, or `unsupported_by_scenario`),
+per-module `utility_heuristic` / `utility_learned` / `trust` /
+`utility_blended` / `d1_weight` / `memory` inside `module_outputs`,
+`arbiter` (scores, the full component breakdown including the module-vote
+and projection terms, table/gate/used module weights, gate share,
+temperature, `pick_rule` ∈ committed/explored/greedy/sampled/critical_cached,
+score margin, committing module), `projection_chain` (the selected
+action's rollout step by step), `steering` (the 4-way strategy decision
+with scores, probabilities, the active strategy before/after and the
+archive), `exploration_state.terms` (the four quarter-terms and three
+dampers), `outcome` (what the action changed plus the five per-module
+rewards), `slow_path_request`, `budget_sec` and `timing_ms`. All of these
+are optional, so traces written before them still parse. `ProposalTrace`
+gains the drain `tick`, `source` (codex/template/custom), `source_module`,
+per-stage `stage_results` (parse → legality → sandbox → d1 → admit, each
+with pass/skip and a reason), `sandbox_summary` and `admitted_strategy_id`.
+
 **`visualizer.render_hud_frame()`** composes a 1080×480 split-screen
 frame (640×480 game view with tick/HP/action banners + a right panel
 showing the five modules' top actions and confidences, the arbiter's
@@ -935,6 +964,46 @@ the 2×2 dark-themed `learning_curves.png`: episode reward, cleared/
 survived rates, health & kills, and network-share + per-module losses
 (log scale). Rolling means use the same `rolling_mean` helper that
 best-checkpoint selection uses.
+
+### 8.15 Episode bundles & the web explainer — `tracing.py`, `export.py`, `web/`
+
+The web explainer is a static site that replays one recorded episode
+tick by tick and explains every level of the decision with a three-layer
+explainer (one sentence, a paragraph, and the formula with that tick's
+numbers substituted). The browser never talks to ViZDoom: it reads
+**episode bundles** written by `python -m system1_doom.export` (§11).
+
+A bundle is one folder per episode:
+
+| File | Contents |
+|---|---|
+| `episode.json` | `EpisodeMeta`: schema version, scenario, seed, model (`heuristics`/`best`/`latest`), checkpoint info, which brains were on, play config, the `run_episode` result, tick range, the action catalog (description, primitives, preconditions, execution cost, 12-number encoding) and each module's question |
+| `ticks.jsonl` | One enriched `TickTrace` per tick (§8.14) |
+| `proposals.jsonl` | One `ProposalTrace` per slow-path proposal |
+| `frames/00042.jpg` | The 320×240 screen the controller saw when it **decided** tick 42 (captured at state acquisition by `RecordingBridge`, so overlays drawn from `state` line up with the picture); `frames/end.jpg` is the screen after the last action |
+| `metrics.jsonl`, `evaluation.json`, `macros.json` | Copied from the run folder when present |
+| `trust.json` | `action_counts`, `context_counts`, network share and episodes from the loaded checkpoint |
+
+`--schema` dumps one JSON Schema (from the pydantic models) whose
+`$defs` hold `EpisodeMeta`, `TickTrace`, `ProposalTrace` and
+`BundleIndexEntry`; `web/scripts/gen-types.mjs` turns it into
+`web/src/schema/bundle.ts`, so the Python models and the browser cannot
+drift apart. `--check` validates a bundle against the models and checks
+that every tick has a frame; `--index DIR` writes `DIR/index.json`, the
+list the app's episode picker reads.
+
+The app (`web/`, see `web/README.md`) shows, for the tick under the
+timeline cursor: the frame with enemy/pickup boxes, the ±12° aim band and
+wall-distance arcs drawn from the trace; the world state and its five
+context buckets; the menu (legal, pruned with the failed precondition,
+and macros admitted during the episode); the simulator's projections and
+the selected action's rollout; the five modules' probabilities, split
+into heuristic (solid) and learned (hatched, by trust λ) shares; the
+arbiter's score for each action stacked from its parts, the table and
+gate module-weight rings, and the pick rule in words; the motor's steps
+in words, with reflexes marked; and the outcome, its five module rewards
+and where it is filed. A Plain/Formula toggle hides or shows the
+arithmetic. Two demo bundles ship in `web/public/episodes/`.
 
 ---
 
@@ -1044,7 +1113,38 @@ followed by a session summary (first-vs-last window means, network share,
 replay size). Exit code 2 with the install hint when torch/matplotlib is
 missing, and on checkpoint mismatch (with a `--fresh` remedy).
 
-There is no `python -m system1_doom` `__main__`; use the two module
+### `python -m system1_doom.export` — record episode bundles for the web explainer
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--scenario` | `deadly_corridor.cfg` | ViZDoom scenario cfg |
+| `--episodes N` | 1 | Episodes to record, with seeds `seed, seed+1, …` |
+| `--seed` | 7 | Seed of the first episode (`env.restart_episode(seed)` before each) |
+| `--model` | `heuristics` | `heuristics`, `best` (`best.pt`) or `latest` (`checkpoint.pt`) from the run folder |
+| `--run-dir` | `runs/<scenario-stem>` | Run folder with trained models, macros and metrics |
+| `--out` | `bundles/<stem>-<model>-<seed>` | Bundle folder (a parent folder when `--episodes` > 1) |
+| `--name`, `--title` | folder name / generated | How the app lists the episode |
+| `--max-ticks` | 500 | Decision cap per episode |
+| `--d1` | off | Use d1-ultra (needs `LIQUID_API_KEY`) |
+| `--codex` | off | Let the slow path call the Codex CLI; otherwise it runs on fallback templates |
+| `--no-slow-path` | — | Switch the slow path off |
+| `--deterministic` | off | Always take the arbiter's top score |
+| `--check BUNDLE` | — | Validate a bundle and exit (exit code 1 on problems) |
+| `--index DIR` | — | Write `DIR/index.json` listing its bundles and exit |
+| `--schema OUT.json` | — | Write the bundle JSON Schema and exit |
+
+Recording uses `async_cached` mode with a 40 ms budget, exploration
+floor 0 and `record_experience` off, so a replay only reads the
+networks. To publish a bundle in the app:
+
+```bash
+python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --model latest \
+    --out web/public/episodes/deadly_corridor-learned-9
+python -m system1_doom.export --check web/public/episodes/deadly_corridor-learned-9
+python -m system1_doom.export --index web/public/episodes
+```
+
+There is no `python -m system1_doom` `__main__`; use the three module
 entry points above (or embed `DoomDecisionController` directly — §17).
 
 ---
@@ -1113,6 +1213,11 @@ projections → arbiter distribution → pick.
 The repo ships example runs for `deadly_corridor` (300 episodes) and
 `defend_the_center` (200 episodes) — see §15.
 
+**`bundles/<stem>-<model>-<seed>/`** — episode bundles written by
+`python -m system1_doom.export` (§8.15); gitignored. Bundles the web app
+should show are written to `web/public/episodes/<name>/` instead and
+committed, with `web/public/episodes/index.json` listing them.
+
 ---
 
 ## 14. Failure modes & graceful degradation
@@ -1167,7 +1272,7 @@ Two empirical findings worth knowing before tuning:
 ## 16. Testing
 
 ```bash
-python -m pytest            # 48 tests, 13 files, from the repo root
+python -m pytest            # 57 tests, 14 files, from the repo root
 ```
 
 Tests use real ViZDoom headlessly, so the suite takes longer than a pure
@@ -1190,6 +1295,13 @@ and expect them to fail (by assertion, not skip) without one.
 | `test_controller_e2e.py` | **Acceptance**: plays normally with LLMs disabled, traces every tick, budget degradation; module replacement + discover→admit→retain→reuse a new macro; live ViZDoom in sync + async d1 modes |
 | `test_level_clearance.py` | Heuristic controller clears `basic.cfg`; every executed step follows the selected action's own plan; learning controller records every decision |
 | `test_visualizer.py` | HUD frame render + GIF save; dashboard shows d1/Codex sections |
+| `test_export.py` | A 5-tick `basic.cfg` bundle has every file and a frame per tick; pruned + legal actions partition the vocabulary; each arbiter breakdown adds up to its score; module anatomy and outcome are recorded; the schema dump validates a trace; pre-anatomy traces still parse; `failing_condition` agrees with `is_satisfied`; admission records each stage |
+
+The web explainer has its own checks, run from `web/`: `npm run build`
+and `npm run lint` (type-check and oxlint), `npm test` (Vitest: the
+loader and the trace readings on a five-tick fixture bundle) and
+`npm run e2e` (Playwright: scrubbing to tick 5 shows the traced action
+in every panel).
 
 ---
 
