@@ -97,6 +97,8 @@ def test_schema_dump_validates_a_recorded_trace(bundle, tmp_path):
 
 
 def test_copied_run_files_validate_against_their_models(tmp_path):
+    # Training needs torch; without it train.main exits early and there is nothing to validate.
+    pytest.importorskip("torch")
     from system1_doom import train
 
     run_dir = tmp_path / "run"
