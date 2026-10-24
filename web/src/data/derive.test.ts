@@ -3,8 +3,10 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { EpisodeMeta, MetricsRow, ProposalTrace, TickTrace, TrustFile } from '../schema/bundle'
 import {
+  MODULES,
   admissions,
   aimBandHalfWidth,
+  closestToAsking,
   contextBuckets,
   contextWords,
   describeStep,
@@ -13,17 +15,25 @@ import {
   exploration,
   featuredTickIndex,
   floorAt,
+  followUp,
   gateBlend,
+  gateLevel,
   moduleVoteParts,
   motorSteps,
   nStepReturns,
   pressureForArbiter,
   pressureReading,
+  preconditionWords,
+  proposalShown,
   prunedReasonText,
   rankedActions,
+  requestContext,
+  requestSpans,
   rolling,
   tickEvents,
+  tickRange,
   towerLevels,
+  triggerAt,
   trustActions,
   trustLambda,
   trustRows,
@@ -315,5 +325,100 @@ describe('learning across episodes', async () => {
     if (!burst) throw new Error('evasive_burst_1')
     expect(encodeAction(burst.primitives, burst.is_macro)).toEqual([0, 0.25, 0.25, 0.25, 0, 0, 0.25, 0, 0, 0.25, 1, 0])
     expect(burst.encoding).toEqual([0, 0.25, 0.25, 0.25, 0, 0, 0.25, 0, 0, 0.25, 1, 0])
+  })
+})
+
+describe('growing the menu across the episode', async () => {
+  const dir = (name: string) => fileURLToPath(new URL(`../../public/episodes/${name}/`, import.meta.url))
+  const read = async (name: string) => ({
+    ticks: parseJsonl<TickTrace>(await readFile(`${dir(name)}ticks.jsonl`, 'utf8'), 'ticks.jsonl'),
+    proposals: parseJsonl<ProposalTrace>(await readFile(`${dir(name)}proposals.jsonl`, 'utf8'), 'proposals.jsonl'),
+    meta: JSON.parse(await readFile(`${dir(name)}episode.json`, 'utf8')) as EpisodeMeta,
+  })
+  const heuristics = await read('deadly_corridor-heuristics-9')
+  const learned = await read('deadly_corridor-learned-9')
+
+  it('pairs each request with the proposal that answered it', () => {
+    const spans = requestSpans(heuristics.ticks, heuristics.proposals)
+    expect(spans.map((s) => [s.module, s.asked, s.arrived, s.proposal?.admitted_action_id])).toEqual([
+      ['survival', 17, 18, 'evasive_burst_1'],
+      ['survival', 28, 29, 'evasive_burst_2'],
+    ])
+    expect(requestSpans(learned.ticks, learned.proposals)).toEqual([])
+  })
+
+  it('reads each request from a rule that holds on that tick', () => {
+    for (const { ticks } of [heuristics, learned]) {
+      for (const tick of ticks) {
+        const request = tick.slow_path_request
+        if (request) expect(triggerAt(request.module as (typeof MODULES)[number], tick).asks).toBe(true)
+      }
+    }
+    // Survival asked on health under 35 under heavy fire; its damage streak never reached 4.
+    const t17 = heuristics.ticks.find((t) => t.tick === 17) as TickTrace
+    expect(triggerAt('survival', t17)).toEqual({ value: 0, threshold: 4, other: true, asks: true })
+    // No rule ever held in the learned recording.
+    expect(learned.ticks.some((t) => MODULES.some((m) => triggerAt(m, t).asks))).toBe(false)
+    expect(closestToAsking(learned.ticks)).toEqual({
+      module: 'combat',
+      tick: 2,
+      counter: 'repeated_failures',
+      value: 1,
+      threshold: 3,
+    })
+  })
+
+  it('splits the request context around the situation, which has colons of its own', () => {
+    const first = heuristics.proposals[0] as ProposalTrace
+    expect(requestContext(first)).toEqual({
+      module: 'survival',
+      signature: 'hp:medium|ammo:stocked|enemies:0:none|dmg:under_fire|pickup:no_pickup',
+      description:
+        'Existing evasion macros failed to prevent heavy incoming damage (health=34, recent_dmg=30, enemies=0).',
+    })
+    expect(preconditionWords(first.parsed_proposal?.preconditions as Record<string, unknown>)).toEqual([
+      'ammo at least 1',
+      'an enemy in view',
+    ])
+  })
+
+  it('shows the proposal of this tick, or the last one before it', () => {
+    const at = (tick: number) =>
+      proposalShown(heuristics.ticks.find((t) => t.tick === tick) as TickTrace, heuristics.proposals)
+    expect(at(17)).toBeNull()
+    expect(at(18)).toMatchObject({ current: true, proposal: { admitted_action_id: 'evasive_burst_1' } })
+    expect(at(27)).toMatchObject({ current: false, proposal: { admitted_action_id: 'evasive_burst_1' } })
+    expect(at(29)).toMatchObject({ current: true, proposal: { admitted_action_id: 'evasive_burst_2' } })
+    const level = gateLevel(heuristics.ticks.find((t) => t.tick === 18) as TickTrace, heuristics.proposals)
+    expect(level.candidates.map((c) => c.value)).toEqual(['passed', 'passed', 'passed', 'skipped', 'passed'])
+  })
+
+  it('follows each admitted macro: never legal, never picked, its strategy adopted for eight ticks', () => {
+    const [first, second] = heuristics.proposals.map((p) => followUp(p, heuristics.ticks))
+    expect(first).toMatchObject({
+      id: 'evasive_burst_1',
+      joined: 18,
+      ticksAfter: 18,
+      legal: [],
+      picked: [],
+      rewards: [],
+    })
+    expect(first?.pruned).toEqual([{ reason: 'requires_visible_enemy', ticks: 18 }])
+    expect(first?.adopted).toEqual([27, 28, 29, 30, 31, 32, 33, 34])
+    // Steering decides after the action, so the arbiter used the strategy on the tick after each.
+    expect(first?.bonus.map((b) => b.tick)).toEqual([28, 29, 30, 31, 32, 33, 34, 35])
+    expect(new Set(first?.bonus.flatMap((b) => b.actions))).toEqual(new Set(['strafe_right']))
+    expect(first?.bonus.filter((b) => b.actions.includes(b.selected)).map((b) => b.tick)).toEqual([28, 32])
+    expect(second).toMatchObject({ id: 'evasive_burst_2', joined: 29, legal: [], picked: [], adopted: [] })
+    expect(tickRange(first?.adopted ?? [])).toBe('27 to 34')
+    expect(tickRange([28, 32])).toBe('28 and 32')
+  })
+
+  it('encodes the admitted macro like the built-in ones', () => {
+    for (const id of ['evasive_burst_1', 'evasive_burst_2', 'weave_fire']) {
+      const action = heuristics.meta.actions[id]
+      expect(action).toBeDefined()
+      expect(encodeAction(action?.primitives ?? [], action?.is_macro ?? false)).toEqual(action?.encoding)
+    }
   })
 })

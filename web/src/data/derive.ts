@@ -696,7 +696,7 @@ function stageValue(stage: { passed: boolean; skipped?: boolean }): string {
   return stage.skipped ? 'skipped' : stage.passed ? 'passed' : 'failed'
 }
 
-function gateLevel(tick: TickTrace, proposals: ProposalTrace[]): TowerLevel {
+export function gateLevel(tick: TickTrace, proposals: ProposalTrace[]): TowerLevel {
   const slow = slowPathAt(tick, proposals)
   const proposal = slow.arrived[0]
   const sofar = slow.admittedSoFar.map((p) => prettyId(proposalId(p)))
@@ -1160,4 +1160,222 @@ export function encodeAction(primitives: string[], isMacro: boolean, targetsPick
     isMacro ? 1 : 0,
     targetsPickup ? 1 : 0,
   ]
+}
+
+// ---------------------------------------------------------------------------------------------
+// Growing the menu across the episode: who asked, when the answer reached the gate, what it changed.
+
+/** The slow worker's time limit per proposal (SlowLLMWorker codex_timeout_sec, llm_worker.py). */
+export const WORKER_TIMEOUT_SEC = 20
+/** The longest plan any action may have (MAX_ALLOWED_MACRO_DURATION, actions.py). */
+export const MAX_MACRO_STEPS = 16
+/** The sandbox fails a predicted death only from a state above this health (admission.py). */
+export const SANDBOX_CRITICAL_HEALTH = 25
+
+export interface TriggerReading {
+  /** The module's counter going into this tick; null for a module whose rule has no counter. */
+  value: number | null
+  threshold: number | null
+  /** The rule's other condition, read from the frozen state (survival, combat and resource). */
+  other: boolean
+  /** The whole rule holds: the module asks, unless the worker is already busy. */
+  asks: boolean
+}
+
+/** One module's expansion rule at one tick, as check_expansion_needed in modules.py reads it. */
+export function triggerAt(module: ModuleName, tick: TickTrace): TriggerReading {
+  const memory = tick.module_outputs[module]?.memory ?? {}
+  const state = tick.state
+  const trigger = EXPANSION_TRIGGERS[module]
+  const value = trigger.counter ? (memory[trigger.counter] ?? 0) : null
+  const counted = value !== null && trigger.threshold !== null && value >= trigger.threshold
+  const health = state?.health ?? 100
+  let other = false
+  if (module === 'survival') other = health < 35 && (state?.recent_incoming_damage ?? 0) >= 15
+  if (module === 'combat') other = (memory.consecutive_damage_ticks ?? 0) >= 4 && (state?.enemies?.length ?? 0) >= 2
+  if (module === 'resource') other = (state?.ammo ?? 0) <= 2 && health <= 35 && (state?.pickups?.length ?? 0) > 0
+  return { value, threshold: trigger.threshold, other, asks: counted || other }
+}
+
+/** In words, the part of each rule that is not its counter. */
+export const TRIGGER_OTHER: Partial<Record<ModuleName, string>> = {
+  survival: 'health under 35 with 15+ recent damage',
+  combat: '4 damage ticks against 2+ enemies',
+  resource: 'ammo ≤ 2, health ≤ 35, a pickup in view',
+}
+
+export interface RequestSpan {
+  module: string
+  description: string
+  /** The tick the module asked. */
+  asked: number
+  /** The tick its proposal reached the gate, or null when none did in this recording. */
+  arrived: number | null
+  proposal: ProposalTrace | null
+}
+
+/** Each request, paired with the next proposal from the same module: the span the worker was busy. */
+export function requestSpans(ticks: TickTrace[], proposals: ProposalTrace[]): RequestSpan[] {
+  const used = new Set<ProposalTrace>()
+  return ticks.flatMap((t) => {
+    const request = t.slow_path_request
+    if (!request) return []
+    const proposal =
+      proposals.find((p) => !used.has(p) && p.source_module === request.module && (p.tick ?? -1) > t.tick) ?? null
+    if (proposal) used.add(proposal)
+    return [
+      {
+        module: request.module,
+        description: request.description,
+        asked: t.tick,
+        arrived: proposal?.tick ?? null,
+        proposal,
+      },
+    ]
+  })
+}
+
+export interface ClosestCall {
+  module: ModuleName
+  tick: number
+  counter: string
+  value: number
+  threshold: number
+}
+
+/** The counter that came nearest its threshold over the episode, as a share of the threshold. */
+export function closestToAsking(ticks: TickTrace[]): ClosestCall | null {
+  let best: ClosestCall | null = null
+  for (const t of ticks) {
+    for (const m of MODULES) {
+      const { counter, threshold } = EXPANSION_TRIGGERS[m]
+      if (!counter || threshold === null) continue
+      const value = t.module_outputs[m]?.memory?.[counter] ?? 0
+      if (value > 0 && (!best || value / threshold > best.value / best.threshold))
+        best = { module: m, tick: t.tick, counter, value, threshold }
+    }
+  }
+  return best
+}
+
+/** The proposal that reached the gate at this tick, or else the last one before it. */
+export function proposalShown(
+  tick: TickTrace,
+  proposals: ProposalTrace[],
+): { proposal: ProposalTrace; current: boolean } | null {
+  const before = proposals.filter((p) => (p.tick ?? Infinity) <= tick.tick)
+  const last = before.reduce<ProposalTrace | null>((a, p) => (!a || (p.tick ?? 0) >= (a.tick ?? 0) ? p : a), null)
+  return last ? { proposal: last, current: last.tick === tick.tick } : null
+}
+
+/** request_context is "module:situation:description"; the situation itself contains colons. */
+export function requestContext(p: ProposalTrace): { module: string; signature: string; description: string } {
+  const text = p.request_context ?? ''
+  const match = /^([a-z_]+):(.*\|pickup:[a-z_]+):([\s\S]*)$/.exec(text)
+  if (match) return { module: match[1] ?? '', signature: match[2] ?? '', description: match[3] ?? '' }
+  const [module = '', ...rest] = text.split(':')
+  return { module, signature: '', description: rest.join(':') }
+}
+
+/** A precondition's default, from PreconditionSpec in actions.py; a macro only names the others. */
+export const PRECONDITION_DEFAULTS: Record<string, unknown> = {
+  min_ammo: 0,
+  max_ammo: 9999,
+  min_health: 0,
+  max_health: 200,
+  requires_visible_enemy: false,
+  requires_visible_pickup: false,
+  min_wall_distance_front: 0,
+  max_wall_distance_front: 99999,
+  excluded_weapons: [],
+}
+
+/** The preconditions that differ from their defaults, in words. */
+export function preconditionWords(pre: Record<string, unknown> | null | undefined): string[] {
+  if (!pre) return []
+  const words: Record<string, (v: unknown) => string> = {
+    min_ammo: (v) => `ammo at least ${String(v)}`,
+    max_ammo: (v) => `ammo at most ${String(v)}`,
+    min_health: (v) => `health at least ${String(v)}`,
+    max_health: (v) => `health at most ${String(v)}`,
+    requires_visible_enemy: () => 'an enemy in view',
+    requires_visible_pickup: () => 'a pickup in view',
+    min_wall_distance_front: (v) => `a wall no nearer than ${String(v)}`,
+    max_wall_distance_front: (v) => `a wall within ${String(v)}`,
+    excluded_weapons: (v) => `not with ${(v as string[]).join(', ')}`,
+  }
+  return Object.entries(pre).flatMap(([key, value]) => {
+    const fallback = PRECONDITION_DEFAULTS[key]
+    const same = Array.isArray(value) ? value.length === 0 : value === fallback
+    return same ? [] : [(words[key] ?? ((v: unknown) => `${key} ${String(v)}`))(value)]
+  })
+}
+
+export interface BonusTick {
+  tick: number
+  /** The legal actions of the strategy's sequence that got the bonus. */
+  actions: string[]
+  selected: string
+}
+
+export interface FollowUp {
+  id: string
+  joined: number
+  /** Ticks from joining to the end of the recording, the joining tick included. */
+  ticksAfter: number
+  legal: number[]
+  picked: number[]
+  /** Why it was off the legal menu, with on how many ticks. */
+  pruned: Array<{ reason: string; ticks: number }>
+  /** Reward each time it ran, as the logger appends it. */
+  rewards: number[]
+  strategy: string | null
+  /** Ticks after which steering had its strategy active, so the next tick's arbiter used it. */
+  adopted: number[]
+  /** Ticks whose arbiter added the strategy bonus for it. */
+  bonus: BonusTick[]
+}
+
+/** What an admitted macro did afterwards: legal, picked, rewarded, and what its strategy changed. */
+export function followUp(proposal: ProposalTrace, ticks: TickTrace[]): FollowUp | null {
+  const id = proposal.admitted_action_id
+  const joined = proposal.tick
+  if (!proposal.admission_decision || !id || joined === null || joined === undefined) return null
+  const after = ticks.filter((t) => t.tick >= joined)
+  const reasons = new Map<string, number>()
+  for (const t of after) {
+    const reason = t.pruned_actions?.[id]
+    if (reason !== undefined) reasons.set(reason, (reasons.get(reason) ?? 0) + 1)
+  }
+  const strategy = proposal.admitted_strategy_id ?? null
+  const bonus = strategy
+    ? after.flatMap((t) => {
+        if (t.steering?.active_before !== strategy) return []
+        const breakdown = t.arbiter?.component_breakdown ?? {}
+        const actions = Object.keys(breakdown).filter((a) => (breakdown[a]?.strategy_bonus ?? 0) > 0)
+        return [{ tick: t.tick, actions, selected: t.selected_action }]
+      })
+    : []
+  return {
+    id,
+    joined,
+    ticksAfter: after.length,
+    legal: after.filter((t) => t.available_actions.includes(id)).map((t) => t.tick),
+    picked: after.filter((t) => t.selected_action === id).map((t) => t.tick),
+    pruned: [...reasons].map(([reason, n]) => ({ reason, ticks: n })),
+    rewards: proposal.subsequent_performance ?? [],
+    strategy,
+    adopted: strategy ? after.filter((t) => t.steering?.active_after === strategy).map((t) => t.tick) : [],
+    bonus,
+  }
+}
+
+/** "27 to 34", "27", or "27, 29 and 31". */
+export function tickRange(ticks: number[]): string {
+  if (ticks.length === 0) return 'none'
+  const first = ticks[0] as number
+  const last = ticks[ticks.length - 1] as number
+  if (ticks.length === 1) return String(first)
+  if (last - first === ticks.length - 1) return `${first} to ${last}`
+  return `${ticks.slice(0, -1).join(', ')} and ${last}`
 }
