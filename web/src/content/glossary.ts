@@ -121,7 +121,7 @@ export const GLOSSARY: GlossaryEntry[] = [
   {
     id: 'exploration-pressure',
     term: 'exploration pressure',
-    aliases: ['pressure', 'temperature'],
+    aliases: ['pressure'],
     meaning:
       'How inclined the arbiter is to try something other than its best guess: four readings of the situation, each worth up to 0.25, damped after success and clamped between 0.02 and 1. Temperature = 0.10 + pressure sets how flat its draw is. The arbiter of a tick uses the pressure left by the tick before.',
     see: [{ screen: 'hierarchy', label: 'Hierarchy (the gauge)' }],
@@ -355,7 +355,7 @@ export const GLOSSARY: GlossaryEntry[] = [
   {
     id: 'motor',
     term: 'motor',
-    aliases: ['burst'],
+    aliases: [],
     meaning:
       'Presses the chosen plan’s primitives, eight game frames in total, each primitive held for its share, with reflexes filling in the aiming.',
     see: [{ screen: 'tick', panel: 'motor' }],
@@ -373,7 +373,7 @@ export const GLOSSARY: GlossaryEntry[] = [
   {
     id: 'pick-rule',
     term: 'pick rule',
-    aliases: ['greedy', 'sampled', 'explored', 'softmax'],
+    aliases: ['greedy', 'sampled', 'explored'],
     meaning:
       'How the arbiter settled: greedy (the top score wins), sampled (the top two within 0.08 and pressure at least 0.45, so it drew from the softmax at the temperature), committed, explored (the floor), or out of time (the cached action repeated).',
     see: [{ screen: 'tick', panel: 'arbiter' }],
