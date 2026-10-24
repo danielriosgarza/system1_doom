@@ -1,6 +1,6 @@
 // Pure readings of a tick trace that more than one panel needs. Every number here is either
 // copied from the trace or recomputed with the controller's own constants, named below.
-import type { ActionInfo, ProposalTrace, StateTrace, TickTrace } from '../schema/bundle'
+import type { ActionInfo, EpisodeMeta, ProposalTrace, StateTrace, TickTrace } from '../schema/bundle'
 
 export const MODULES = ['survival', 'combat', 'navigation', 'resource', 'goal'] as const
 export type ModuleName = (typeof MODULES)[number]
@@ -209,14 +209,7 @@ export function admissions(proposals: ProposalTrace[]): Admission[] {
 // Events marked on the scrubber.
 
 export type TickEventKind =
-  | 'damage'
-  | 'kill'
-  | 'sampled'
-  | 'committed'
-  | 'expansion'
-  | 'admission'
-  | 'strategy'
-  | 'death'
+  'damage' | 'kill' | 'sampled' | 'committed' | 'expansion' | 'admission' | 'strategy' | 'death'
 
 export interface TickEvent {
   kind: TickEventKind
@@ -368,6 +361,15 @@ export interface PickExplanation {
   detail: string
 }
 
+/** The arbiter's pick rules in one line each, as the hierarchy's decision card states them. */
+export const PICK_RULES: Record<string, string> = {
+  greedy: 'greedy: the top score wins, since the race was not close or pressure was low',
+  sampled: 'sampled: the top two were within 0.08 and pressure was at least 0.45, so it drew from the softmax',
+  committed: 'committed: a module nearly certain of one action overrides the comparison',
+  explored: 'explored: the exploration floor forced a random draw',
+  critical_cached: 'out of time: the cached action is repeated',
+}
+
 export function explainPick(tick: TickTrace): PickExplanation {
   const arbiter = tick.arbiter
   const selected = prettyId(tick.selected_action)
@@ -472,4 +474,475 @@ export function pct(value: number, digits = 0): string {
 
 export function prettyId(id: string): string {
   return id.replaceAll('_', ' ')
+}
+
+// ---------------------------------------------------------------------------------------------
+// The guided tour's featured tick.
+
+/** The first tick whose outcome records a kill while an enemy was in view; else the first with an enemy in view. */
+export function featuredTickIndex(ticks: TickTrace[]): number {
+  const enemyInView = (t: TickTrace) => (t.state?.enemies?.length ?? 0) > 0
+  const kill = ticks.findIndex((t) => enemyInView(t) && (t.outcome?.kills_delta ?? 0) > 0)
+  if (kill >= 0) return kill
+  return Math.max(0, ticks.findIndex(enemyInView))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Exploration pressure (ExplorationController.update_and_decide, exploration.py) and how the
+// arbiter uses it (FinalArbiter.arbitrate, arbiter.py).
+
+/** Each quarter-term is at most 0.25 of the pressure. */
+export const PRESSURE_TERMS = [
+  { key: 'uncertainty', label: 'uncertainty', words: 'how unsure the modules were' },
+  { key: 'failures', label: 'failures', words: 'recent failed steps, saturating at 4' },
+  { key: 'plateau', label: 'plateau', words: 'stalled for 3 ticks or 3 failures' },
+  { key: 'novelty', label: 'novelty', words: 'how new this situation is' },
+] as const
+export const DAMPERS = [
+  { key: 'progress_damper', label: 'progress', factor: 0.55, words: 'steady progress' },
+  { key: 'risk_damper', label: 'risk', factor: 0.35, words: 'health 30 or less, or heavy fire with an enemy in view' },
+  { key: 'winning_damper', label: 'winning', factor: 0.25, words: 'a kill, or full armor, just now' },
+] as const
+export const PRESSURE_FLOOR = 0.02
+/** Sampler temperature = 0.10 + pressure. */
+export const BASE_TEMPERATURE = 0.1
+/** The controller's state before the first outcome (ExplorationState defaults). */
+export const INITIAL_PRESSURE = 0.25
+export const INITIAL_TEMPERATURE = 0.35
+/** The arbiter samples only when the top two scores are within this margin... */
+export const SAMPLE_MARGIN = 0.08
+/** ...and the pressure is at least this. */
+export const SAMPLE_PRESSURE = 0.45
+
+export interface PressureReading {
+  /** No outcome yet: the controller's starting values, without terms. */
+  initial: boolean
+  terms: Array<{ key: string; label: string; words: string; value: number }>
+  sum: number
+  dampers: Array<{ key: string; label: string; words: string; factor: number; applied: boolean; value: number }>
+  /** Sum × dampers, before any d1 blend and the clamp. */
+  product: number
+  /** d1-ultra's own pressure, blended half and half when it answered (sync mode only). */
+  d1: number | null
+  /** The recomputed pressure, clamped to [0.02, 1]. */
+  pressure: number
+  temperature: number
+  /** exploration_pressure as the trace recorded it. */
+  recorded: number
+}
+
+export function pressureReading(view: ExplorationView | null): PressureReading {
+  if (!view?.terms) {
+    return {
+      initial: true,
+      terms: [],
+      sum: 0,
+      dampers: [],
+      product: INITIAL_PRESSURE,
+      d1: null,
+      pressure: view?.exploration_pressure ?? INITIAL_PRESSURE,
+      temperature: view?.temperature ?? INITIAL_TEMPERATURE,
+      recorded: view?.exploration_pressure ?? INITIAL_PRESSURE,
+    }
+  }
+  const raw = view.terms
+  const terms = PRESSURE_TERMS.map((t) => ({ ...t, value: raw[t.key] ?? 0 }))
+  const dampers = DAMPERS.map((d) => {
+    const value = raw[d.key] ?? 1
+    return { ...d, value, applied: value < 1 }
+  })
+  const sum = terms.reduce((s, t) => s + t.value, 0)
+  const product = dampers.reduce((p, d) => p * d.value, sum)
+  const d1 = raw.d1_pressure ?? null
+  const blended = d1 === null ? product : 0.5 * product + 0.5 * d1
+  const pressure = Math.min(1, Math.max(PRESSURE_FLOOR, blended))
+  return {
+    initial: false,
+    terms,
+    sum,
+    dampers,
+    product,
+    d1,
+    pressure,
+    temperature: BASE_TEMPERATURE + pressure,
+    recorded: view.exploration_pressure ?? pressure,
+  }
+}
+
+/**
+ * The exploration state a tick's arbiter used. Pressure is updated after each action, so the arbiter
+ * of tick t reads the state recorded at the end of tick t − 1; the first tick reads the starting values.
+ */
+export function pressureForArbiter(ticks: TickTrace[], index: number): ExplorationView | null {
+  const previous = index > 0 ? ticks[index - 1] : undefined
+  return previous ? exploration(previous) : null
+}
+
+// ---------------------------------------------------------------------------------------------
+// The strategy archive (archive.py).
+
+export const STRATEGY_BONUS = 0.15
+export const ARCHIVE_SLOTS = 12
+/** Running averages: new = (1 − α)·old + α·this outcome. */
+export const ARCHIVE_ALPHA = 0.3
+/** A step fails when it takes more than 8 damage or the player dies (controller.py). */
+export const FAILED_STEP_DAMAGE = 8
+
+export const STEERING_CHOICES = [
+  { id: 'continue_current_strategy', label: 'continue current', formula: '1.2·success − 0.35·failures' },
+  { id: 'switch_to_archived_strategy', label: 'switch to a stored one', formula: '0.4 + 0.25·failures + 0.3·pressure' },
+  { id: 'explore_variation', label: 'explore a variation', formula: '0.3 + 0.7·pressure' },
+  {
+    id: 'request_new_strategy_proposal',
+    label: 'ask for a new one',
+    formula: '0.2 + 0.9·[failures ≥ 3] + 0.4·pressure',
+  },
+] as const
+
+/** Strategy ids carry a `strat_` prefix that says nothing to a reader. */
+export function strategyName(id: string): string {
+  return prettyId(id.replace(/^strat_/, ''))
+}
+
+/** The eviction score: when the archive is full, the non-active entry with the lowest one goes. */
+export function evictionScore(entry: { observed_reward: number; success_rate: number }): number {
+  return entry.observed_reward + 5 * entry.success_rate
+}
+
+// ---------------------------------------------------------------------------------------------
+// The slow path at one tick: what arrived at the gate, and what was asked.
+
+export interface SlowPathAtTick {
+  /** Proposals that reached the gate this tick. */
+  arrived: ProposalTrace[]
+  /** Macros admitted on earlier ticks (and this one), in order. */
+  admittedSoFar: ProposalTrace[]
+  request: TickTrace['slow_path_request']
+}
+
+export function slowPathAt(tick: TickTrace, proposals: ProposalTrace[]): SlowPathAtTick {
+  return {
+    arrived: proposals.filter((p) => p.tick === tick.tick),
+    admittedSoFar: proposals.filter((p) => p.admission_decision && (p.tick ?? Infinity) <= tick.tick),
+    request: tick.slow_path_request ?? null,
+  }
+}
+
+export function proposalId(p: ProposalTrace): string {
+  const parsed = p.parsed_proposal as { id?: unknown } | null | undefined
+  return p.admitted_action_id ?? (typeof parsed?.id === 'string' ? parsed.id : 'unnamed proposal')
+}
+
+// ---------------------------------------------------------------------------------------------
+// The hierarchy: six levels, slowest first, each read as the same decision.
+
+export type LevelId = 'gate' | 'steering' | 'menu' | 'opinions' | 'arbiter' | 'motor'
+export type LineStyle = 'solid' | 'hatched' | 'dotted'
+
+export interface LevelChip {
+  id: string
+  label: string
+  state: 'legal' | 'pruned' | 'chosen'
+  note?: string
+}
+
+export interface Candidate {
+  id: string
+  label: string
+  /** Bar length in [0, 1]. */
+  share: number
+  /** The number or word printed beside the bar. */
+  value: string
+  chosen: boolean
+  style: LineStyle
+  failed?: boolean
+  note?: string
+}
+
+export interface TowerLevel {
+  id: LevelId
+  title: string
+  bounds: string[]
+  /** How many options this level chose from this tick. */
+  menuSize: number
+  menu: LevelChip[]
+  candidates: Candidate[]
+  /** The choice, as an id or a short code ('admitted', 'requested', 'none', the legal count). */
+  choice: string
+  choiceLabel: string
+  /** How the choice was made, in one line. */
+  rule: string
+  reads: string
+  writes: string
+  /** Nothing happened at this level this tick. */
+  idle: boolean
+}
+
+function stageValue(stage: { passed: boolean; skipped?: boolean }): string {
+  return stage.skipped ? 'skipped' : stage.passed ? 'passed' : 'failed'
+}
+
+function gateLevel(tick: TickTrace, proposals: ProposalTrace[]): TowerLevel {
+  const slow = slowPathAt(tick, proposals)
+  const proposal = slow.arrived[0]
+  const sofar = slow.admittedSoFar.map((p) => prettyId(proposalId(p)))
+  const base = {
+    id: 'gate' as const,
+    title: 'Growing the menu',
+    bounds: ['one proposal in flight', 'five stages'],
+    reads: 'a proposed macro from the slow worker',
+    writes: 'one more action in the vocabulary, and a strategy in the archive',
+  }
+  if (proposal) {
+    const stages = proposal.stage_results ?? []
+    const failed = stages.find((s) => !s.passed)
+    const id = proposalId(proposal)
+    return {
+      ...base,
+      menuSize: slow.arrived.length,
+      menu: slow.arrived.map((p) => ({
+        id: proposalId(p),
+        label: prettyId(proposalId(p)),
+        state: p.admission_decision ? 'chosen' : 'pruned',
+        note: (p.parsed_proposal as { description?: string } | null)?.description,
+      })),
+      candidates: stages.map((s) => ({
+        id: s.stage,
+        label: s.stage,
+        share: s.passed ? 1 : 0,
+        value: stageValue(s),
+        chosen: s.stage === 'admit' && s.passed,
+        style: s.skipped ? 'dotted' : 'solid',
+        failed: !s.passed,
+        note: s.reason,
+      })),
+      choice: proposal.admission_decision ? 'admitted' : 'rejected',
+      choiceLabel: proposal.admission_decision
+        ? `admitted ${prettyId(id)}`
+        : `rejected ${prettyId(id)}${failed ? ` at ${failed.stage}` : ''}`,
+      rule: proposal.admission_decision
+        ? `every stage passed${stages.some((s) => s.skipped) ? ' or was skipped' : ''}, so it joins the menu`
+        : `the ${failed?.stage ?? 'first'} stage failed, so nothing changes`,
+      idle: false,
+    }
+  }
+  const chips: LevelChip[] = slow.admittedSoFar.map((p) => ({
+    id: proposalId(p),
+    label: `${prettyId(proposalId(p))} · t${p.tick ?? '?'}`,
+    state: 'legal',
+    note: 'admitted on an earlier tick',
+  }))
+  if (slow.request) {
+    return {
+      ...base,
+      menuSize: 0,
+      menu: chips,
+      candidates: [],
+      choice: 'requested',
+      choiceLabel: `${slow.request.module} asked for a new macro`,
+      rule: 'the slow worker is writing it; it reaches the gate on a later tick',
+      idle: false,
+    }
+  }
+  return {
+    ...base,
+    menuSize: 0,
+    menu: chips,
+    candidates: [],
+    choice: 'none',
+    choiceLabel: 'nothing proposed',
+    rule:
+      sofar.length > 0
+        ? `${sofar.length} macro${sofar.length === 1 ? '' : 's'} admitted so far`
+        : 'no macro has been proposed yet',
+    idle: true,
+  }
+}
+
+function steeringLevel(tick: TickTrace): TowerLevel {
+  const s = tick.steering
+  const probabilities = s?.probabilities ?? {}
+  const scores = s?.scores ?? {}
+  const switched = !!s?.active_before && s.active_before !== s.active_after
+  return {
+    id: 'steering',
+    title: 'Steering',
+    bounds: ['≤ 12 strategies'],
+    menuSize: STEERING_CHOICES.length,
+    menu: STEERING_CHOICES.map((c) => ({
+      id: c.id,
+      label: c.label,
+      state: c.id === s?.choice ? 'chosen' : 'legal',
+    })),
+    candidates: STEERING_CHOICES.map((c) => ({
+      id: c.id,
+      label: c.label,
+      share: probabilities[c.id] ?? 0,
+      value: pct(probabilities[c.id] ?? 0),
+      chosen: c.id === s?.choice,
+      style: 'solid',
+      note: `utility ${fmt(scores[c.id] ?? 0, 2)} = ${c.formula}`,
+    })),
+    choice: s?.choice ?? 'none',
+    choiceLabel: s
+      ? `${prettyId(s.choice)}${switched ? `: ${strategyName(s.active_before ?? '')} → ${strategyName(s.active_after)}` : `, ${strategyName(s.active_after)} stays`}`
+      : 'not recorded',
+    rule: 'the most probable choice wins; decided after the action, for the next tick',
+    reads: "the active strategy's record, recent failures, exploration pressure",
+    writes: `which strategy's actions get the +${STRATEGY_BONUS} bonus next tick`,
+    idle: !s,
+  }
+}
+
+function menuLevel(tick: TickTrace, meta: EpisodeMeta): TowerLevel {
+  const legal = new Set(tick.available_actions)
+  const pruned = tick.pruned_actions ?? {}
+  const vocabulary = Object.keys(meta.actions).filter((id) => legal.has(id) || id in pruned)
+  return {
+    id: 'menu',
+    title: 'The menu',
+    bounds: ['≤ 16 primitives per macro'],
+    menuSize: vocabulary.length,
+    menu: vocabulary.map((id) => ({
+      id,
+      label: prettyId(id),
+      state: legal.has(id) ? 'legal' : 'pruned',
+      note:
+        pruned[id] !== undefined ? prunedReasonText(pruned[id] ?? '', meta.actions[id], tick.state) : 'legal this tick',
+    })),
+    candidates: [],
+    choice: String(legal.size),
+    choiceLabel: `${legal.size} of ${vocabulary.length} legal`,
+    rule: 'each action passes its preconditions or is pruned; nothing is scored here',
+    reads: 'the frozen world state',
+    writes: 'the legal set every level below chooses from',
+    idle: false,
+  }
+}
+
+export interface ModuleOpinion {
+  module: ModuleName
+  top: string | null
+  topProbability: number
+  confidence: number
+  /** Share of the top bar set by the learned network (trust λ). */
+  learned: number
+  agrees: boolean
+}
+
+export function moduleOpinions(tick: TickTrace): ModuleOpinion[] {
+  return MODULES.filter((m) => tick.module_outputs[m]).map((module) => {
+    const out = tick.module_outputs[module]
+    const top = out?.top_action ?? null
+    return {
+      module,
+      top,
+      topProbability: top ? (out?.probabilities?.[top] ?? 0) : 0,
+      confidence: out?.confidence ?? 0,
+      learned: top ? (out?.trust?.[top] ?? 0) : 0,
+      agrees: top === tick.selected_action,
+    }
+  })
+}
+
+function opinionsLevel(tick: TickTrace): TowerLevel {
+  const opinions = moduleOpinions(tick)
+  const counts = new Map<string, number>()
+  for (const o of opinions) if (o.top) counts.set(o.top, (counts.get(o.top) ?? 0) + 1)
+  const [favourite, votes] = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] ?? ['', 0]
+  return {
+    id: 'opinions',
+    title: 'Five opinions',
+    bounds: ['deadline 65% of tick'],
+    menuSize: tick.available_actions.length,
+    menu: tick.available_actions.map((id) => ({ id, label: prettyId(id), state: 'legal' })),
+    candidates: opinions.map((o) => ({
+      id: o.module,
+      label: o.module,
+      share: o.topProbability,
+      value: `${prettyId(o.top ?? '–')} ${pct(o.topProbability)}`,
+      chosen: o.agrees,
+      style: o.learned > 0 ? 'hatched' : 'solid',
+    })),
+    choice: favourite,
+    choiceLabel:
+      opinions.length === 0
+        ? 'no opinions: a cached decision'
+        : `${votes} of ${opinions.length} put ${prettyId(favourite)} first`,
+    rule: 'each module ranks the menu with its own softmax; none of them decides',
+    reads: "the legal set, the world state, the simulator's projections, trust λ",
+    writes: 'five probability lists for the arbiter',
+    idle: opinions.length === 0,
+  }
+}
+
+function arbiterLevel(tick: TickTrace, meta: EpisodeMeta): TowerLevel {
+  const scores = tick.arbiter?.action_scores ?? {}
+  const legal = new Set(tick.available_actions)
+  const order = Object.keys(meta.actions).filter((id) => legal.has(id))
+  const values = order.map((id) => scores[id] ?? 0)
+  const lo = Math.min(0, ...values)
+  const hi = Math.max(...values, lo + 1e-6)
+  const rule = tick.arbiter?.pick_rule ?? 'greedy'
+  return {
+    id: 'arbiter',
+    title: 'One decision',
+    bounds: ['one pick from the menu'],
+    menuSize: legal.size,
+    menu: order.map((id) => ({ id, label: prettyId(id), state: id === tick.selected_action ? 'chosen' : 'legal' })),
+    candidates: order.map((id) => ({
+      id,
+      label: prettyId(id),
+      share: ((scores[id] ?? 0) - lo) / (hi - lo),
+      value: fmt(scores[id] ?? 0, 2),
+      chosen: id === tick.selected_action,
+      style: 'solid',
+      note: `chance ${pct(tick.arbiter_distribution[id] ?? 0)}`,
+    })),
+    choice: tick.selected_action,
+    choiceLabel: prettyId(tick.selected_action),
+    rule: PICK_RULES[rule] ?? rule,
+    reads: 'five opinions, simulator evidence, the strategy bonus, exploration pressure',
+    writes: 'one action for the motor',
+    idle: false,
+  }
+}
+
+function motorLevel(tick: TickTrace, meta: EpisodeMeta): TowerLevel {
+  const plan = meta.actions[tick.selected_action]?.primitives ?? []
+  const steps = motorSteps(plan, tick.primitive_steps_executed)
+  const reflexes = steps.filter((s) => s.assisted).length
+  return {
+    id: 'motor',
+    title: 'Act',
+    bounds: ['8 frames', 'fixed reflexes'],
+    menuSize: plan.length,
+    menu: plan.map((p, i) => ({ id: `${p}-${i}`, label: prettyId(p), state: 'legal' })),
+    candidates: steps.map((s) => ({
+      id: `step-${s.index}`,
+      label: `step ${s.index + 1}`,
+      share: 1,
+      value: s.pressed.map(prettyId).join(' + '),
+      chosen: true,
+      style: 'solid',
+      note: s.words,
+    })),
+    choice: tick.primitive_steps_executed.join(' | '),
+    choiceLabel: `${steps.length} step${steps.length === 1 ? '' : 's'}, ${reflexes} with a reflex`,
+    rule: `each primitive held for ${holdFor(plan.length)} step${holdFor(plan.length) === 1 ? '' : 's'}; reflexes only aim`,
+    reads: 'the chosen plan and the locked target',
+    writes: 'keys pressed in the game for 8 frames',
+    idle: false,
+  }
+}
+
+export function towerLevels(tick: TickTrace, meta: EpisodeMeta, proposals: ProposalTrace[]): TowerLevel[] {
+  return [
+    gateLevel(tick, proposals),
+    steeringLevel(tick),
+    menuLevel(tick, meta),
+    opinionsLevel(tick),
+    arbiterLevel(tick, meta),
+    motorLevel(tick, meta),
+  ]
 }
