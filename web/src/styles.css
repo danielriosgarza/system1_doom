@@ -115,7 +115,7 @@ code,
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 18px;
+  gap: 8px 14px;
   padding: 10px 20px;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(8px);
@@ -126,7 +126,6 @@ code,
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-right: auto;
 }
 
 .brand h1 {
@@ -153,7 +152,13 @@ code,
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 5px 8px;
-  max-width: 380px;
+  max-width: 320px;
+}
+
+@media (max-width: 1500px) {
+  .brand span {
+    display: none;
+  }
 }
 
 .segmented {
@@ -189,25 +194,49 @@ code,
   color: var(--text);
 }
 
-.story {
+/* Screen tabs, left of the episode picker; later screens slot in here. */
+.screens {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  margin-right: auto;
+}
+
+.screens button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.screens button:hover {
+  color: var(--text);
+}
+
+.screens button[aria-current='page'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 650;
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The inspector's compact header: the six beats, then how to use the screen. */
+.inspector-head {
   max-width: 1480px;
   margin: 0 auto;
-  padding: 14px 20px 4px;
-}
-
-.story p {
-  margin: 0 0 8px;
-  max-width: 980px;
-  color: var(--muted);
-}
-
-.story p strong {
-  color: var(--text);
-  font-weight: 600;
+  padding: 12px 20px 2px;
 }
 
 .howto {
-  margin: 0 0 8px;
+  margin: 8px 0 0;
   color: var(--faint);
   font-size: 12.5px;
 }
@@ -320,8 +349,15 @@ code,
 }
 
 @media (max-width: 640px) {
+  /* The bar wraps to four rows on a phone; let it scroll away instead of covering a quarter of the screen. */
+  .topbar {
+    position: static;
+  }
+
   .topbar,
-  .story,
+  .inspector-head,
+  .overview,
+  .hierarchy,
   .main {
     padding-left: 12px;
     padding-right: 12px;
@@ -1463,7 +1499,7 @@ code,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .story p {
+  .story-line {
     font-size: 13px;
   }
 }
@@ -1481,4 +1517,1160 @@ code,
   .scroll-x > .proj-rows {
     min-width: 420px;
   }
+}
+
+/* ------------------------------------------------------------------ shared buttons */
+
+.primary-button {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ overview */
+
+.overview {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 16px 20px 24px;
+}
+
+.intro {
+  max-width: 1040px;
+}
+
+.story-line {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.story-line strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.intro-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 4px 0 12px;
+  font-size: 13px;
+}
+
+.screen-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.arch-card-sub {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.arch-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .arch-wrap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.arch-figure {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 10px 8px;
+  min-width: 0;
+}
+
+.architecture {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.phone-only {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .arch-scroll {
+    overflow-x: auto;
+  }
+
+  .phone-only {
+    display: inline;
+  }
+
+  .architecture {
+    width: 760px;
+  }
+}
+
+.arch-box rect {
+  fill: var(--panel-2);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.arch-box {
+  cursor: pointer;
+}
+
+.arch-box:hover rect,
+.arch-box:focus-visible rect {
+  stroke: var(--accent);
+}
+
+.arch-box:focus {
+  outline: none;
+}
+
+.arch-box.beat rect {
+  fill: var(--panel-3);
+}
+
+.arch-box.lit rect {
+  stroke: var(--goal);
+  stroke-width: 2.5;
+  fill: color-mix(in srgb, var(--goal) 14%, var(--panel-2));
+}
+
+.arch-box.selected rect {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.arch-box.off {
+  opacity: 0.45;
+}
+
+.arch-box.off rect {
+  stroke-dasharray: 2 4;
+}
+
+.arch-title {
+  fill: var(--text);
+  font-size: 15.5px;
+  font-weight: 650;
+}
+
+.arch-value {
+  fill: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.arch-beat {
+  fill: var(--accent);
+}
+
+.arch-beat-num {
+  fill: var(--accent-ink);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.arch-region {
+  fill: var(--faint);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.arch-note {
+  fill: var(--muted);
+  font-size: 12.5px;
+}
+
+.arch-edge {
+  fill: none;
+  stroke: var(--n2);
+  stroke-width: 1.6;
+}
+
+.arch-edge.learned {
+  stroke-dasharray: 7 4;
+}
+
+.arch-edge.dotted {
+  stroke-dasharray: 1.5 4;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.arch-edge.off,
+.arch-d1.off {
+  opacity: 0.4;
+}
+
+.arch-head {
+  fill: var(--n2);
+}
+
+.arch-flow.lit .arch-edge {
+  stroke: var(--goal);
+  stroke-width: 2.2;
+}
+
+.arch-label {
+  cursor: pointer;
+}
+
+.arch-label rect {
+  fill: var(--panel);
+  stroke: var(--n3);
+}
+
+.arch-label text {
+  fill: var(--text);
+  font-size: 13px;
+}
+
+.arch-label:hover rect,
+.arch-label.selected rect {
+  stroke: var(--accent);
+}
+
+.arch-label.off {
+  opacity: 0.5;
+}
+
+/* One pulse runs down the fast path per tick while playing, inside the 450 ms step. */
+.pulse {
+  fill: var(--accent);
+  animation: pulse-travel 0.42s ease-in-out forwards;
+}
+
+@keyframes pulse-travel {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(450px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    display: none;
+  }
+
+  .panel.flash {
+    animation: none;
+  }
+}
+
+.arch-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 6px 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.arch-legend .key {
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.arch-card {
+  position: sticky;
+  top: 70px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px 14px;
+  max-height: calc(100vh - 200px);
+  overflow: auto;
+}
+
+.arch-card h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+@media (max-width: 1100px) {
+  .arch-card {
+    position: static;
+    max-height: none;
+  }
+}
+
+/* ------------------------------------------------------------------ hierarchy */
+
+.hierarchy {
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 14px 20px 24px;
+}
+
+.screen-head h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+
+.screen-head p {
+  margin: 0 0 14px;
+  max-width: 980px;
+  color: var(--muted);
+}
+
+.tower-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  column-gap: 64px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .tower-grid {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 14px;
+  }
+}
+
+.tower {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.side-inputs {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.connectors {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.connector {
+  fill: none;
+  stroke: var(--n3);
+  stroke-width: 1.5;
+}
+
+.connector.learned {
+  stroke-dasharray: 7 4;
+}
+
+.connector.dotted {
+  stroke-dasharray: 1.5 4;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.connector.off {
+  opacity: 0.35;
+}
+
+.decision-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px 12px;
+  min-width: 0;
+}
+
+.decision-card.idle {
+  opacity: 0.6;
+}
+
+.decision-card.expanded {
+  border-color: var(--accent);
+  opacity: 1;
+}
+
+.dc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.dc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dc-toggle h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.dc-caret {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.level-num {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--panel-3);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dc-menu {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.dc-choice {
+  margin-left: auto;
+  font-weight: 650;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.decision-card .bounds {
+  margin: 0 0 8px;
+}
+
+.dc-chips {
+  margin-bottom: 8px;
+}
+
+.dc-chips .chip {
+  font-size: 12px;
+  padding: 1px 8px;
+}
+
+.dc-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 3px 16px;
+  margin-bottom: 6px;
+}
+
+.dc-bars.full {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dc-tip {
+  display: block;
+}
+
+.dc-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 150px) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 12.5px;
+  border-radius: 4px;
+}
+
+.dc-bars.full .dc-row {
+  grid-template-columns: minmax(120px, 200px) minmax(0, 1fr) minmax(70px, auto);
+}
+
+.dc-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dc-row.chosen .dc-label {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.dc-track {
+  position: relative;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--panel-2);
+}
+
+.dc-fill {
+  --c: var(--n2);
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  border: 1.5px solid var(--c);
+  background: transparent;
+}
+
+.dc-row.chosen .dc-fill {
+  --c: var(--accent);
+  background: var(--c);
+}
+
+.dc-row.failed .dc-fill {
+  --c: var(--neg);
+}
+
+.dc-fill.hatched {
+  background: repeating-linear-gradient(135deg, var(--c) 0 2px, transparent 2px 5px);
+}
+
+.dc-fill.dotted {
+  border-style: dotted;
+  background: transparent;
+}
+
+.dc-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dc-row.chosen .dc-value {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.dc-rule,
+.dc-io {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.dc-io {
+  color: var(--faint);
+}
+
+.dc-key {
+  display: inline-block;
+  margin-right: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.dc-io .dc-key + .dc-key,
+.dc-io .dc-key:not(:first-child) {
+  margin-left: 10px;
+}
+
+.dc-detail {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.dc-note {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.dc-note p {
+  margin: 0 0 6px;
+}
+
+.stage-reasons {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+/* The gate's five stages as a pipeline. */
+.pipeline {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.stage {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 82px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1.5px solid var(--n3);
+  font-size: 12px;
+}
+
+.stage + .stage::before {
+  content: '';
+}
+
+.stage.passed {
+  border-color: var(--pos);
+}
+
+.stage.skipped {
+  border-style: dotted;
+  color: var(--muted);
+}
+
+.stage.failed {
+  border-color: var(--neg);
+}
+
+.stage-name {
+  font-weight: 650;
+}
+
+.stage-result {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.stage.passed .stage-result {
+  color: var(--pos);
+}
+
+.stage.failed .stage-result {
+  color: var(--neg);
+}
+
+/* Five small opinion cards in the module colours. */
+.opinions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+@media (max-width: 760px) {
+  .opinions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.opinion {
+  border-top: 3px solid var(--c);
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.opinion .module-name {
+  font-size: 12.5px;
+}
+
+.opinion-top {
+  margin: 3px 0;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+}
+
+.opinion .bar-track {
+  display: block;
+  height: 8px;
+}
+
+.opinion-stats {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.opinion-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.opinion-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  border-radius: 3px;
+}
+
+.opinion-list .num {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.opinion-list .is-selected {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+/* The motor's steps. */
+.motor-steps {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .motor-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.motor-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 12px;
+}
+
+.motor-steps .reflex {
+  margin-left: 0;
+}
+
+/* Side inputs. */
+.side-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px 12px;
+  min-width: 0;
+}
+
+.side-card h3 {
+  margin: 0;
+  font-size: 14.5px;
+}
+
+.side-card.line-learned {
+  border-style: dashed;
+}
+
+.side-card.line-dotted {
+  border-style: dotted;
+}
+
+.side-card.off {
+  opacity: 0.6;
+}
+
+.side-card .sentence {
+  margin: 4px 0 8px;
+}
+
+.feeds {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.share-rows {
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+}
+
+.share-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 40px;
+  gap: 8px;
+  align-items: center;
+}
+
+.share-row .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The exploration gauge. */
+.gauge-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.gauge-number {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.gauge-caption {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.gauge-bar {
+  position: relative;
+  display: flex;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--panel-3);
+  overflow: visible;
+}
+
+.gauge-tip {
+  display: contents;
+}
+
+.gauge-seg {
+  display: block;
+  height: 100%;
+}
+
+.gauge-quarter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--bg);
+  opacity: 0.6;
+}
+
+.gauge-cut {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.55) 0 3px, transparent 3px 6px);
+  border-left: 1px solid var(--text);
+}
+
+.gauge-result {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--text);
+}
+
+.gauge-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gauge-legend .key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.gauge-dampers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.damper {
+  font-size: 12px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.damper.on {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.damper.clamp {
+  border-style: dashed;
+}
+
+.gauge-uses {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.gauge-uses strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.gauge-formula {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--panel-3);
+  overflow-wrap: anywhere;
+}
+
+/* The steering card: the archive's slots. */
+.steering-card {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.steering-active {
+  color: var(--muted);
+}
+
+.steering-active strong {
+  color: var(--text);
+}
+
+.steering-bonus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .slots {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.slot {
+  min-height: 50px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.slot.empty {
+  background: transparent;
+  border-style: dashed;
+}
+
+.slot.active {
+  border: 2px solid var(--accent);
+}
+
+.slot.next {
+  border: 2px dashed var(--accent);
+}
+
+.slot-name {
+  font-size: 12px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-stats {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.slots-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+/* ------------------------------------------------------------------ tour */
+
+.tour-block {
+  position: fixed;
+  z-index: 40;
+  background: rgba(5, 7, 12, 0.62);
+}
+
+:root[data-theme='light'] .tour-block {
+  background: rgba(20, 24, 33, 0.45);
+}
+
+.tour-spotlight {
+  position: fixed;
+  z-index: 41;
+  border-radius: 14px;
+  box-shadow: 0 0 0 3px var(--accent);
+  pointer-events: none;
+}
+
+.tour-card {
+  position: fixed;
+  z-index: 42;
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  box-shadow: var(--shadow);
+  font-size: 13.5px;
+}
+
+.tour-card.docked {
+  max-height: 46vh;
+}
+
+.tour-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 6px;
+  font-size: 16px;
+}
+
+.tour-card p {
+  margin: 0 0 8px;
+}
+
+.tour-invariant {
+  padding: 6px 9px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 6px 6px 0;
+  font-size: 12.5px;
+}
+
+.tour-progress {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tour-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--panel-3);
+}
+
+.tour-dot.done {
+  background: var(--n2);
+}
+
+.tour-dot.on {
+  background: var(--accent);
+}
+
+.tour-count {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.tour-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tour-buttons .spacer {
+  flex: 1;
+}
+
+.tour-keys {
+  margin: 6px 0 0 !important;
+  color: var(--faint);
+  font-size: 11.5px;
 }

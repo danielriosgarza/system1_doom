@@ -1,18 +1,13 @@
 import { useEffect, useMemo } from 'react'
-import { ArbiterPanel } from './components/ArbiterPanel'
-import { GameView } from './components/GameView'
-import { LegalActions } from './components/LegalActions'
-import { ModuleMatrix } from './components/ModuleMatrix'
-import { MotorPanel } from './components/MotorPanel'
-import { OutcomeCard } from './components/OutcomeCard'
-import { Panel } from './components/Panel'
-import { ProjectionStrip } from './components/ProjectionStrip'
 import { Scrubber } from './components/Scrubber'
-import { Story, TopBar } from './components/TopBar'
-import { WorldState } from './components/WorldState'
+import { TopBar } from './components/TopBar'
+import { Tour } from './components/Tour'
 import type { ExplainerContext } from './content/explainers'
 import { admissions } from './data/derive'
-import { getState, onHashChange, setState, setTickIndex, start, step, useApp } from './store'
+import { Hierarchy } from './screens/Hierarchy'
+import { Inspector } from './screens/Inspector'
+import { Overview } from './screens/Overview'
+import { endTour, getState, onHashChange, setState, setTickIndex, setTourStep, start, step, useApp } from './store'
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -28,11 +23,18 @@ export default function App() {
   const error = useApp((s) => s.error)
   const theme = useApp((s) => s.theme)
   const hovered = useApp((s) => s.hoveredAction)
+  const screen = useApp((s) => s.screen)
+  const tour = useApp((s) => s.tour)
 
   useEffect(() => {
     void start()
+    // Back and Forward between screens fire popstate; links typed into the address bar fire hashchange.
     window.addEventListener('hashchange', onHashChange)
-    return () => window.removeEventListener('hashchange', onHashChange)
+    window.addEventListener('popstate', onHashChange)
+    return () => {
+      window.removeEventListener('hashchange', onHashChange)
+      window.removeEventListener('popstate', onHashChange)
+    }
   }, [])
 
   useEffect(() => {
@@ -42,13 +44,23 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
-      const count = getState().bundle?.ticks.length ?? 0
+      const { tour: tourStep, bundle: current, playing } = getState()
+      if (tourStep !== null) {
+        // During the tour the arrows walk the tour, not the episode.
+        if (e.key === 'ArrowRight') setTourStep(tourStep + 1)
+        else if (e.key === 'ArrowLeft') setTourStep(tourStep - 1)
+        else if (e.key === 'Escape') endTour()
+        else return
+        e.preventDefault()
+        return
+      }
+      const count = current?.ticks.length ?? 0
       if (e.key === 'ArrowRight') step(e.shiftKey ? 10 : 1)
       else if (e.key === 'ArrowLeft') step(e.shiftKey ? -10 : -1)
       else if (e.key === 'Home') setTickIndex(0)
       else if (e.key === 'End') setTickIndex(count - 1)
       else if (e.key === ' ' && (e.target as HTMLElement | null)?.tagName !== 'BUTTON') {
-        setState({ playing: !getState().playing })
+        setState({ playing: !playing })
       } else return
       e.preventDefault()
     }
@@ -64,13 +76,14 @@ export default function App() {
           tick,
           meta: bundle.meta,
           focus: hovered && tick.available_actions.includes(hovered) ? hovered : tick.selected_action,
+          prev: bundle.ticks[tickIndex - 1] ?? null,
+          proposals: bundle.proposals,
         }
       : null
 
   return (
     <div className="app">
       <TopBar />
-      <Story />
       {error && (
         <p className="status error" role="alert">
           {error}
@@ -79,41 +92,11 @@ export default function App() {
       {!error && loading && !bundle && <p className="status">Loading the episode…</p>}
       {bundle && tick && ctx && (
         <>
-          <main className="main" aria-busy={loading}>
-            <div className="column">
-              <Panel id="game" ctx={ctx}>
-                <GameView bundle={bundle} tick={tick} />
-              </Panel>
-              <Panel id="world" ctx={ctx}>
-                <WorldState tick={tick} />
-              </Panel>
-              <Panel id="outcome" ctx={ctx} bounds={['≤ 12 strategies', '≤ 100k transitions']}>
-                <OutcomeCard tick={tick} meta={bundle.meta} />
-              </Panel>
-            </div>
-            <div className="column">
-              <Panel id="legal" ctx={ctx} bounds={['menu ≤ 16 steps per macro', 'one proposal in flight']}>
-                <LegalActions bundle={bundle} tick={tick} admitted={admitted} />
-              </Panel>
-              <Panel
-                id="projection"
-                ctx={ctx}
-                bounds={['16 candidates', 'depth 4 · 2 branches', '15 ms', '≤ 50 samples']}
-              >
-                <ProjectionStrip tick={tick} />
-              </Panel>
-              <Panel id="modules" ctx={ctx} bounds={['deadline 65% of tick']}>
-                <ModuleMatrix tick={tick} meta={bundle.meta} />
-              </Panel>
-              <Panel id="arbiter" ctx={ctx} bounds={['one pick from the menu']}>
-                <ArbiterPanel tick={tick} />
-              </Panel>
-              <Panel id="motor" ctx={ctx} bounds={['8 frames']}>
-                <MotorPanel tick={tick} meta={bundle.meta} />
-              </Panel>
-            </div>
-          </main>
+          {screen === 'overview' && <Overview bundle={bundle} tick={tick} ctx={ctx} />}
+          {screen === 'tick' && <Inspector bundle={bundle} tick={tick} admitted={admitted} ctx={ctx} />}
+          {screen === 'hierarchy' && <Hierarchy bundle={bundle} tick={tick} tickIndex={tickIndex} ctx={ctx} />}
           <Scrubber ticks={bundle.ticks} admitted={admitted} ctx={ctx} />
+          {tour !== null && <Tour step={tour} bundle={bundle} tick={tick} />}
         </>
       )}
     </div>
