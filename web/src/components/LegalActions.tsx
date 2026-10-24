@@ -4,6 +4,10 @@ import type { EpisodeBundle } from '../data/loader'
 import { setState, useApp } from '../store'
 import { Tip } from './Panel'
 
+function stageWord(stage: { passed: boolean; skipped?: boolean }): string {
+  return stage.skipped ? 'skipped' : stage.passed ? 'passed' : 'failed'
+}
+
 export function LegalActions({
   bundle,
   tick,
@@ -31,6 +35,7 @@ export function LegalActions({
           <p className="chip-group-label">{group.label}</p>
           {group.items.map(([id, action]) => {
             const admission = admitted.find((a) => a.actionId === id && a.admitted)
+            const stages = admission?.proposal.stage_results ?? []
             const isLegal = legal.has(id)
             const reason = pruned[id]
             const future = !isLegal && reason === undefined
@@ -56,6 +61,17 @@ export function LegalActions({
                   <div>
                     Written by the slow path ({admission.source === 'codex' ? 'Codex' : 'fallback template'}) for the{' '}
                     {admission.module ?? 'unknown'} module; joined the menu at tick {admission.tick ?? '?'}.
+                  </div>
+                )}
+                {admission && stages.length > 0 && (
+                  <div>
+                    Gate: {stages.map((s) => `${s.stage} ${stageWord(s)}`).join(' → ')}
+                    {depth === 'formula' &&
+                      stages.map((s) => (
+                        <div key={s.stage} className="muted">
+                          {s.stage}: {s.reason}
+                        </div>
+                      ))}
                   </div>
                 )}
                 {future && <div>Not in the vocabulary yet at this tick.</div>}

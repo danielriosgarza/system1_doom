@@ -55,7 +55,7 @@ test('a link opens the same tick of another episode, and the timeline is clickab
   await expect(page.locator('.tick-counter')).toContainText('Tick 17 /')
   await expect(page.locator('#panel-legal .chip.selected')).toHaveAttribute(
     'data-action',
-    ticks[17]?.selected_action ?? '',
+    ticks.find((t) => t.tick === 17)?.selected_action ?? '',
   )
 
   const track = page.getByRole('slider', { name: 'Tick' })

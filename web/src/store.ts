@@ -39,6 +39,10 @@ function writeSettings(settings: Pick<AppState, 'depth' | 'theme'>): void {
 }
 
 const saved = typeof window === 'undefined' ? {} : readSettings()
+const prefersLight =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-color-scheme: light)').matches
 
 let state: AppState = {
   index: null,
@@ -47,7 +51,7 @@ let state: AppState = {
   error: null,
   tickIndex: 0,
   depth: saved.depth === 'formula' ? 'formula' : 'plain',
-  theme: saved.theme === 'light' ? 'light' : 'dark',
+  theme: saved.theme === 'light' || saved.theme === 'dark' ? saved.theme : prefersLight ? 'light' : 'dark',
   hoveredAction: null,
   playing: false,
 }

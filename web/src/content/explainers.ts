@@ -26,15 +26,7 @@ function term(value: number, digits = 2): string {
 }
 
 export type PanelId =
-  | 'scrubber'
-  | 'game'
-  | 'world'
-  | 'legal'
-  | 'projection'
-  | 'modules'
-  | 'arbiter'
-  | 'motor'
-  | 'outcome'
+  'scrubber' | 'game' | 'world' | 'legal' | 'projection' | 'modules' | 'arbiter' | 'motor' | 'outcome'
 
 export interface FormulaLine {
   /** What the line computes, in words. */
@@ -78,6 +70,8 @@ export const STORY = {
     'Every tick this controller freezes the world, shortens a menu of actions, asks five small deciders for their opinion, lets one arbiter pick, executes the pick with fixed reflexes, and files what came back.',
   invariant:
     'Each level chooses from a short menu it cannot leave. Learning changes how the menus are weighed, never their shape.',
+  howto:
+    'Step through the episode with ← and → (Shift for ten) or press play; hover any bar or chip for its numbers; press ? on a panel for the full explanation; switch Depth to Formula for this tick\u2019s arithmetic.',
 }
 
 export const EXPLAINERS: Record<PanelId, Explainer> = {

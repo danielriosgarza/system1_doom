@@ -106,6 +106,7 @@ export function Story() {
           </span>
         </div>
       )}
+      <p className="howto">{STORY.howto}</p>
       <ol className="beats" aria-label="The six steps of one tick">
         {BEATS.map((beat, i) => (
           <li key={beat.n} style={{ display: 'contents' }}>
