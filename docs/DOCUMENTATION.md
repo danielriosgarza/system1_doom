@@ -981,18 +981,20 @@ A bundle is one folder per episode:
 | `ticks.jsonl` | One enriched `TickTrace` per tick (§8.14) |
 | `proposals.jsonl` | One `ProposalTrace` per slow-path proposal |
 | `frames/00042.jpg` | The 320×240 screen the controller saw when it **decided** tick 42 (captured at state acquisition by `RecordingBridge`, so overlays drawn from `state` line up with the picture); `frames/end.jpg` is the screen after the last action |
-| `metrics.jsonl`, `evaluation.json`, `macros.json` | Copied from the run folder when present |
-| `trust.json` | `action_counts`, `context_counts`, network share and episodes from the loaded checkpoint |
+| `metrics.jsonl`, `evaluation.json`, `macros.json` | Copied from the run folder when present: one `MetricsRow` per training episode, the `EvaluationSummary` of `train.evaluate`, and the admitted macros as `ActionSpec`s |
+| `trust.json` | `TrustFile`: `action_counts` (keyed `<context>\|<action>`), `context_counts`, `trust_count`, network share and episodes from the loaded checkpoint |
 
 `--schema` dumps one JSON Schema (from the pydantic models) whose
-`$defs` hold `EpisodeMeta`, `TickTrace`, `ProposalTrace` and
-`BundleIndexEntry`; `web/scripts/gen-types.mjs` turns it into
-`web/src/schema/bundle.ts`, so the Python models and the browser cannot
-drift apart. `--check` validates a bundle against the models and checks
-that every tick has a frame; `--index DIR` writes `DIR/index.json`, the
+`$defs` hold `EpisodeMeta`, `TickTrace`, `ProposalTrace`,
+`BundleIndexEntry`, and the models of the copied run files
+(`MetricsRow`, `EvaluationSummary`, `TrustFile`, `ActionSpec`);
+`web/scripts/gen-types.mjs` turns it into `web/src/schema/bundle.ts`, so
+the Python models and the browser cannot drift apart. `--check`
+validates a bundle and every file `episode.json` lists against the
+models and checks that every tick has a frame; `--index DIR` writes `DIR/index.json`, the
 list the app's episode picker reads.
 
-The app (`web/`, see `web/README.md`) has three screens over one shared
+The app (`web/`, see `web/README.md`) has four screens over one shared
 timeline, picked from tabs in the top bar. The URL hash is
 `#<episode>/<tick>/<screen>`; a link without a screen opens the tick
 inspector, and a fresh visit opens the overview.
@@ -1034,9 +1036,27 @@ pruned), the five opinions, the arbiter's decision, and the motor's
 steps. Side cards feed the levels with drawn connectors: exploration
 pressure (its four terms, the dampers and the clamp, recomputed from
 `exploration_state` — the arbiter of tick t uses the state left by tick
-t − 1), d1-ultra, the learned networks and the simulator. A
-Plain/Formula toggle hides or shows the arithmetic on every screen. Two
-demo bundles ship in `web/public/episodes/`.
+t − 1), d1-ultra, the learned networks and the simulator.
+
+**Learning** answers how the networks earned their say and what they
+do with it at this tick. Across episodes: the evaluation table (each
+brain on the same seeded episodes) and the two recordings of the same
+seed side by side on one tick axis; then the training run from
+`metrics.jsonl` as small multiples (reward, decisions, kills, health,
+cleared and survived rates, network share, the exploration floor, which
+falls linearly from 0.6 to 0.05 over the first 100 episodes, and the
+losses), with the checkpoint and this recording marked. At this tick:
+the trust map from `trust.json` (situations × the actions tried in
+training, λ = n ÷ (n + 25), this tick's situation pinned) beside this
+tick's row with each module's heuristic, learned and blended utility;
+the gate view (the hand-written module weights, the gate's proposal and
+the normalised blend by g the arbiter used, marking the modules whose
+own top pick was taken, which are the only ones the gate learns from);
+and the reward anatomy (the five module rewards and the raw 8-step
+return, γ = 0.9, each becomes). Without networks, the trust map and gate
+view say so and link to the recording that has them. A Plain/Formula
+toggle hides or shows the arithmetic on every screen. Two demo bundles
+ship in `web/public/episodes/`.
 
 ---
 

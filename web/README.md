@@ -18,7 +18,7 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
-Three screens share the timeline at the bottom:
+Four screens share the timeline at the bottom:
 
 - **Overview**, where a fresh visit lands: the whole controller as one
   diagram, every box showing the current tick and opening its
@@ -28,6 +28,11 @@ Three screens share the timeline at the bottom:
 - **Hierarchy**: the same tick as a tower of six decision cards, slowest
   at the top, with exploration pressure, d1-ultra, the learned networks
   and the simulator feeding them from the side.
+- **Learning**: the training run behind the checkpoint, the evaluation
+  of each brain, the two recordings of the same seed side by side, and
+  at this tick the trust map, the gate's module weights and what each
+  module learns from. It reads `metrics.jsonl`, `evaluation.json` and
+  `trust.json` when the bundle has them.
 
 Keyboard: ← and → step one tick (Shift for ten), Home and End jump to the
 ends, Space plays and pauses; during the tour → and ← walk the tour and
@@ -40,8 +45,8 @@ for example `#deadly_corridor-learned-9/17/hierarchy`; without a screen
 ```bash
 npm run build        # type-check and production build into dist/
 npm run lint         # oxlint, warnings fail
-npm test             # Vitest: loader, trace readings, tower levels, pressure recomputed from its terms
-npm run e2e          # Playwright: scrubbing, links, the tour (desktop and phone), hierarchy, overview
+npm test             # Vitest: loader, trace readings, tower levels, pressure, trust, gate blend, returns
+npm run e2e          # Playwright: scrubbing, links, the tour (desktop and phone), hierarchy, overview, learning
 ```
 
 ## Add an episode
@@ -76,11 +81,11 @@ the loader refuses bundles from another version with a message that says so.
 | `src/content/explainers.ts` | Every panel's and box's three-layer copy: sentence, paragraphs, and the formula with the tick's numbers |
 | `src/content/tour.ts` | The tour's seven steps and the invariants they name |
 | `src/content/architecture.ts` | The overview's boxes: title, explainer and inspector panel |
-| `src/data/loader.ts` | Fetches `episodes/index.json` and a bundle, checks the schema version |
+| `src/data/loader.ts` | Fetches `episodes/index.json` and a bundle (with its training-run files when listed), checks the schema version |
 | `src/data/derive.ts` | Pure readings of a trace shared by panels (context buckets, pruning reasons, motor steps in words, pick rule in words, the six tower levels, exploration pressure from its terms, the featured tick), with the controller's constants |
 | `src/store.ts` | One episode, one current tick, the screen, the tour step, depth (plain or formula), theme, the hovered action |
-| `src/screens/` | Overview, Inspector (Tick) and Hierarchy |
-| `src/components/` | One component per panel, the architecture diagram, the decision card, the exploration gauge, the steering card, the tour, plus the panel frame and the timeline |
+| `src/screens/` | Overview, Inspector (Tick), Hierarchy and Learning |
+| `src/components/` | One component per panel, the architecture diagram, the decision card, the exploration gauge, the steering card, the tour, the learning curves, trust map, gate view, head-to-head and reward anatomy, plus the panel frame and the timeline |
 | `public/episodes/` | The demo bundles and their index |
 
 The build uses relative URLs (`base: './'`), so `dist/` can be served from
