@@ -994,7 +994,7 @@ validates a bundle and every file `episode.json` lists against the
 models and checks that every tick has a frame; `--index DIR` writes `DIR/index.json`, the
 list the app's episode picker reads.
 
-The app (`web/`, see `web/README.md`) has four screens over one shared
+The app (`web/`, see `web/README.md`) has five screens over one shared
 timeline, picked from tabs in the top bar. The URL hash is
 `#<episode>/<tick>/<screen>`; a link without a screen opens the tick
 inspector, and a fresh visit opens the overview.
@@ -1054,9 +1054,30 @@ the normalised blend by g the arbiter used, marking the modules whose
 own top pick was taken, which are the only ones the gate learns from);
 and the reward anatomy (the five module rewards and the raw 8-step
 return, γ = 0.9, each becomes). Without networks, the trust map and gate
-view say so and link to the recording that has them. A Plain/Formula
-toggle hides or shows the arithmetic on every screen. Two demo bundles
-ship in `web/public/episodes/`.
+view say so and link to the recording that has them.
+
+**Growing the menu** follows the one path that adds to a menu, from a
+module's complaint to a new chip. Over the whole episode, one strip per
+module: the counter its expansion rule watches against its threshold
+(survival: damage on 4 ticks in a row, or health under 35 with 15+
+recent damage; combat: 3 failures, or 4 damage ticks against 2+ enemies;
+navigation: 4 stalls; resource: ammo ≤ 2 and health ≤ 35 with a pickup
+in view; goal's plateau counter is never advanced, so goal never asks),
+the ticks where the other condition held, each request, the span the
+worker was busy (one proposal in flight, 20 s), and the arrival at the
+gate. Then, for the proposal that arrived at this tick or the last one
+before it: the sentence that asked, the text as returned and the parsed
+macro; the gate card from the hierarchy with each stage's reason and the
+sandbox rollout (it fails only a predicted death from a state above 25
+health, read at the request); the vocabulary on the tick before and the
+tick it arrived, with the new macro's 12-number encoding beside a
+built-in one; and the follow-up: ticks legal, picks, the reward each
+time it ran, and when steering adopted its strategy, whose +0.15 the
+arbiter adds to the legal actions of its sequence from the next tick.
+On a recording without a request, the strips still show the counters
+and the closest call, with a link to the recording of the same seed that
+asked. A Plain/Formula toggle hides or shows the arithmetic on every
+screen. Two demo bundles ship in `web/public/episodes/`.
 
 ---
 
