@@ -7,6 +7,7 @@ import { admissions } from './data/derive'
 import { Hierarchy } from './screens/Hierarchy'
 import { Inspector } from './screens/Inspector'
 import { Learning } from './screens/Learning'
+import { Menu } from './screens/Menu'
 import { Overview } from './screens/Overview'
 import { endTour, getState, onHashChange, setState, setTickIndex, setTourStep, start, step, useApp } from './store'
 
@@ -101,6 +102,7 @@ export default function App() {
           {screen === 'tick' && <Inspector bundle={bundle} tick={tick} admitted={admitted} ctx={ctx} />}
           {screen === 'hierarchy' && <Hierarchy bundle={bundle} tick={tick} tickIndex={tickIndex} ctx={ctx} />}
           {screen === 'learning' && <Learning bundle={bundle} tick={tick} ctx={ctx} />}
+          {screen === 'menu' && <Menu bundle={bundle} tick={tick} ctx={ctx} />}
           <Scrubber ticks={bundle.ticks} admitted={admitted} ctx={ctx} />
           {tour !== null && <Tour step={tour} bundle={bundle} tick={tick} />}
         </>

@@ -222,3 +222,75 @@ test('the learning screen fits a phone screen', async ({ page }) => {
   await expect(page.locator('#panel-headtohead .h2h-strip')).toHaveCount(2)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
+
+test('growing the menu follows the proposal that arrived at tick 18 from the ask to the new chip', async ({ page }) => {
+  const errors = collectErrors(page)
+  await page.goto('./#deadly_corridor-heuristics-9/18/menu')
+
+  const timeline = page.locator('#panel-requests')
+  await expect(timeline.locator('.rt-row')).toHaveCount(5)
+  await expect(timeline.locator('.rt-row[data-module="survival"] svg')).toHaveAttribute(
+    'aria-label',
+    'survival: asked at tick 17 and 28',
+  )
+  const card = page.locator('#panel-proposal .proposal-card')
+  await expect(card).toHaveAttribute('data-proposal', 'evasive_burst_1')
+  await expect(card.getByTestId('proposal-source')).toHaveText('the fallback template')
+  await expect(card).toContainText('the survival module')
+  await expect(card.locator('.pc-raw pre')).toBeHidden()
+  await card.locator('.pc-raw summary').click()
+  await expect(card.locator('.pc-raw pre')).toContainText('"primitive_expansion"')
+  await expect(page.locator('#panel-gate .pipeline .stage')).toHaveCount(5)
+  await expect(page.locator('#panel-gate .gate-reasons li')).toHaveCount(5)
+  await expect(page.locator('#panel-gate')).toContainText('survival was 0.31, so it passed')
+  const arrived = page.locator('#panel-encoding .vd-row[data-tick="18"]')
+  await expect(arrived.locator('.chip.highlight')).toHaveAttribute('data-action', 'evasive_burst_1')
+  await expect(page.locator('#panel-encoding .vd-row[data-tick="17"] .chip.highlight')).toHaveCount(0)
+  await expect(page.locator('#panel-encoding tr[data-action="evasive_burst_1"] td')).toHaveCount(12)
+  await expect(page.locator('#panel-encoding tr[data-action="weave_fire"] td')).toHaveCount(12)
+  expect(errors).toEqual([])
+})
+
+test('the follow-up names the strategy adoption, and links to it in the hierarchy', async ({ page }) => {
+  const errors = collectErrors(page)
+  await page.goto('./#deadly_corridor-heuristics-9/27/menu')
+  const first = page.locator('#panel-followup [data-macro="evasive_burst_1"]')
+  await expect(first).toContainText('0 of 18 ticks')
+  await expect(first).toContainText('after tick 27 and kept it through tick 34')
+  await expect(first).toContainText('on ticks 28 to 35 the arbiter added +0.15')
+  await expect(page.locator('#panel-proposal .proposal-card.earlier')).toContainText('Arrived at tick 18')
+  await first.getByRole('button', { name: /See the switch in the hierarchy at tick 27/ }).click()
+  await expect(page).toHaveURL(/#deadly_corridor-heuristics-9\/27\/hierarchy$/)
+  await expect(page.locator('#level-steering [data-testid="choice"]')).toContainText('evasive burst 1')
+  expect(errors).toEqual([])
+})
+
+test('without a request the menu screen names the closest call and links to the recording that asked', async ({
+  page,
+}) => {
+  const errors = collectErrors(page)
+  await page.goto('./#deadly_corridor-learned-9/17/menu')
+  const note = page.getByTestId('no-requests')
+  await expect(note).toContainText('the closest was combat at tick 2, failures 1 of 3')
+  await expect(page.locator('#panel-requests .rt-row')).toHaveCount(5)
+  await note.getByRole('button', { name: /at tick 17/ }).click()
+  await expect(page).toHaveURL(/#deadly_corridor-heuristics-9\/17\/menu$/)
+  await expect(page.locator('#panel-proposal')).toContainText('survival asked at tick 17')
+  expect(errors).toEqual([])
+})
+
+test('the admission gate on the overview opens Growing the menu, and the screen fits a phone', async ({ page }) => {
+  await page.goto('./#deadly_corridor-heuristics-9/18/overview')
+  await page.locator('[data-box="gate"]').click()
+  await page
+    .locator('.arch-card')
+    .getByRole('button', { name: /Open in Growing the menu/ })
+    .click()
+  await expect(page).toHaveURL(/\/18\/menu$/)
+  await expect(page.locator('#panel-gate')).toBeInViewport()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('./#deadly_corridor-heuristics-9/27/menu')
+  await expect(page.locator('#panel-followup [data-macro]')).toHaveCount(2)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+})

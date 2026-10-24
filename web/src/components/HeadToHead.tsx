@@ -1,32 +1,16 @@
-import { useEffect, useState } from 'react'
 import { admissions, fmt, pct, tickEvents } from '../data/derive'
-import { type EpisodeBundle, loadEpisode } from '../data/loader'
+import type { EpisodeBundle } from '../data/loader'
 import type { BundleIndexEntry, EpisodeMeta, EvaluationSummary } from '../schema/bundle'
 import { openEpisode, setTickIndex, useApp } from '../store'
 import { Mark } from './Marks'
 import { KIND_LANE } from './markKinds'
+import { useEpisode } from './useEpisode'
 import { useWidth } from './useWidth'
 
 const STRIP_H = 58
 const TOP = 14
 const BOTTOM = 40
 const PAD = 8
-
-/** Bundles fetched for the comparison, kept for the session so switching back is instant. */
-const fetched = new Map<string, Promise<EpisodeBundle>>()
-const ready = new Map<string, EpisodeBundle>()
-
-function fetchPair(name: string): Promise<EpisodeBundle> {
-  let pending = fetched.get(name)
-  if (!pending) {
-    pending = loadEpisode(name).then((b) => {
-      ready.set(name, b)
-      return b
-    })
-    fetched.set(name, pending)
-  }
-  return pending
-}
 
 const BRAINS: Array<{ id: 'heuristics' | 'latest' | 'best'; label: string }> = [
   { id: 'heuristics', label: 'Heuristics only' },
@@ -124,17 +108,7 @@ export function HeadToHead({ bundle, evaluation }: { bundle: EpisodeBundle; eval
       e.seed === bundle.meta.seed &&
       (e.model === 'heuristics') !== (bundle.meta.model === 'heuristics'),
   )
-  const pairName = pair?.name ?? null
-  const [, setLoaded] = useState(0)
-  const other = pairName ? (ready.get(pairName) ?? null) : null
-  useEffect(() => {
-    if (!pairName || ready.has(pairName)) return
-    let alive = true
-    void fetchPair(pairName).then(() => alive && setLoaded((n) => n + 1))
-    return () => {
-      alive = false
-    }
-  }, [pairName])
+  const other = useEpisode(pair?.name ?? null)
 
   // Heuristics on top, the networks below.
   const both = (other ? [bundle, other] : [bundle]).sort(

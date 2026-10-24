@@ -1,6 +1,6 @@
 // The overview diagram's boxes: what each one is called, which explainer it opens, and which
 // panels show it in detail. The numbered ones are the six beats of every tick.
-import type { ExplainerId, InspectorPanelId, LearningPanelId } from './explainers'
+import type { ExplainerId, InspectorPanelId, LearningPanelId, MenuPanelId } from './explainers'
 
 export type BoxId =
   | 'freeze'
@@ -29,6 +29,8 @@ export interface BoxInfo {
   panel?: InspectorPanelId
   /** The learning screen's panel for it, when learning is what it is about. */
   learning?: LearningPanelId
+  /** The growing-the-menu screen's panel for it. */
+  menu?: MenuPanelId
   beat?: number
 }
 
@@ -40,10 +42,10 @@ export const BOXES: Record<BoxId, BoxInfo> = {
   decision: { title: 'One decision', explainer: 'arbiter', panel: 'arbiter', beat: 4 },
   act: { title: 'Act', explainer: 'motor', panel: 'motor', beat: 5 },
   remember: { title: 'See and remember', explainer: 'outcome', panel: 'outcome', beat: 6 },
-  request: { title: 'A module asks', explainer: 'request', panel: 'modules' },
-  worker: { title: 'Slow worker writes', explainer: 'worker' },
-  gate: { title: 'Admission gate', explainer: 'gate', panel: 'legal' },
-  join: { title: 'Joins the menu', explainer: 'legal', panel: 'legal' },
+  request: { title: 'A module asks', explainer: 'request', panel: 'modules', menu: 'requests' },
+  worker: { title: 'Slow worker writes', explainer: 'worker', menu: 'proposal' },
+  gate: { title: 'Admission gate', explainer: 'gate', panel: 'legal', menu: 'gate' },
+  join: { title: 'Joins the menu', explainer: 'legal', panel: 'legal', menu: 'encoding' },
   rewards: { title: 'Five rewards', explainer: 'rewards', panel: 'outcome', learning: 'anatomy' },
   replay: { title: 'Replay buffer', explainer: 'replay', learning: 'curves' },
   networks: { title: 'Learned networks', explainer: 'networks', panel: 'modules', learning: 'trustmap' },

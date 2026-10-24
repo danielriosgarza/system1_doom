@@ -12,10 +12,13 @@ export function LegalActions({
   bundle,
   tick,
   admitted,
+  highlight,
 }: {
   bundle: EpisodeBundle
   tick: TickTrace
   admitted: Admission[]
+  /** An action to ring, such as the macro that just joined the menu. */
+  highlight?: string
 }) {
   const hovered = useApp((s) => s.hoveredAction)
   const depth = useApp((s) => s.depth)
@@ -44,6 +47,7 @@ export function LegalActions({
               isLegal ? 'legal' : future ? 'future' : 'pruned',
               id === tick.selected_action ? 'selected' : '',
               id === hovered ? 'hovered' : '',
+              id === highlight ? 'highlight' : '',
             ].join(' ')
             const body = (
               <>

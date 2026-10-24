@@ -161,6 +161,11 @@ export function Overview({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: T
                     Open in Learning →
                   </button>
                 )}
+                {box.menu && (
+                  <button type="button" className="link-button" onClick={() => openPanel('menu', box.menu as string)}>
+                    Open in Growing the menu →
+                  </button>
+                )}
               </p>
             </>
           ) : (

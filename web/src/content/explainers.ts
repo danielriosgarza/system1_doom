@@ -6,9 +6,13 @@ import {
   ARCHIVE_ALPHA,
   ARCHIVE_SLOTS,
   BASE_TEMPERATURE,
+  ENCODING_LABELS,
+  EXPANSION_TRIGGERS,
   FLOOR_SCHEDULE,
   GAMMA,
   LEARNER,
+  MAX_MACRO_STEPS,
+  MEMORY_LABELS,
   MODULES,
   N_STEP,
   MODULE_TEMPERATURE,
@@ -16,14 +20,18 @@ import {
   PRESSURE_FLOOR,
   SAMPLE_MARGIN,
   SAMPLE_PRESSURE,
+  SANDBOX_CRITICAL_HEALTH,
   STEERING_CHOICES,
   STRATEGY_BONUS,
   TRUST_COUNT,
+  WORKER_TIMEOUT_SEC,
   aimBandHalfWidth,
   contextBuckets,
+  encodeAction,
   exploration,
   floorAt,
   fmt,
+  followUp,
   gateBlend,
   gameSeconds,
   holdFor,
@@ -31,12 +39,17 @@ import {
   moduleVoteParts,
   nStepReturns,
   pct,
+  preconditionWords,
   pressureReading,
   prettyId,
+  proposalShown,
   rankedActions,
+  requestContext,
   rolling,
   signed,
   slowPathAt,
+  tickRange,
+  triggerAt,
   trustLambda,
 } from '../data/derive'
 
@@ -53,8 +66,11 @@ export type InspectorPanelId =
 /** The learning screen's panels. */
 export type LearningPanelId = 'curves' | 'trustmap' | 'gateview' | 'headtohead' | 'anatomy'
 
+/** The growing-the-menu screen's panels. */
+export type MenuPanelId = 'requests' | 'proposal' | 'gate' | 'encoding' | 'followup'
+
 /** Every panel of every screen; each is also an element id, `#panel-<id>`. */
-export type PanelId = InspectorPanelId | LearningPanelId
+export type PanelId = InspectorPanelId | LearningPanelId | MenuPanelId
 
 /** Everything with an explainer: the panels, plus the boxes of the overview and the hierarchy. */
 export type ExplainerId =
@@ -482,20 +498,35 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
     title: 'The admission gate',
     sentence: 'Five checks decide whether a proposed macro may join the menu: parse, legality, sandbox, d1 and admit.',
     paragraphs: [
-      'Parse: the text must be a well-formed proposal. Legality: a new id, known primitives only, at most 16 steps and no more than its own maximum duration. Sandbox: the bounded simulator rolls the macro out, and it fails if the rollout predicts death from a state that was not already critical. d1: when d1-ultra is on it is asked whether the macro is worth adding; it is off here, so the stage is skipped. Admit: the macro is registered in the vocabulary and a matching strategy is added to the archive.',
+      'Parse: the text must be a well-formed proposal. Legality: a well-formed id that is not a primitive’s, known primitives only, at most 16 steps and no more than its own maximum duration. Sandbox: the bounded simulator rolls the macro out, and it fails if the rollout predicts death from a state that was not already critical. d1: when d1-ultra is on it is asked whether the macro is worth adding; it is off here, so the stage is skipped. Admit: the macro is registered in the vocabulary and a matching strategy is added to the archive.',
       'A failed stage stops the proposal and nothing changes. An admitted macro is scored like any other action from then on, and the only way it is used is by winning the same arbiter as everything else.',
     ],
-    formula: 'admitted = parse ∧ legality ∧ sandbox ∧ (d1 or skipped) → admit',
-    substitute: ({ tick, proposals }) => {
+    formula: `admitted = parse ∧ legality ∧ sandbox ∧ (d1 or skipped) → admit;  sandbox fails ⇔ survival = 0 ∧ health when asked > ${SANDBOX_CRITICAL_HEALTH}`,
+    substitute: ({ tick, proposals, ticks }) => {
       const arrived = slowPathAt(tick, proposals).arrived
       if (arrived.length === 0) return [{ label: 'this tick', expr: 'no proposal reached the gate', result: 'idle' }]
-      return arrived.flatMap((p) =>
-        (p.stage_results ?? []).map((s) => ({
+      return arrived.flatMap((p) => {
+        const stages = (p.stage_results ?? []).map((s) => ({
           label: s.stage,
           expr: s.reason ?? '',
           result: s.skipped ? 'skipped' : s.passed ? 'passed' : 'failed',
-        })),
-      )
+        }))
+        const survival = p.sandbox_summary?.survival_probability
+        const asked = [...ticks].reverse().find((t) => t.tick < (p.tick ?? 0) && t.slow_path_request)
+        if (survival === undefined || !asked?.state) return stages
+        const health = asked.state.health
+        return [
+          ...stages,
+          {
+            label: 'the sandbox rule',
+            expr:
+              health > SANDBOX_CRITICAL_HEALTH
+                ? `health when asked ${fmt(health, 0)} > ${SANDBOX_CRITICAL_HEALTH}, so a predicted death fails it; survival ${fmt(survival, 2)} ${survival > 0 ? '> 0' : '= 0'}`
+                : `health when asked ${fmt(health, 0)} ≤ ${SANDBOX_CRITICAL_HEALTH}: already critical, so the sandbox cannot fail it`,
+            result: survival <= 0 && health > SANDBOX_CRITICAL_HEALTH ? 'fails' : 'passes',
+          },
+        ]
+      })
     },
     code: 'admission.py · ProposalAdmissionPipeline.evaluate_and_admit',
   },
@@ -755,6 +786,120 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
     },
     code: 'exploration.py · ExplorationController.update_and_decide',
   },
+  requests: {
+    title: 'Who asked for a new macro',
+    sentence:
+      "Only a concrete failure pattern in a module's own memory may ask for a new macro; one request is in flight at a time, and a busy worker drops the rest.",
+    paragraphs: [
+      "Each strip is one module over the whole episode. The line is the counter its rule watches (damage streak for survival, failures for combat, stalls for navigation, plateau for goal), drawn up to its threshold; the squares mark ticks where the rule's other condition held in the frozen state. A flag is a request, the band is the time the worker spent on it, and a plus is its proposal reaching the gate. Click any mark to move there.",
+      `The worker writes one proposal at a time and has ${WORKER_TIMEOUT_SEC} seconds for it. While it is busy, any other module that crosses its threshold is dropped and has to ask again on a later tick. In this version the controller never advances the goal module's plateau counter, so goal never asks.`,
+    ],
+    formula: 'asks = (counter ≥ threshold ∨ other condition) ∧ the worker is idle',
+    substitute: ({ tick }) =>
+      MODULES.map((m) => {
+        const r = triggerAt(m, tick)
+        const trigger = EXPANSION_TRIGGERS[m]
+        const counter = trigger.counter
+          ? `${MEMORY_LABELS[trigger.counter] ?? trigger.counter} ${r.value ?? 0} of ${r.threshold ?? '?'}`
+          : 'no counter'
+        const asked = tick.slow_path_request?.module === m
+        return {
+          label: m,
+          expr: `${counter}${m === 'goal' ? '' : `; other condition ${r.other ? 'holds' : 'does not hold'}`}`,
+          result: asked ? 'asked' : r.asks ? 'dropped: worker busy' : 'quiet',
+        }
+      }),
+    code: 'modules.py · check_expansion_needed; controller.py · step; llm_worker.py · SlowLLMWorker.is_busy',
+  },
+  proposal: {
+    title: 'The proposal',
+    sentence:
+      'Free text never reaches the motor: only a parsed, validated macro, a named list of known primitives with preconditions, can join the menu.',
+    paragraphs: [
+      "The worker answers the module's sentence with a proposal written as text: JSON here, filled in from a fallback template because Codex is off in these recordings. Parsing turns it into a typed macro: an id, a description, the primitives it presses in order, the preconditions under which it is legal, a maximum duration, a termination condition, and a strategy for the archive.",
+      `Nothing in the text is executed. A macro can only press primitives the motor already has, at most ${MAX_MACRO_STEPS} of them, and its preconditions decide on every tick whether it is on the legal menu at all.`,
+    ],
+    formula: `macro = parse(text): an id, primitives drawn from the known ones, at most ${MAX_MACRO_STEPS} of them, preconditions, a maximum duration`,
+    substitute: ({ tick, proposals }) => {
+      const shown = proposalShown(tick, proposals)
+      if (!shown) return [{ label: 'so far', expr: 'no proposal has reached the gate', result: '–' }]
+      const p = shown.proposal
+      const parsed = (p.parsed_proposal ?? {}) as {
+        primitive_expansion?: string[]
+        preconditions?: Record<string, unknown>
+      }
+      const plan = parsed.primitive_expansion ?? []
+      return [
+        {
+          label: 'asked by',
+          expr: `${requestContext(p).module}, answered by the ${p.source ?? '?'}`,
+          result: `tick ${p.tick ?? '?'}`,
+        },
+        { label: 'plan', expr: plan.map(prettyId).join(' → '), result: `${plan.length} of ≤ ${MAX_MACRO_STEPS} steps` },
+        {
+          label: 'legal only with',
+          expr: preconditionWords(parsed.preconditions).join(', ') || 'no preconditions',
+          result: '',
+        },
+      ]
+    },
+    code: 'llm_worker.py · SlowLLMWorker._fallback_template_proposal; admission.py · MacroActionProposal',
+  },
+  encoding: {
+    title: 'The menu, before and after',
+    sentence:
+      'Actions are described by what they press, not by their name, so the networks can score a macro the moment it is admitted.',
+    paragraphs: [
+      'The two rows are the whole vocabulary on the tick before the proposal arrived and on the tick it arrived: admission adds one chip and changes nothing else. A new macro is legal only when its preconditions hold, like every other action.',
+      'Every action reaches the networks as the same 12 numbers: for each of the 8 primitives, the share of the plan that presses it (a strafe-and-shoot step counts as both), then the share of weapon switches, the length ÷ 16, 1 for a macro and 1 for an action that targets a pickup. A new macro is a new point in the same space as the built-in ones, and the networks score it from there.',
+    ],
+    formula: 'encoding = [share of each of the 8 primitives, weapon switches, length ÷ 16, macro, targets a pickup]',
+    substitute: ({ tick, proposals, meta }) => {
+      const shown = proposalShown(tick, proposals)
+      const id = shown?.proposal.admitted_action_id
+      const action = id ? meta.actions[id] : undefined
+      if (!id || !action) return [{ label: 'so far', expr: 'no macro has been admitted', result: '–' }]
+      const numbers = encodeAction(action.primitives, action.is_macro)
+      const n = action.primitives.length
+      return [
+        {
+          label: prettyId(id),
+          expr: numbers
+            .slice(0, 8)
+            .map((v, i) => `${ENCODING_LABELS[i] ?? ''} ${fmt(v * n, 0)}/${n}`)
+            .join(', '),
+          result: `${numbers.filter((v) => v > 0).length} of 12 non-zero`,
+        },
+        { label: 'length ÷ 16', expr: `${n} ÷ 16`, result: fmt(n / 16, 2) },
+      ]
+    },
+    code: 'features.py · encode_action',
+  },
+  followup: {
+    title: 'What the bet paid',
+    sentence:
+      'Admission is a bet: an admitted macro competes like every other action, can lose every time, and may change steering more than play.',
+    paragraphs: [
+      'For each admitted macro: on how many ticks it was legal, how often the arbiter picked it, and the reward each time it ran. A macro is only ever run by winning the same arbiter as everything else.',
+      `Its strategy joins the archive at the same moment. When steering adopts that strategy, the arbiter adds +${STRATEGY_BONUS} to every legal action in the strategy's sequence from the next tick on, so a macro that is never legal can still tilt the choice between the actions around it.`,
+    ],
+    formula: `bonus(a, t) = +${STRATEGY_BONUS} if a is legal at t and in the sequence of the strategy steering chose after t − 1`,
+    substitute: ({ proposals, ticks }) => {
+      const lines = proposals.flatMap((p) => {
+        const f = followUp(p, ticks)
+        if (!f) return []
+        return [
+          {
+            label: prettyId(f.id),
+            expr: `legal on ${f.legal.length} of ${f.ticksAfter} ticks, picked ${f.picked.length}; strategy adopted after ${tickRange(f.adopted)}`,
+            result: f.rewards.length > 0 ? `rewards ${f.rewards.map((r) => fmt(r, 2)).join(', ')}` : 'never ran',
+          },
+        ]
+      })
+      return lines.length > 0 ? lines : [{ label: 'this recording', expr: 'no macro was admitted', result: '–' }]
+    },
+    code: 'logger.py · subsequent_performance; archive.py · StrategyArchive; arbiter.py · strategy_bonus',
+  },
   d1: {
     title: 'd1-ultra advice',
     sentence:
@@ -809,6 +954,14 @@ export const BOUNDS: Record<string, string> = {
     'The gate can only re-weigh the five modules that exist; the weights always sum to 1, and no module or action can be added.',
   '8 steps · γ 0.9':
     'A return looks at most 8 decisions ahead and each step counts 0.9 of the one before, so what a module learns stays local to what it just did.',
+  'one counter, one threshold':
+    'A module may only ask when a counter of its own failures crosses a fixed threshold, or a fixed state test holds; it cannot ask on a hunch.',
+  '≤ 16 primitives, known ones only':
+    'A proposal is text until it parses into a macro of at most 16 primitives the motor already has; nothing else in it is ever run.',
+  '12 numbers per action':
+    'Every action, built in or admitted, reaches the networks as the same 12 numbers, so a new macro needs no new network.',
+  '+0.15 per strategy action':
+    "An adopted strategy adds a fixed 0.15 to the legal actions in its sequence; it nudges the arbiter's choice, never makes it.",
   'one proposal in flight':
     'The slow path works on one macro proposal at a time with a 20-second timeout, and the real-time loop never waits for it.',
 }

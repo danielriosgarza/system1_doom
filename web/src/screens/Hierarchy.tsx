@@ -1,6 +1,7 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import { DecisionCard } from '../components/DecisionCard'
 import { ExplorationGauge } from '../components/ExplorationGauge'
+import { GateDetail, GatePipeline } from '../components/GateStages'
 import { BoundBadges, ExplainerBody } from '../components/Panel'
 import { SteeringCard } from '../components/SteeringCard'
 import { EXPLAINERS, type ExplainerContext, type ExplainerId, type PanelId } from '../content/explainers'
@@ -17,8 +18,6 @@ import {
   pressureForArbiter,
   pressureReading,
   prettyId,
-  proposalId,
-  slowPathAt,
   towerLevels,
 } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
@@ -208,56 +207,6 @@ function NetworksReading({ tick, on }: { tick: TickTrace; on: boolean }) {
           <span className="num">{pct(r.value)}</span>
         </div>
       ))}
-    </div>
-  )
-}
-
-function GatePipeline({ tick, proposals }: { tick: TickTrace; proposals: EpisodeBundle['proposals'] }) {
-  const slow = slowPathAt(tick, proposals)
-  const proposal = slow.arrived[0]
-  if (!proposal) {
-    return slow.request ? (
-      <p className="dc-note">
-        <strong>{slow.request.module}</strong> asked: “{slow.request.description}”
-      </p>
-    ) : null
-  }
-  return (
-    <ol className="pipeline" aria-label={`The five stages for ${prettyId(proposalId(proposal))}`}>
-      {(proposal.stage_results ?? []).map((s) => (
-        <li
-          key={s.stage}
-          className={`stage ${s.skipped ? 'skipped' : s.passed ? 'passed' : 'failed'}`}
-          title={s.reason}
-          data-stage={s.stage}
-        >
-          <span className="stage-name">{s.stage}</span>
-          <span className="stage-result">{s.skipped ? 'skipped' : s.passed ? 'passed' : 'failed'}</span>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function GateDetail({ tick, proposals }: { tick: TickTrace; proposals: EpisodeBundle['proposals'] }) {
-  const slow = slowPathAt(tick, proposals)
-  const proposal = slow.arrived[0]
-  if (!proposal) return null
-  const parsed = (proposal.parsed_proposal ?? {}) as { description?: string; primitive_expansion?: string[] }
-  return (
-    <div className="dc-note">
-      <p>
-        <strong>{prettyId(proposalId(proposal))}</strong>, written by the {proposal.source_module ?? 'unknown'} module’s
-        request ({proposal.source === 'codex' ? 'Codex' : 'fallback template'}): {parsed.description}
-      </p>
-      {parsed.primitive_expansion && <p>Plan: {parsed.primitive_expansion.map(prettyId).join(' → ')}</p>}
-      <ul className="stage-reasons">
-        {(proposal.stage_results ?? []).map((s) => (
-          <li key={s.stage}>
-            <strong>{s.stage}</strong>: {s.reason}
-          </li>
-        ))}
-      </ul>
     </div>
   )
 }
@@ -458,7 +407,14 @@ export function Hierarchy({
   const detail = (level: TowerLevel): ReactNode => {
     switch (level.id) {
       case 'gate':
-        return <GateDetail tick={tick} proposals={bundle.proposals} />
+        return (
+          <>
+            <GateDetail tick={tick} proposals={bundle.proposals} />
+            <button type="button" className="link-button" onClick={() => openPanel('menu', 'gate')}>
+              See it in Growing the menu →
+            </button>
+          </>
+        )
       case 'steering':
         return <SteeringCard tick={tick} />
       case 'arbiter':

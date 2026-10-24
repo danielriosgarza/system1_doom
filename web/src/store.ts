@@ -6,13 +6,14 @@ import { type EpisodeBundle, type EpisodeIndex, loadEpisode, loadIndex } from '.
 
 export type Depth = 'plain' | 'formula'
 export type Theme = 'dark' | 'light'
-export type Screen = 'overview' | 'tick' | 'hierarchy' | 'learning'
+export type Screen = 'overview' | 'tick' | 'hierarchy' | 'learning' | 'menu'
 
 export const SCREENS: Array<{ id: Screen; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'tick', label: 'Tick' },
   { id: 'hierarchy', label: 'Hierarchy' },
   { id: 'learning', label: 'Learning' },
+  { id: 'menu', label: 'Growing the menu' },
 ]
 
 /** The tour's last step is on the hierarchy screen; the ones before it are the six beats. */
