@@ -27,6 +27,16 @@ const SCREEN_LINES: Array<{ id: Screen; name: string; line: string }> = [
     name: 'Hierarchy',
     line: 'the same tick as a tower of six levels, from growing the menu down to the motor, each drawn as the same card.',
   },
+  {
+    id: 'learning',
+    name: 'Learning',
+    line: 'how the networks earned their say over 300 episodes, and what they do with it at this tick.',
+  },
+  {
+    id: 'menu',
+    name: 'Growing the menu',
+    line: 'the one path that adds to a menu, from a module’s complaint through the gate to a new chip, and what the bet paid.',
+  },
 ]
 
 export function Overview({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: TickTrace; ctx: ExplainerContext }) {
@@ -145,7 +155,7 @@ export function Overview({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: T
                 Each box is one part of the controller, showing what it did at tick {tick.tick}. Click one for what it
                 does, why, and where it lives in the code. The numbered boxes are the six beats of every tick.
               </p>
-              <h3 className="arch-card-sub">Three ways to look</h3>
+              <h3 className="arch-card-sub">Five ways to look</h3>
               <ul className="screen-lines">
                 {SCREEN_LINES.map((s) => (
                   <li key={s.id}>
