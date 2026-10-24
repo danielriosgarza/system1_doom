@@ -12,6 +12,8 @@ export default defineConfig({
       '^/episodes/live-': 'http://127.0.0.1:8765',
     },
   },
+  // `vite preview` is the static build, as GitHub Pages serves it: no live mode, whatever runs on 8765.
+  preview: { proxy: {} },
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
