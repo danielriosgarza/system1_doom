@@ -1,7 +1,8 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef } from 'react'
-import type { ExplainerContext } from '../content/explainers'
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { EXPLAINERS, type ExplainerContext } from '../content/explainers'
+import { GLOSSARY, type GlossaryEntry, type SeeLink } from '../content/glossary'
 import type { EpisodeBundle } from '../data/loader'
-import { type DrawerSection, closeDrawer, openDrawer, useApp } from '../store'
+import { type DrawerSection, SCREENS, closeDrawer, openDrawer, openPanel, setScreen, useApp } from '../store'
 
 const TABS: Array<{ id: DrawerSection; label: string }> = [
   { id: 'glossary', label: 'Glossary' },
@@ -169,10 +170,9 @@ function SectionBody({
   ctx: ExplainerContext
 }): ReactNode {
   void bundle
-  void ctx
   switch (section) {
     case 'glossary':
-      return <p className="empty-note">The glossary.</p>
+      return <Glossary ctx={ctx} />
     case 'principles':
       return <p className="empty-note">The seven principles.</p>
     case 'recording':
@@ -180,4 +180,122 @@ function SectionBody({
     case 'keys':
       return <p className="empty-note">The keys.</p>
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Glossary.
+
+const SORTED = [...GLOSSARY].sort((a, b) => a.term.localeCompare(b.term, 'en', { sensitivity: 'base' }))
+
+/** Close the drawer and show the place; a link to another tab just switches tab. */
+function goTo(link: SeeLink): void {
+  if ('tab' in link) {
+    openDrawer(link.tab)
+    return
+  }
+  closeDrawer()
+  if (link.panel) openPanel(link.screen, link.panel)
+  else setScreen(link.screen)
+}
+
+function seeLabel(link: SeeLink): string {
+  if (link.label) return link.label
+  if ('tab' in link) return link.tab
+  const screen = SCREENS.find((s) => s.id === link.screen)?.label ?? link.screen
+  return link.panel ? `${screen} → ${EXPLAINERS[link.panel].title}` : screen
+}
+
+/** The aliases worth showing: not the term's own plural or singular. */
+function otherNames(entry: GlossaryEntry): string[] {
+  const term = entry.term.toLowerCase()
+  return entry.aliases.filter((a) => {
+    const alias = a.toLowerCase()
+    return alias !== `${term}s` && `${alias}s` !== term && alias !== `${term}es`
+  })
+}
+
+function matches(entry: GlossaryEntry, query: string): boolean {
+  return [entry.term, ...entry.aliases, entry.meaning].some((text) => text.toLowerCase().includes(query))
+}
+
+function Glossary({ ctx }: { ctx: ExplainerContext }) {
+  const term = useApp((s) => s.term)
+  const [filter, setFilter] = useState('')
+  // A new entry asked for clears the filter, so it is on the list.
+  const [askedFor, setAskedFor] = useState(term)
+  if (term !== askedFor) {
+    setAskedFor(term)
+    setFilter('')
+  }
+  const query = filter.trim().toLowerCase()
+  const shown = query ? SORTED.filter((e) => matches(e, query)) : SORTED
+
+  useEffect(() => {
+    if (!term) return
+    const el = document.getElementById(`term-${term}`)
+    if (!el) return
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' })
+    el.focus({ preventScroll: true })
+    el.classList.remove('flash')
+    void el.offsetWidth
+    el.classList.add('flash')
+  }, [term])
+
+  return (
+    <div className="glossary">
+      <input
+        type="search"
+        className="gloss-filter"
+        placeholder="Filter by a word in the term or its meaning"
+        aria-label="Filter the glossary"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+      />
+      <p className="gloss-count" aria-live="polite">
+        {query ? `${shown.length} of ${SORTED.length} entries` : `${SORTED.length} entries, A to Z`}
+      </p>
+      <ul className="gloss-list">
+        {shown.map((entry) => (
+          <li key={entry.id}>
+            <GlossaryItem entry={entry} ctx={ctx} current={entry.id === term} />
+          </li>
+        ))}
+      </ul>
+      {shown.length === 0 && <p className="empty-note">Nothing in the glossary matches “{filter.trim()}”.</p>}
+    </div>
+  )
+}
+
+function GlossaryItem({ entry, ctx, current }: { entry: GlossaryEntry; ctx: ExplainerContext; current: boolean }) {
+  const also = otherNames(entry)
+  return (
+    <article
+      id={`term-${entry.id}`}
+      className="gloss-entry"
+      data-entry={entry.id}
+      aria-current={current ? 'true' : undefined}
+      tabIndex={-1}
+    >
+      <h3>{entry.term}</h3>
+      {also.length > 0 && <p className="gloss-also">Also: {also.join(', ')}</p>}
+      {entry.now && (
+        <p className="gloss-now">
+          <span className="gloss-now-label">Tick {ctx.tick.tick}</span> {entry.now(ctx)}
+        </p>
+      )}
+      <p className="gloss-meaning">{entry.meaning}</p>
+      <p className="gloss-see">
+        <span className="muted">Where to see it:</span>
+        {entry.see.map((link) => (
+          <button key={seeLabel(link)} type="button" className="link-button" onClick={() => goTo(link)}>
+            {seeLabel(link)} →
+          </button>
+        ))}
+      </p>
+      <p className="code-ref">
+        In the code: <code>{entry.code}</code>
+      </p>
+    </article>
+  )
 }

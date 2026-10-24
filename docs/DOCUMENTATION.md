@@ -1444,7 +1444,7 @@ and reused by `cli.py`).
 | **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions. Advisory everywhere it appears. |
 | **Exploration floor** | Flat probability of a tempered exploratory arbiter pick (training-time), distinct from exploration *pressure*. |
 | **Exploration pressure / temperature** | State-dependent exploration intensity from `ExplorationController`; temperature = 0.10 + pressure drives arbiter sampling. |
-| **Gate** | Learned `state → 5` network estimating how much following each module pays off in goal return; blended into arbiter module weights. |
+| **Gate network** | Learned `state → 5` network estimating how much following each module pays off in goal return; blended into arbiter module weights. |
 | **Macro** | Multi-primitive `ActionSpec` (`is_macro=True`); built-in, hand-added, or Codex-proposed-and-admitted. |
 | **Module** | One of survival/combat/navigation/resource/goal; a `DecisionModule` producing a distribution over the same candidate set. |
 | **Network share** | Experience-weighted mean trust λ — how much of play the learned networks currently steer. |
