@@ -5,7 +5,9 @@ Five senses (survival, combat, navigation, resource, goal) are each one
 d1-ultra call that sees only its own slice of the evidence and decides
 whether to send a message: an action, a reason, a strength. A central
 d1-ultra call hears the messages, with each sense's track record, and
-chooses the action; the motor presses that action's fixed keys. The code
+chooses the action; the motor presses that action's fixed keys, aiming
+only at targets d1-ultra chose (the combat sense picks which visible enemy
+to aim at, the resource sense which remembered pickup to walk to). The code
 renders evidence, keeps the bounds and presses the keys; it never ranks,
 scores or picks an action itself, and a missed answer is recorded as a
 miss rather than filled in by a rule. An asynchronous slow path can

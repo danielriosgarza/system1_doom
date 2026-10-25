@@ -109,15 +109,20 @@ def nearest_enemy_side(state: str) -> Optional[str]:
     return match.group(1) or "ahead"
 
 
-def _sense(payload: Dict[str, Any], speak: float, action: str, reason: Optional[str] = None) -> Answers:
+def sense_answers(payload: Dict[str, Any], speak: float, action: str, reason: Optional[str] = None, target: Optional[str] = None) -> Answers:
+    """A sense's answers; when it is asked for a target, `target` (else the first candidate, the nearest)."""
     questions = payload["questions"]
     menu = menu_of(payload)
     reasons = list(questions["reason"]["criteria"])
-    return {
+    answers = {
         "speak": noul(speak),
         "action": choice(menu, action if action in menu else menu[0]),
         "reason": choice(reasons, reason if reason in reasons else reasons[0]),
     }
+    if "target" in questions:
+        candidates = list(questions["target"]["criteria"])
+        answers["target"] = choice(candidates, target if target in candidates else candidates[0])
+    return answers
 
 
 def _central(payload: Dict[str, Any]) -> Answers:
@@ -139,12 +144,12 @@ def default_policy(name: str, payload: Dict[str, Any]) -> Answers:
     menu = menu_of(payload)
     if name == "combat":
         hit = aimed(state)
-        return _sense(payload, 0.9 if hit else 0.2, "shoot" if hit else menu[0], "target_aimed" if hit else "no_target")
+        return sense_answers(payload, 0.9 if hit else 0.2, "shoot" if hit else menu[0], "target_aimed" if hit else "no_target")
     if name == "survival":
         hp = health(state)
         low = hp is not None and hp < 30
-        return _sense(payload, 0.95 if low else 0.2, menu[0], "health_critical" if low else "no_threat")
-    return _sense(payload, 0.2, menu[0])
+        return sense_answers(payload, 0.95 if low else 0.2, menu[0], "health_critical" if low else "no_threat")
+    return sense_answers(payload, 0.2, menu[0])
 
 
 def shoot_when_aimed(name: str, payload: Dict[str, Any]) -> Answers:
@@ -156,16 +161,16 @@ def shoot_when_aimed(name: str, payload: Dict[str, Any]) -> Answers:
         return {"admit": noul(0.8)}
     menu = menu_of(payload)
     if name != "combat":
-        return _sense(payload, 0.1, menu[0])
+        return sense_answers(payload, 0.1, menu[0])
     if aimed(state) and "shoot" in menu:
-        return _sense(payload, 0.9, "shoot", "target_aimed")
+        return sense_answers(payload, 0.9, "shoot", "target_aimed")
     side = nearest_enemy_side(state)
     if side in ("left", "right"):
         toward = next((a for a in (f"turn_{side}", f"strafe_{side}") if a in menu), menu[0])
-        return _sense(payload, 0.9, toward, "target_off_centre")
+        return sense_answers(payload, 0.9, toward, "target_off_centre")
     if side == "ahead" and "shoot" in menu:
-        return _sense(payload, 0.9, "shoot", "target_aimed")
-    return _sense(payload, 0.1, menu[0], "no_target")
+        return sense_answers(payload, 0.9, "shoot", "target_aimed")
+    return sense_answers(payload, 0.1, menu[0], "no_target")
 
 
 def spread_central(name: str, payload: Dict[str, Any]) -> Answers:
@@ -251,8 +256,8 @@ def survival_until_pickups(name: str, payload: Dict[str, Any]) -> Answers:
     if name == "survival":
         menu = menu_of(payload)
         if "[pickups]" in payload["state"]:
-            return _sense(payload, 0.1, menu[0], "no_threat")
-        return _sense(payload, 0.9, menu[0], "enemy_too_close")
+            return sense_answers(payload, 0.1, menu[0], "no_threat")
+        return sense_answers(payload, 0.9, menu[0], "enemy_too_close")
     return shoot_when_aimed(name, payload)
 
 

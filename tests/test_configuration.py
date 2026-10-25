@@ -20,22 +20,25 @@ def test_the_default_is_the_designs_tables():
     assert {n: s.scope for n, s in configuration.senses.items()} == {
         "survival": ("vitals", "threats", "incoming", "projections", "menu"),
         "combat": ("threats", "outgoing", "vitals", "frame", "projections", "menu"),
-        "navigation": ("geometry", "position", "progress", "projections", "menu"),
-        "resource": ("pickups", "vitals", "menu"),
-        "goal": ("progress", "archive", "history", "values", "menu"),
+        "navigation": ("landmarks", "geometry", "position", "progress", "menu"),
+        "resource": ("landmarks", "vitals", "menu"),
+        "goal": ("landmarks", "progress", "history", "archive", "values", "menu"),
+    }
+    assert {n: s.target for n, s in configuration.senses.items()} == {
+        "survival": None, "combat": "enemy", "navigation": None, "resource": "pickup", "goal": None,
     }
     assert configuration.central.scope == ("messages", "relevance", "exploration", "vitals", "menu")
     assert configuration.senses["survival"].reasons == (
         "health_critical", "under_fire", "enemy_too_close", "recovering", "no_threat",
     )
     assert configuration.senses["combat"].concern == "winning the current fight"
-    assert len(CHANNELS) == 18
+    assert len(CHANNELS) == 19
 
 
 def test_the_bounds_hold_the_designs_numbers():
     b = Bounds()
     assert (b.call_budget_sec, b.yes_at, b.system1_pool, b.system2_pool, b.max_scope_channels) == (5.0, 0.5, 6, 2, 7)
-    assert (b.max_enemies, b.max_pickups, b.max_history_steps, b.max_summaries) == (6, 6, 6, 3)
+    assert (b.max_enemies, b.max_pickups, b.max_landmarks, b.max_history_steps, b.max_summaries) == (6, 6, 8, 6, 3)
     assert (b.cooling_decisions, b.history_ring, b.history_test_sample, b.system2_calls_per_cycle) == (60, 2000, 24, 40)
     assert (b.central_miss_limit, b.decision_frames, b.return_steps, b.return_gamma) == (3, 8, 8, 0.9)
 
@@ -92,3 +95,21 @@ def test_a_change_bumps_the_version_and_the_file_round_trips(tmp_path):
     path = tmp_path / "configuration.json"
     explore.save(path)
     assert Configuration.load(path) == explore
+
+
+def test_each_motor_target_is_chosen_by_one_sense_at_most():
+    data = default_configuration().model_dump()
+    data["senses"]["survival"]["target"] = "enemy"
+    with pytest.raises(ValidationError, match="one sense at most"):
+        Configuration.model_validate(data)
+    data["senses"]["survival"]["target"] = None
+    data["senses"]["combat"]["target"] = None
+    assert Configuration.model_validate(data).senses["combat"].target is None
+
+
+def test_a_file_saved_before_senses_chose_targets_gives_combat_and_resource_theirs():
+    data = default_configuration().model_dump()
+    for sense in data["senses"].values():
+        del sense["target"]
+    loaded = Configuration.model_validate(data)
+    assert {n: s.target for n, s in loaded.senses.items() if s.target} == {"combat": "enemy", "resource": "pickup"}

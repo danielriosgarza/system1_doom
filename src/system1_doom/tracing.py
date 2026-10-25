@@ -54,6 +54,7 @@ class EnemyTrace(BaseModel):
     width: int
     height: int
     is_attacking: bool = False
+    attacks_without_hit: int = 0
 
 
 class PickupTrace(BaseModel):
@@ -68,6 +69,25 @@ class PickupTrace(BaseModel):
     screen_y: int
     width: int = 12
     height: int = 12
+
+
+class LandmarkTrace(BaseModel):
+    """A pickup remembered from earlier in the episode: where it lies from this tick's pose, and its record."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    name: str
+    category: str
+    x: float = 0.0
+    y: float = 0.0
+    distance: float
+    bearing: float = Field(description="Degrees from the facing, positive to the left")
+    in_view: bool = False
+    last_seen_tick: int = 0
+    reward_agreement: Optional[float] = Field(default=None, description="How reward went with getting closer, -1 to 1")
+    reward_moves: int = 0
+    approaches_nowhere: int = 0
 
 
 class StateTrace(BaseModel):
@@ -86,6 +106,7 @@ class StateTrace(BaseModel):
     walls: WallTrace
     enemies: List[EnemyTrace] = Field(default_factory=list)
     pickups: List[PickupTrace] = Field(default_factory=list)
+    landmarks: List[LandmarkTrace] = Field(default_factory=list)
     recent_incoming_damage: float = 0.0
     recent_outgoing_damage: float = 0.0
     recent_hits: int = 0
@@ -174,6 +195,7 @@ def state_trace(world_state: "WorldState") -> StateTrace:
                 width=e.width,
                 height=e.height,
                 is_attacking=e.is_attacking,
+                attacks_without_hit=e.attacks_without_hit,
             )
             for e in obs.visible_enemies
         ],
@@ -190,6 +212,23 @@ def state_trace(world_state: "WorldState") -> StateTrace:
                 height=p.height,
             )
             for p in obs.visible_pickups
+        ],
+        landmarks=[
+            LandmarkTrace(
+                id=m.landmark_id,
+                name=m.name,
+                category=m.category,
+                x=m.x,
+                y=m.y,
+                distance=m.distance,
+                bearing=m.bearing,
+                in_view=m.in_view,
+                last_seen_tick=m.last_seen_tick,
+                reward_agreement=m.reward_agreement,
+                reward_moves=m.reward_moves,
+                approaches_nowhere=m.approaches_nowhere,
+            )
+            for m in obs.landmarks
         ],
         recent_incoming_damage=_r(obs.recent_incoming_damage),
         recent_outgoing_damage=_r(obs.recent_outgoing_damage),

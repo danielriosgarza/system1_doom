@@ -7,7 +7,7 @@ import pytest
 from system1_doom.configuration import default_configuration
 from system1_doom.d1_client import D1UltraClient
 from system1_doom.instance import InstanceResult
-from system1_doom.system1 import System1, central_scope, pick_action
+from system1_doom.system1 import ONLY_CANDIDATE, System1, Targets, central_scope, pick_action
 from tests.fake_d1 import FakeD1, choice, default_policy, menu_of, noul, section, spread_central
 from tests.test_evidence import golden_inputs
 
@@ -40,8 +40,12 @@ def test_the_central_payload_holds_only_its_scope_and_hears_the_messages():
     assert _headers(payload["state"]) == ["vitals", "menu", "exploration", "messages", "relevance"]
     assert set(payload["questions"]) == {"choose"} and "images" not in payload
     assert list(payload["questions"]["choose"]["criteria"]) == ["shoot", "strafe_left", "approach_pickup"]
-    assert section(payload["state"], "messages") == "combat says shoot, strength 0.90, reason target aimed."
-    assert "Zombieman" not in payload["state"] and "Medikit" not in payload["state"]
+    assert section(payload["state"], "messages") == (
+        "combat says shoot, strength 0.90, reason target aimed, aim at Zombieman at distance 180, 2 deg left, size 24x56 px, "
+        "under the crosshair."
+    )
+    # Only what a message carries reaches the central: the target combat chose, not the other enemy or the pickups.
+    assert "DoomImp" not in payload["state"] and "Medikit" not in payload["state"]
     assert result.central.evidence == payload["state"]
     assert result.messages[0].sense == "combat" and result.inputs.messages == result.messages
 
@@ -133,3 +137,20 @@ def test_usage_sums_over_the_six_instances():
     usage = result.usage()
     assert usage.input_tokens == sum(r.usage.input_tokens for r in result.instances.values()) > 0
     assert usage.cost == pytest.approx(sum(r.usage.cost for r in result.instances.values()))
+
+
+def test_the_motor_targets_are_the_senses_answers_and_a_miss_leaves_its_target_empty():
+    result = _tick(FakeD1(default_policy))
+    assert result.targets == Targets(enemy="zombie_1", pickup="clip_3", chosen_by={"enemy": "combat", "pickup": "resource"})
+    missed = _tick(FakeD1(default_policy).fail("combat", [0], "raise"))
+    assert missed.instances["combat"].missed
+    assert missed.targets == Targets(pickup="clip_3", chosen_by={"pickup": "resource"})
+
+
+def test_a_lone_candidate_is_the_target_without_a_question():
+    inputs = golden_inputs().model_copy(update={"messages": ()})
+    inputs = inputs.model_copy(update={"state": inputs.state.model_copy(update={"enemies": inputs.state.enemies[1:]})})
+    fake = FakeD1(default_policy).fail("combat", [0], "raise")
+    result = _tick(fake, inputs=inputs)
+    (enemy,) = inputs.state.enemies
+    assert result.targets.enemy == enemy.id and result.targets.chosen_by["enemy"] == ONLY_CANDIDATE

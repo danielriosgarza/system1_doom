@@ -8,8 +8,8 @@ Every tick (design spec, sections 1, 5 and 7):
 3. the evidence is computed: the simulator's projections, the value networks' predictions and tries,
    the novelty counts and the relevance records, into one `EvidenceInputs`;
 4. System 1 decides: five senses in parallel, then the central, then the pick;
-5. the pick's fixed primitives are executed, or, when the central missed, no key is held for the
-   decision's frames;
+5. the pick's fixed primitives are executed, their assistance aimed at the targets the senses chose,
+   or, when the central missed, no key is held for the decision's frames;
 6. the executed decision is kept for the value networks, the tick is stored whole in the history (with
    the screen d1 saw, kept in memory beside the ring record), System 2 is told, the trace is logged, and
    the recorder and dashboard are fed.
@@ -515,7 +515,7 @@ class DoomDecisionController:
         stage = time.perf_counter()
         executed: Optional[ActionSpec] = menu_by_id[result.pick.action] if result.pick.action is not None else None
         if executed is not None:
-            exec_res = self.env.execute_action(executed)
+            exec_res = self.env.execute_action(executed, result.targets)
         else:
             exec_res = self.env.execute_idle(bounds.decision_frames)
         timing_ms["motor"] = (time.perf_counter() - stage) * 1000.0
@@ -590,6 +590,7 @@ class DoomDecisionController:
             instances=result.instances,
             messages=list(result.messages),
             pick=result.pick,
+            targets=result.targets,
             executed_action=executed.id if executed is not None else None,
             primitive_steps_executed=list(exec_res.primitive_steps_executed),
             outcome=outcome,

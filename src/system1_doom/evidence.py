@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from system1_doom.configuration import CHANNELS, SENSE_NAMES, Bounds, ExplorationLevel, reason_words
 from system1_doom.relevance import RelevanceCounts, render_relevance
-from system1_doom.tracing import EnemyTrace, PickupTrace, StateTrace, state_trace
+from system1_doom.tracing import EnemyTrace, LandmarkTrace, PickupTrace, StateTrace, state_trace
 
 if TYPE_CHECKING:
     from system1_doom.actions import ActionSpec
@@ -89,6 +89,7 @@ class ChannelCaps(BaseModel):
 
     enemies: int = 6
     pickups: int = 6
+    landmarks: int = 8
     history_steps: int = 6
     summaries: int = 3
     thin_record: int = 5
@@ -98,6 +99,7 @@ class ChannelCaps(BaseModel):
         return cls(
             enemies=bounds.max_enemies,
             pickups=bounds.max_pickups,
+            landmarks=bounds.max_landmarks,
             history_steps=bounds.max_history_steps,
             summaries=bounds.max_summaries,
             thin_record=bounds.thin_record,
@@ -113,6 +115,9 @@ class Message(BaseModel):
     action: str
     reason: str
     strength: float
+    target: Optional[str] = Field(default=None, description="The enemy or pickup the sense chose for the motor, if it chooses one")
+    target_kind: Optional[str] = Field(default=None, description="enemy or pickup")
+    target_line: Optional[str] = Field(default=None, description="The chosen target in the words the sense saw it in")
 
 
 class EvidenceInputs(BaseModel):
@@ -192,31 +197,42 @@ def _vitals(inp: EvidenceInputs) -> List[str]:
     return [f"health {_num(s.health)}, armor {_num(s.armor)}, ammo {s.ammo}, weapon {s.weapon}"]
 
 
+def enemy_line(e: EnemyTrace, screen_width: int) -> str:
+    """One visible enemy in words: the threats channel's line, and the enemy target's criterion."""
+    notes = []
+    if _under_crosshair(e, screen_width):
+        notes.append("under the crosshair")
+    if e.is_attacking:
+        notes.append("attacking")
+    n = e.attacks_without_hit
+    if n:
+        notes.append(f"your last {n} attacks on it hit nothing" if n > 1 else "your last attack on it hit nothing")
+    extra = f", {', '.join(notes)}" if notes else ""
+    return f"{e.name} at distance {_num(e.distance)}, {_angle(e.angle_offset)}, size {e.width}x{e.height} px{extra}"
+
+
+def shown_enemies(inp: "EvidenceInputs") -> List[EnemyTrace]:
+    """The enemies the threats channel lists, nearest first, within the cap."""
+    return _nearest(inp.state.enemies, lambda e: e.id)[: inp.caps.enemies]
+
+
 def _threats(inp: EvidenceInputs) -> List[str]:
     enemies = _nearest(inp.state.enemies, lambda e: e.id)
     if not enemies:
         return ["no enemy visible"]
-    shown = enemies[: inp.caps.enemies]
+    shown = shown_enemies(inp)
     head = (
         f"{len(enemies)} enem{'y' if len(enemies) == 1 else 'ies'} visible, nearest first"
         + (f" (nearest {len(shown)} shown)" if len(shown) < len(enemies) else "")
         + ":"
     )
-    lines = [head]
-    for e in shown:
-        notes = []
-        if _under_crosshair(e, inp.state.screen_width):
-            notes.append("under the crosshair")
-        if e.is_attacking:
-            notes.append("attacking")
-        extra = f", {', '.join(notes)}" if notes else ""
-        lines.append(f"- {e.name} at distance {_num(e.distance)}, {_angle(e.angle_offset)}, size {e.width}x{e.height} px{extra}")
-    return lines
+    return [head] + [f"- {enemy_line(e, inp.state.screen_width)}" for e in shown]
 
 
 def _incoming(inp: EvidenceInputs) -> List[str]:
+    unseen = "; the attacker is not in view" if inp.state.recent_incoming_damage > 0 and not inp.state.enemies else ""
     return [
-        f"damage taken since the last decision {_num(inp.state.recent_incoming_damage)}; "
+        f"damage taken since the last decision {_num(inp.state.recent_incoming_damage)}{unseen}; "
         f"consecutive decisions under fire {inp.counters.under_fire_streak}"
     ]
 
@@ -242,6 +258,58 @@ def _pickups(inp: EvidenceInputs) -> List[str]:
     return [head] + [f"- {p.name} ({p.category}) at distance {_num(p.distance)}, {_angle(p.angle_offset)}" for p in shown]
 
 
+def _bearing(bearing: float) -> str:
+    """Where a remembered point lies from the facing: `straight ahead`, `30 deg left`, `150 deg right, behind you`."""
+    words = _angle(bearing)
+    return f"{words}, behind you" if abs(bearing) > 90.0 else words
+
+
+def _reward_link(m: LandmarkTrace) -> str:
+    if m.reward_agreement is None or m.reward_moves < 3:
+        return "no reward link yet"
+    a = m.reward_agreement
+    over = f"(agreement {a:+.2f} over {m.reward_moves} moves)"
+    if a >= 0.5:
+        return f"reward rose as you got closer {over}"
+    if a <= -0.5:
+        return f"reward rose as you got farther from it {over}"
+    return f"no clear link between its distance and reward {over}"
+
+
+def landmark_line(m: LandmarkTrace, tick: int) -> str:
+    """One remembered pickup in words: the landmarks channel's line, and the pickup target's criterion."""
+    if m.in_view:
+        seen = "in view"
+    else:
+        ago = max(0, tick - m.last_seen_tick)
+        seen = f"out of view, last seen {ago} decision{'' if ago == 1 else 's'} ago"
+    where = f"{_num(m.distance)} away, {_bearing(m.bearing)}, {seen}"
+    n = m.approaches_nowhere
+    if n:
+        # Once walking at it gets no closer, how reward moved with its distance says nothing about reaching it.
+        return f"{m.name} ({m.category}): cannot be walked to from here, {n} walk{'' if n == 1 else 's'} at it got no closer; {where}"
+    return f"{m.name} ({m.category}): {where}; {_reward_link(m)}"
+
+
+def shown_landmarks(inp: "EvidenceInputs") -> List[LandmarkTrace]:
+    """The remembered pickups the landmarks channel lists, nearest first, within the cap."""
+    return _nearest(inp.state.landmarks, lambda m: m.id)[: inp.caps.landmarks]
+
+
+def _landmarks(inp: EvidenceInputs) -> List[str]:
+    landmarks = _nearest(inp.state.landmarks, lambda m: m.id)
+    if not landmarks:
+        return ["no pickup remembered: none seen yet this episode, or every one seen was picked up"]
+    shown = shown_landmarks(inp)
+    head = (
+        f"{len(landmarks)} pickup{'' if len(landmarks) == 1 else 's'} seen this episode and not picked up, "
+        "where each lies now from your position and facing, nearest first"
+        + (f" (nearest {len(shown)} shown)" if len(shown) < len(landmarks) else "")
+        + ":"
+    )
+    return [head] + [f"- {landmark_line(m, inp.state.tick)}" for m in shown]
+
+
 def _geometry(inp: EvidenceInputs) -> List[str]:
     w = inp.state.walls
     moving = "still" if inp.state.movement == "stationary" else "moving"
@@ -258,9 +326,12 @@ def _progress(inp: EvidenceInputs) -> List[str]:
     progress = inp.state.episode_progress
     displacement = progress.get("last_displacement")
     moved = f"{_num(displacement)} units" if displacement is not None else "none yet"
+    last = progress.get("last_reward")
+    earned = f"{last:+.1f}" if last is not None else "none yet"
     return [
         f"decisions so far {inp.counters.decisions}, reward so far {_num(progress.get('reward_so_far', 0.0), 1)}, "
-        f"kills {_num(progress.get('kills', 0.0))}, last displacement {moved}, stall streak {inp.counters.stall_streak}"
+        f"reward from the last decision {earned}, kills {_num(progress.get('kills', 0.0))}, "
+        f"last displacement {moved}, stall streak {inp.counters.stall_streak}"
     ]
 
 
@@ -350,9 +421,13 @@ def _exploration(inp: EvidenceInputs) -> List[str]:
 def _messages(inp: EvidenceInputs) -> List[str]:
     if not inp.messages:
         return ["no sense spoke this tick."]
-    return [
-        f"{m.sense} says {m.action}, strength {_num(m.strength, 2)}, reason {reason_words(m.reason)}." for m in inp.messages
-    ]
+    return [f"{m.sense} says {m.action}, strength {_num(m.strength, 2)}, reason {reason_words(m.reason)}{_target_words(m)}." for m in inp.messages]
+
+
+def _target_words(m: Message) -> str:
+    if m.target is None:
+        return ""
+    return f", {'aim at' if m.target_kind == 'enemy' else 'walk to'} {m.target_line or m.target}"
 
 
 def _relevance(inp: EvidenceInputs) -> List[str]:
@@ -367,6 +442,7 @@ RENDERERS: Dict[str, Callable[[EvidenceInputs], List[str]]] = {
     "incoming": _incoming,
     "outgoing": _outgoing,
     "pickups": _pickups,
+    "landmarks": _landmarks,
     "geometry": _geometry,
     "position": _position,
     "progress": _progress,

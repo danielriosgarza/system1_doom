@@ -21,13 +21,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, Literal, Tuple, Union
+from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from system1_doom.actions import ActionSpec
 
 ExplorationLevel = Literal["exploit", "explore"]
+# What a sense may choose for the motor's assistance, besides its message: the visible enemy the aim locks
+# onto, or the remembered pickup a pickup-seeking action walks to.
+TargetKind = Literal["enemy", "pickup"]
 
 SENSE_NAMES: Tuple[str, ...] = ("survival", "combat", "navigation", "resource", "goal")
 CENTRAL_NAME = "central"
@@ -39,6 +42,7 @@ CHANNELS: Tuple[str, ...] = (
     "incoming",
     "outgoing",
     "pickups",
+    "landmarks",
     "geometry",
     "position",
     "progress",
@@ -71,6 +75,7 @@ class Bounds(BaseModel):
     max_scope_channels: int = Field(default=7, ge=1, le=len(CHANNELS))
     max_enemies: int = Field(default=6, ge=1, description="Enemies rendered in the threats channel")
     max_pickups: int = Field(default=6, ge=1, description="Pickups rendered in the pickups channel")
+    max_landmarks: int = Field(default=8, ge=1, description="Remembered pickups rendered in the landmarks channel")
     max_history_steps: int = Field(default=6, ge=1, description="Primitives rendered in the history channel")
     max_summaries: int = Field(default=3, ge=1, description="Decision summaries rendered in the history channel")
     system1_pool: int = Field(default=6, ge=1, description="Calls in flight for System 1: five senses and the central")
@@ -111,13 +116,17 @@ class Bounds(BaseModel):
 
 
 class SenseConfig(BaseModel):
-    """One sense: the channels it is shown, the concern its instructions name, and its finite reasons."""
+    """One sense: the channels it is shown, the concern its instructions name, its finite reasons, and the
+    motor target it chooses, if any."""
 
     model_config = ConfigDict(frozen=True)
 
     scope: Tuple[str, ...]
     concern: str = Field(min_length=3, max_length=200)
     reasons: Tuple[str, ...] = Field(min_length=1)
+    target: Optional[TargetKind] = Field(
+        default=None, description="A fourth question: the enemy the aim locks onto, or the pickup to walk to"
+    )
 
 
 class CentralConfig(BaseModel):
@@ -158,6 +167,19 @@ class Configuration(BaseModel):
     admitted_macros: Tuple[ActionSpec, ...] = ()
     bounds: Bounds = Field(default_factory=Bounds)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _targets_of_older_files(cls, data: Any) -> Any:
+        """A configuration saved before senses chose targets gives combat and resource their targets."""
+        if isinstance(data, dict) and isinstance(data.get("senses"), dict):
+            senses = dict(data["senses"])
+            for name, kind in DEFAULT_TARGETS.items():
+                sense = senses.get(name)
+                if isinstance(sense, dict) and "target" not in sense:
+                    senses[name] = {**sense, "target": kind}
+            data = {**data, "senses": senses}
+        return data
+
     @model_validator(mode="after")
     def _validate(self) -> "Configuration":
         if tuple(self.senses) != SENSE_NAMES:
@@ -169,6 +191,9 @@ class Configuration(BaseModel):
             for reason in sense.reasons:
                 if not reason.replace("_", "").isalnum() or reason != reason.lower():
                     raise ValueError(f"sense {name}: reason {reason!r} must be a lowercase snake_case id")
+        kinds = [sense.target for sense in self.senses.values() if sense.target is not None]
+        if len(set(kinds)) != len(kinds):
+            raise ValueError(f"each motor target is chosen by one sense at most; got {kinds}")
         _check_scope("central", self.central.scope, self.bounds, sense=False)
         if any(not m.is_macro for m in self.admitted_macros):
             raise ValueError("only macro-actions can be admitted into the menu")
@@ -201,7 +226,8 @@ class Configuration(BaseModel):
         return cls.model_validate(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-# The design's tables (spec sections 3 and 4): initial scopes, concerns and reason vocabularies.
+# The design's tables (spec sections 3 and 4): initial scopes, concerns, reason vocabularies and targets.
+DEFAULT_TARGETS: Dict[str, TargetKind] = {"combat": "enemy", "resource": "pickup"}
 DEFAULT_SENSES: Dict[str, SenseConfig] = {
     "survival": SenseConfig(
         scope=("vitals", "threats", "incoming", "projections", "menu"),
@@ -212,21 +238,23 @@ DEFAULT_SENSES: Dict[str, SenseConfig] = {
         scope=("threats", "outgoing", "vitals", "frame", "projections", "menu"),
         concern="winning the current fight",
         reasons=("target_aimed", "target_off_centre", "several_enemies", "low_ammo", "no_target"),
+        target="enemy",
     ),
     "navigation": SenseConfig(
-        scope=("geometry", "position", "progress", "projections", "menu"),
+        scope=("landmarks", "geometry", "position", "progress", "menu"),
         concern="moving through the level",
-        reasons=("path_clear", "wall_ahead", "stalled", "door_or_switch_ahead", "unexplored_side"),
+        reasons=("path_clear", "wall_ahead", "stalled", "off_course", "door_or_switch_ahead", "unexplored_side"),
     ),
     "resource": SenseConfig(
-        scope=("pickups", "vitals", "menu"),
+        scope=("landmarks", "vitals", "menu"),
         concern="health, armor and ammo",
         reasons=("health_pickup_near", "ammo_pickup_near", "pickup_guarded", "nothing_needed", "nothing_visible"),
+        target="pickup",
     ),
     "goal": SenseConfig(
-        scope=("progress", "archive", "history", "values", "menu"),
+        scope=("landmarks", "progress", "history", "archive", "values", "menu"),
         concern="finishing the level",
-        reasons=("making_progress", "plateau", "strategy_fits", "strategy_failing", "nearly_done"),
+        reasons=("making_progress", "plateau", "off_course", "strategy_fits", "strategy_failing", "nearly_done"),
     ),
 }
 DEFAULT_CENTRAL = CentralConfig(

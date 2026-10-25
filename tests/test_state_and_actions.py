@@ -12,6 +12,7 @@ from system1_doom.actions import (
 from system1_doom.state import (
     ControllerMemory,
     EnemyObservation,
+    LandmarkObservation,
     Observation,
     PickupObservation,
     Pose3D,
@@ -45,6 +46,13 @@ def make_sample_world_state(health: float = 80.0, ammo: int = 12, enemies: int =
         )
         for i in range(pickups)
     )
+    landmark_list = tuple(
+        LandmarkObservation(
+            landmark_id=p.pickup_id, name=p.name, category=p.category, x=200.0, y=64.0,
+            distance=p.distance, bearing=-p.angle_offset, in_view=True, last_seen_tick=10,
+        )
+        for p in pickup_list
+    )
     obs = Observation(
         tick=10,
         health=health,
@@ -60,6 +68,7 @@ def make_sample_world_state(health: float = 80.0, ammo: int = 12, enemies: int =
         recent_actions=("move_forward", "shoot"),
         position=Pose3D(x=120.0, y=64.0, z=0.0, angle=45.0),
         episode_progress={"tick": 10.0, "distance_to_goal": 850.0, "reward_so_far": 15.0},
+        landmarks=landmark_list,
     )
     mem = ControllerMemory(
         short_action_history=("move_forward", "turn_left", "shoot"),
@@ -136,7 +145,7 @@ def test_default_primitives_and_macros_are_valid_and_filter_by_preconditions():
     assert len(DEFAULT_PRIMITIVES) >= 9
     assert len(DEFAULT_MACROS) >= 4
 
-    # Normal state with ammo and pickups: shoot, peek_and_fire, approach_pickup available
+    # Normal state with ammo and a remembered pickup: shoot, peek_and_fire, approach_pickup available
     ws_full = make_sample_world_state(health=80.0, ammo=10, enemies=1, pickups=1)
     avail_ids = {a.id for a in vocab.available_actions(ws_full)}
     assert "shoot" in avail_ids

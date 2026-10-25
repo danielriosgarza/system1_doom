@@ -6,8 +6,13 @@ instance builds exactly one payload:
 
 - `state` is the rendered scope text, and nothing else;
 - the questions are the kind's finite questions: a sense asks `speak` (noul), `action` (a choice over
-  the legal menu) and `reason` (a choice over its reasons); the central asks `choose` (a choice over
-  the legal menu); the admit instance asks `admit` (noul) over a proposal and its sandbox summary;
+  the legal menu) and `reason` (a choice over its reasons); a sense that chooses a motor target also
+  asks `target`, a choice over the visible enemies (the combat sense: which one the aim locks onto) or
+  the remembered pickups (the resource sense: which one a pickup-seeking action walks to), asked only
+  when its scope shows them (`threats`, `landmarks`) and there are two or more (a choice needs two
+  options; a lone candidate is the target without a question); the central asks
+  `choose` (a choice over the legal menu); the admit instance asks `admit` (noul) over a proposal and
+  its sandbox summary;
 - the choice criteria for `action` and `choose` are exactly the legal menu, in menu order, id ->
   description; projections and values appear in the state text when in scope, never in the criteria;
 - `images` carries the screen only when `frame` is in scope.
@@ -30,7 +35,7 @@ from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from system1_doom.configuration import CentralConfig, SenseConfig, reason_words
+from system1_doom.configuration import CentralConfig, SenseConfig, TargetKind, reason_words
 from system1_doom.d1_client import (
     ChoiceQuestion,
     D1CallResult,
@@ -40,7 +45,15 @@ from system1_doom.d1_client import (
     QuestionSpec,
     Usage,
 )
-from system1_doom.evidence import EvidenceInputs, MenuItem, render_scope
+from system1_doom.evidence import (
+    EvidenceInputs,
+    MenuItem,
+    enemy_line,
+    landmark_line,
+    render_scope,
+    shown_enemies,
+    shown_landmarks,
+)
 
 InstanceKind = Literal["sense", "central", "admit", "reflector", "system2_central", "judge"]
 
@@ -57,11 +70,14 @@ class InstanceSpec(BaseModel):
     scope: Tuple[str, ...] = ()
     concern: str
     reasons: Tuple[str, ...] = ()
+    target: Optional[TargetKind] = Field(default=None, description="The motor target a sense chooses, if any")
     title: str = Field(default="", description="How a reflector's instructions name it, e.g. 'survival auditor'")
 
 
 def sense_spec(name: str, config: SenseConfig) -> InstanceSpec:
-    return InstanceSpec(name=name, kind="sense", scope=config.scope, concern=config.concern, reasons=config.reasons)
+    return InstanceSpec(
+        name=name, kind="sense", scope=config.scope, concern=config.concern, reasons=config.reasons, target=config.target
+    )
 
 
 def central_spec(config: CentralConfig, scope: Optional[Sequence[str]] = None) -> InstanceSpec:
@@ -89,6 +105,10 @@ class InstanceResult(BaseModel):
     action_probabilities: Dict[str, float] = Field(default_factory=dict)
     reason: Optional[str] = None
     reason_probabilities: Dict[str, float] = Field(default_factory=dict)
+    target: Optional[str] = Field(default=None, description="The enemy or pickup a sense chose for the motor (first in criteria order on a tie)")
+    target_probabilities: Dict[str, float] = Field(default_factory=dict)
+    target_kind: Optional[TargetKind] = Field(default=None, description="What a sense's target is (enemy or pickup), from its configuration")
+    target_line: Optional[str] = Field(default=None, description="The chosen target's criterion: the line the sense saw it in")
     admit: Optional[float] = Field(default=None, description="The admit instance's probability")
     change: Optional[str] = Field(default=None, description="A reflector's or System 2's central's top change (first in criteria order on a tie)")
     change_probabilities: Dict[str, float] = Field(default_factory=dict)
@@ -125,11 +145,37 @@ def menu_criteria(menu: Sequence[MenuItem]) -> Dict[str, str]:
     return {item.id: item.description for item in menu}
 
 
-def build_questions(spec: InstanceSpec, menu: Sequence[MenuItem] = ()) -> Dict[str, QuestionSpec]:
-    """The finite questions of an instance of this kind."""
+TARGET_QUESTIONS: Dict[str, str] = {
+    "enemy": "Which visible enemy should the agent's aim lock onto?",
+    "pickup": (
+        "When the agent walks to a pickup, which one should it walk to, given where each lies and whether "
+        "walking at it has got the agent any closer?"
+    ),
+}
+
+
+def target_criteria(spec: InstanceSpec, inputs: EvidenceInputs) -> Dict[str, str]:
+    """The criteria of a sense's `target` question: the candidates its scope shows, id -> the channel's line.
+
+    Visible enemies when `threats` is in scope, remembered pickups when `landmarks` is; empty (no question)
+    when the sense chooses no target, its scope does not show the candidates, or there are none.
+    """
+    if spec.kind != "sense" or spec.target is None:
+        return {}
+    if spec.target == "enemy" and "threats" in spec.scope:
+        return {e.id: enemy_line(e, inputs.state.screen_width) for e in shown_enemies(inputs)}
+    if spec.target == "pickup" and "landmarks" in spec.scope:
+        return {m.id: landmark_line(m, inputs.state.tick) for m in shown_landmarks(inputs)}
+    return {}
+
+
+def build_questions(
+    spec: InstanceSpec, menu: Sequence[MenuItem] = (), targets: Optional[Dict[str, str]] = None
+) -> Dict[str, QuestionSpec]:
+    """The finite questions of an instance of this kind; `targets` are a sense's target criteria, if any."""
     pre = _preamble(spec)
     if spec.kind == "sense":
-        return {
+        questions: Dict[str, QuestionSpec] = {
             "speak": NoulQuestion(instructions=f"{pre} Must the action chooser hear from you before the next decision?"),
             "action": ChoiceQuestion(instructions=f"{pre} Which legal action do you recommend now?", criteria=menu_criteria(menu)),
             "reason": ChoiceQuestion(
@@ -137,6 +183,9 @@ def build_questions(spec: InstanceSpec, menu: Sequence[MenuItem] = ()) -> Dict[s
                 criteria={r: reason_words(r) for r in spec.reasons},
             ),
         }
+        if targets and len(targets) >= 2 and spec.target is not None:
+            questions["target"] = ChoiceQuestion(instructions=f"{pre} {TARGET_QUESTIONS[spec.target]}", criteria=dict(targets))
+        return questions
     if spec.kind == "central":
         return {
             "choose": ChoiceQuestion(instructions=f"{pre} Choose the action the agent executes now.", criteria=menu_criteria(menu))
@@ -209,7 +258,8 @@ def run_instance(
     history test's re-runs are counted as `history_test:<instance>`). It changes nothing in the payload.
     """
     rendered = render_scope(inputs, spec.scope)
-    questions = build_questions(spec, inputs.menu)
+    targets = target_criteria(spec, inputs)
+    questions = build_questions(spec, inputs.menu, targets)
     images = _image(frame_b64) if rendered.image_ref is not None else None
     counted = counter_name or spec.name
     call = client.call(counted, rendered.text, questions, images=images, budget=budget)
@@ -232,6 +282,10 @@ def run_instance(
             speak = read_noul(answers, "speak")
             action, action_probs = read_choice(answers, "action", menu_ids, tolerance, "off_menu")
             reason, reason_probs = read_choice(answers, "reason", spec.reasons, tolerance, "malformed")
+            if len(targets) >= 2:
+                target, target_probs = read_choice(answers, "target", list(targets), tolerance, "off_menu")
+            else:  # a lone candidate is the target; there was nothing to choose between, so no question
+                target, target_probs = (next(iter(targets)) if targets else None), {}
             return InstanceResult(
                 **base,
                 answers=answers,
@@ -242,6 +296,10 @@ def run_instance(
                 action_probabilities=action_probs,
                 reason=reason,
                 reason_probabilities=reason_probs,
+                target=target,
+                target_kind=spec.target if target is not None else None,
+                target_line=targets.get(target) if target is not None else None,
+                target_probabilities=target_probs,
             )
         action, action_probs = read_choice(answers, "choose", menu_ids, tolerance, "off_menu")
         return InstanceResult(**base, answers=answers, action=action, action_probabilities=action_probs)
