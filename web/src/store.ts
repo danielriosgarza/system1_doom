@@ -26,6 +26,10 @@ export type Screen = 'watch' | 'instances' | 'slow' | 'learning' | 'menu' | 'ref
 export const SCREENS: Array<{ id: Screen; label: string }> = [
   { id: 'watch', label: 'Watch' },
   { id: 'instances', label: 'The instances' },
+  { id: 'slow', label: 'The slow system' },
+  { id: 'learning', label: 'Learning' },
+  { id: 'menu', label: 'Growing the menu' },
+  { id: 'reference', label: 'Reference' },
 ]
 
 export interface AppState {

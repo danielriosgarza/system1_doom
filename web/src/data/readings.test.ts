@@ -189,7 +189,7 @@ describe('the relevance ledger', () => {
   })
 
   it('reads the ledger before and after the episode, never below zero', () => {
-    const [before, after] = ledgerBeforeAfter(bundle, false)
+    const [before, after] = ledgerBeforeAfter(bundle)
     expect(before?.episodes).toBe((bundle.relevance?.episodes ?? 0) - 1)
     expect(after?.episodes).toBe(bundle.relevance?.episodes)
     for (const point of [before, after]) {

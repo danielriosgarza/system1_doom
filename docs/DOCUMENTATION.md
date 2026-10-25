@@ -2088,36 +2088,49 @@ play; call `ctrl.wait_system2(timeout)` before reading its records.
 
 ## 18. Glossary
 
-The web app's glossary (`web/src/content/glossary.ts`) carries every term
-below in its own words, and a test reads this table, so a term added here
-fails the app's tests until the glossary has it. The app still explains
-the schema-1 recordings, so several terms below name parts this design
-removed; their entries say what replaced them. The design's own words —
-**instance**, **sense**, **central**, **channel**, **scope**, **message**,
-**strength**, **relevance**, **configuration**, **miss** — are defined in
-§8.4–§8.8, and System 2's — **reflector**, **history test**, **trial** —
-in §8.16; they join this table with the app's rewrite in the third pull
-request.
+The web app's glossary (`web/src/content/glossary.ts`, on its Reference
+screen) carries every term below in its own words, with where to see it
+and the code that keeps it, and a test reads this table: a term added
+here fails the app's tests until the glossary has it. The words of the
+architecture this design replaced (the arbiter, the modules, the gate
+network, budget modes, committed picks, exploration pressure) are gone
+from both; the Reference screen names them in one line of history.
 
 | Term | Meaning |
 |---|---|
+| **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions with distributions. Every decision is one of its answers: the five senses, the central and the admit instance are each one call (§8.6, §8.10), and so are System 2's reflectors, its central and the trial judge (§8.16). |
+| **System 1** | The fast system that decides every action, once per tick: five senses, then the central, then Act (`system1.py`, §7, §8.7). It never waits for System 2. |
+| **System 2** | The slow system, on its own thread: it reads the history and changes the configuration one change at a time — reflectors propose, its central chooses one change or none, a scope change must pass the history test, and every change is a trial the judge keeps or reverts (§8.16). |
+| **Instance** | One d1-ultra call with its own scope and its own finite questions (`InstanceSpec`, `run_instance`). Its instructions name its concern and say it sees only the evidence given; they never say how to weigh anything (§8.6). |
+| **Sense** | One of the five System 1 instances — survival, combat, navigation, resource, goal. Each sees only its scope and answers `speak` (noul), `action` (a choice over the legal menu) and `reason` (a choice over its reasons) (§8.6). |
+| **Central** | The instance that chooses the executed action: one choice over the legal menu, after the messages, each sense's relevance record and the exploration level (§8.7). System 2 has a central of its own, which chooses one configuration change or none. |
+| **Channel** | One named piece of evidence rendered as plain text under a `[name]` header; eighteen in all, in a fixed order. `messages`, `relevance` and `exploration` are for the central only (§8.5). |
+| **Scope** | The channels an instance is shown: at most 7, always with `menu`. Whatever a scope leaves out never reaches the instance; System 2 widens or narrows a scope one channel at a time (§8.4, §8.16). |
+| **Message** | What a sense that spoke sends the central: action, reason, strength — one line of the central's `messages` channel. A silent or missed sense sends nothing (§8.6). |
+| **Strength** | A message's strength: the sense's `speak` probability, unscaled. A sense speaks at `yes_at` (0.5), d1's own yes, not a tuned threshold (§8.6). |
+| **Relevance / relevance ledger** | Each sense's track record per context signature: spoke, followed and paid off, overruled and whether the chosen action paid off, mean strength either way. Shown to the central as counts; nothing in it is multiplied into a decision (`relevance.py`, §8.8). |
+| **Paid off / n-step return** | A decision paid off when its n-step return (n = 8, γ = 0.9, over the per-decision game reward, truncated at the episode's end; `features.n_step_returns`) was positive. The ledger, the history test's strata and the trials all read it (§8.8). |
+| **Configuration** | Everything System 2 may change, as versioned data: scopes, the exploration level, the active strategy, the admitted macros, and the bounds. Version 1 is the design's; each change makes the next version and takes effect only at a tick boundary (§8.4). |
+| **Miss** | An answer that did not come or could not be read: timeout, error, HTTP 429 past the budget, off the menu, malformed. Nothing stands in for it: a missed sense is silent, a missed central holds no keys (§8.6, §14). |
+| **Pick** | How the central's answer becomes the action: `top` under `exploit`, `drawn` from d1's own distribution under `explore` (seeded), or `missed` (`system1.pick_action`, §8.7). |
+| **Exploration level** | Configuration: `exploit` or `explore`, stated to the central in its `exploration` channel. There is no temperature and no bonus (§8.7). |
+| **Reflector** | One of System 2's nine instances — five sense auditors, a central auditor, the menu, strategy and exploration reflectors — each reading history channels over three windows and proposing at most one change from a menu the bounds have filtered (`reflectors.py`, §8.16). |
+| **Cycle** | One round of System 2: every 20 new decisions or at an episode's end, only while no trial is in flight. Its record (`ReflectionTrace`) keeps every reflector's and its central's evidence and answers (§8.16). |
+| **History test** | What stands between a scope change and play: the instance asked again under the new scope on stored ticks it already answered, stratified into bad, good and rest by the n-step return; it passes when the composite gains at least 0.05 and no metric falls by more than 0.10 (`history_test.py`, §8.16). |
+| **Trial** | Every change that takes effect, one at a time: observed for 60 decisions against the 60 before it, then kept or reverted; a revert restores the previous configuration with the version bumped (§8.16). |
+| **Judge / trial judge** | The instance that ends a trial: shown the before-and-during table, it answers `keep` or `revert`. A missed judge extends the trial; the safety bound may revert first without asking it (§8.16). |
+| **Cooling** | The rest after a verdict: the changed instance is offered no change for 60 decisions; after a menu, strategy or level change, System 2 as a whole rests (§8.16). |
+| **Admit instance** | The instance that decides whether a proposed macro enters the menu, after parse, legality and the sandbox: one noul, yes at 0.5 (`instance.run_admit`, §8.12). |
 | **Action / `ActionSpec`** | The only executable unit: a bounded tuple of primitives with preconditions, a duration cap and a termination condition. Primitives are 1-step actions; macros are named multi-step ones. The legal menu of a tick is the set of actions whose preconditions hold. |
-| **Arbiter** | Removed. The hand-written `FinalArbiter` that scored module votes, projections and bonuses into one pick is gone; the central instance, one d1-ultra choice over the legal menu, decides the action (§8.7). |
-| **Budget mode** | Removed. There are no `full`/`reduced`/`critical` tiers: every tick waits for d1-ultra inside a per-call budget (5 s, `--call-budget`), and a call that misses it is recorded as a miss (§14). |
-| **Committed pick** | Removed with the arbiter. The central's answer becomes the action as `top` (exploit), `drawn` (explore) or `missed` (§8.7). |
+| **Macro** | Multi-primitive `ActionSpec` (`is_macro=True`); built-in, or proposed by the slow path when System 2 asks and admitted by the admit instance into the configuration. |
 | **Context signature** | Coarse bucketed state key (`hp:…\|ammo:…\|enemies:…`) that keys the relevance ledger, the novelty counts, the simulator's empirical cache and the value networks' tried counts (§6.1). |
-| **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions. It makes every decision: the five senses, the central and the admit instance are each one d1-ultra call (§8.6, §8.10), and so are System 2's reflectors, its central and the trial judge (§8.16). |
-| **Exploration floor** | Removed with the training schedule. Exploration is the configuration's level: under `explore` the central's action is drawn from d1's own distribution with a seeded generator (§8.7). |
-| **Exploration pressure / temperature** | Removed. There is no pressure formula and no temperature; the exploration level (`exploit` or `explore`) is configuration, stated to the central in its `exploration` channel. |
-| **Gate network** | Removed. The relevance ledger replaced it: each sense's track record per context, shown to the central as counts (§8.8). Old checkpoints' gate weights are ignored on load. |
-| **Live episode** | An episode being played right now by `python -m system1_doom.serve` and streamed tick by tick; when it ends it is a bundle like any recording (§8.15). |
-| **Macro** | Multi-primitive `ActionSpec` (`is_macro=True`); built-in, or proposed by the slow path and admitted by the admit instance into the configuration. |
-| **Module** | Removed. The five hand-written deciders became five senses: d1-ultra instances with their own scopes that decide whether to send the central a message (§8.6). The five value networks keep the names. |
-| **Network share** | Experience-weighted mean of `n/(n+25)` over the tries seen in training: how familiar play has become to the value networks. A report only; it weighs nothing. |
 | **Projection** | A bounded analytic rollout (`ProjectedOutcome`) of one legal action: expected value, damage, resources, survival. Shown to instances as the `projections` channel, labelled as a rough projection. |
-| **Slow path** | The async proposal worker (Codex or templates) and the admission bounds and admit instance that can grow the menu, asked by System 2's menu reflector; never blocks a tick, and changes the configuration only at a tick boundary (§9). |
-| **Trust λ** | `n/(n+25)` for an action tried `n` times in a context in training. No longer a blend weight: the tries themselves are shown in the `values` channel. |
+| **Value network** | One of five small networks trained between episodes on the agent's own play, one per sense's reward. Their predicted returns are evidence in the `values` channel, with how often each action was tried there in training; they decide nothing (`learning.py`, §8.9). |
+| **Network share** | Experience-weighted mean of `n/(n+25)` over the tries seen in training: how familiar play has become to the value networks. A report only; it weighs nothing. |
 | **Tick** | One decision: state → evidence → five senses → central → the action's primitives over ≈ 8 game tics, not one ViZDoom game tic. |
+| **Bundle** | One recorded episode as the web app reads it: `episode.json`, `ticks.jsonl`, `reflections.jsonl`, `proposals.jsonl`, the relevance ledger, the training counts and the frames, written and checked by `python -m system1_doom.export` (§8.15). |
+| **Live episode** | An episode being played right now by `python -m system1_doom.serve` and streamed tick by tick, with System 2's records as they happen; when it ends it is a bundle like any recording (§8.15). |
+| **Slow path** | The async proposal worker (Codex or templates) and the admission bounds and admit instance that can grow the menu, asked by System 2's menu reflector; never blocks a tick, and changes the configuration only at a tick boundary (§9). |
 
 ---
 

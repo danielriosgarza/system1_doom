@@ -7,7 +7,7 @@ import { WATCH, counterText } from '../content/watch'
 import type { EpisodeBundle } from '../data/loader'
 import { type Pace, gameSeconds } from '../data/playback'
 import type { TickTrace } from '../schema/bundle'
-import { setPace, setTickIndex, togglePlay, useApp } from '../store'
+import { openPanel, setPace, setTickIndex, togglePlay, useApp } from '../store'
 
 const BAR_HEIGHT = 26
 const BAR_PAD = 2
@@ -119,7 +119,14 @@ export function Watch({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
           <Stage bundle={bundle} tick={tick} tickIndex={tickIndex} />
           <Progress ticks={bundle.ticks} tickIndex={tickIndex} />
           <Transport bundle={bundle} tick={tick} tickIndex={tickIndex} />
-          <p className="watch-honesty">{live ? WATCH.liveHonesty : WATCH.honesty}</p>
+          <p className="watch-honesty">
+            {live ? WATCH.liveHonesty : WATCH.honesty}{' '}
+            {!live && (
+              <button type="button" className="link-button" onClick={() => openPanel('reference', 'provenance')}>
+                {WATCH.honestyLink}
+              </button>
+            )}
+          </p>
         </section>
         <div className="watch-right">
           <Strip bundle={bundle} tick={tick} tickIndex={tickIndex} />

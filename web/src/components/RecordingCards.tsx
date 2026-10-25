@@ -1,6 +1,6 @@
 import { WATCH, recordingName, resultWords, versionWords } from '../content/watch'
 import { defaultEpisode } from '../data/loader'
-import { openRecording, useApp } from '../store'
+import { openPanel, openRecording, useApp } from '../store'
 
 /** The shipped recordings, the featured one first, in plain words; a card plays its recording from the start. */
 export function RecordingCards() {
@@ -35,6 +35,15 @@ export function RecordingCards() {
                 </span>
                 <span className="recording-result">{resultWords(entry)}</span>
               </button>
+              {open && (
+                <button
+                  type="button"
+                  className="link-button recording-made"
+                  onClick={() => openPanel('reference', 'provenance')}
+                >
+                  {WATCH.made}
+                </button>
+              )}
             </li>
           )
         })}

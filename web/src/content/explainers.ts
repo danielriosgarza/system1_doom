@@ -9,7 +9,7 @@ export interface Explainer {
   /** The general formula, shown with the paragraphs; only the n-step return and the test metrics have one. */
   formula?: string
   /** Where in the package this comes from: file · symbol. */
-  code: string
+  code?: string
 }
 
 export const EXPLAINERS = {
@@ -164,6 +164,74 @@ export const EXPLAINERS = {
       'System 2 reflects on the history, slowly and on its own thread: reflectors propose changes to the configuration, its central chooses one at a time, a scope change is tested on the history first, and every change is tried and judged.',
     ],
     code: 'controller.py · DoomDecisionController',
+  },
+  reflectors: {
+    title: 'The reflectors',
+    sentence: 'Nine d1-ultra instances over the history: what each was shown, verbatim, and the change it proposed.',
+    paragraphs: [
+      'Each reflector reads history channels over three windows (the recent decisions, a longer run of them, and the last episodes) and answers three questions: speak (a probability), change (one option from its finite menu) and reason.',
+      'Before any call, the bounds take changes off each menu: a trial in flight, cooling, a full scope, the menu channel, a built-in action. A reflector left with no change is not called. One that speaks for a change other than keep sends a proposal; one that stays silent, misses, or picks keep sends nothing.',
+    ],
+    code: 'reflectors.py · ReflectorSpec; instance.py · run_system2_instance',
+  },
+  'system2-central': {
+    title: 'System 2’s central',
+    sentence: 'One d1-ultra choice over the proposals the bounds still allow, and none.',
+    paragraphs: [
+      'It is shown the proposals in its messages channel, the configuration’s change log and what play produced. Its top answer is the change, a tie going to the first option; when it misses, nothing changes this cycle.',
+    ],
+    code: 'system2.py · System2',
+  },
+  'configuration-changes': {
+    title: 'The configuration at the start and the end',
+    sentence: 'Each instance’s scope, the admitted macros, the strategy and the level, as the episode began and ended.',
+    paragraphs: [
+      'A recording that starts from a later version starts from what earlier episodes left: the configuration is saved to the run folder at every change that takes effect, and every run starts from it.',
+    ],
+    code: 'configuration.py · Configuration; reflectors.py · config_diff',
+  },
+  'menu-now': {
+    title: 'The menu',
+    sentence: 'Every action this recording knew, the ones legal at this decision, and how often each was executed.',
+    paragraphs: [
+      'An action is a fixed list of primitives with preconditions. The legal menu of a decision is the actions whose preconditions hold, and every instance chooses over exactly that menu: nothing else can be executed.',
+      'A macro admitted while the episode played joins the menu at a tick boundary, as a trial.',
+    ],
+    code: 'actions.py · ActionVocabulary',
+  },
+  'menu-reflector': {
+    title: 'The menu reflector',
+    sentence: 'At every cycle, whether the reflector that grows the menu asked for a new macro, and why.',
+    paragraphs: [
+      'It reads each action’s count and mean return over the windows. It may ask for a new macro for one sense’s problem, retire an admitted macro, or keep the menu. Asking needs the slow path to be on and free.',
+    ],
+    code: 'reflectors.py · ReflectorSpec',
+  },
+  principles: {
+    title: 'The one rule',
+    sentence: 'What decides, and what only renders evidence, keeps bounds and presses keys.',
+    paragraphs: [
+      'What stays hand-written is evidence and bounds: the channels, the legal menu, the simulator’s projections, the value networks’ numbers, and every limit. None of it ranks, scores or picks an action.',
+    ],
+    code: 'system1.py · pick_action; instance.py · run_admit',
+  },
+  glossary: {
+    title: 'Glossary',
+    sentence: 'The words the screens use, with where to see each one and where the code keeps it.',
+    paragraphs: ['A test keeps this glossary and the one in docs/DOCUMENTATION.md, section 18, in step.'],
+  },
+  provenance: {
+    title: 'How this recording was made',
+    sentence: 'The command, the scenario, the seed, the value networks and the configuration it played under.',
+    paragraphs: [
+      'Every recording here was played by d1-ultra and exported with python -m system1_doom.export, which checks the bundle before it is shipped.',
+    ],
+    code: 'export.py · record_bundle; export.py · check_bundle',
+  },
+  keys: {
+    title: 'Keys',
+    sentence: 'Moving through a recording without the mouse.',
+    paragraphs: ['Keys do nothing while a text field has the focus.'],
   },
 } satisfies Record<string, Explainer>
 

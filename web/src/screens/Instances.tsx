@@ -1,5 +1,6 @@
 import { type KeyboardEvent, useId } from 'react'
 import { BarList, Meter } from '../components/Bars'
+import { EvidenceText } from '../components/Evidence'
 import { Panel } from '../components/Panel'
 import { INSTANCES, STRIP, missWords, pickWords } from '../content/instances'
 import { type EpisodeBundle, bundleFileUrl } from '../data/loader'
@@ -16,23 +17,6 @@ import {
 } from '../data/readings'
 import type { TickTrace } from '../schema/bundle'
 import { setState, useApp } from '../store'
-
-const HEADER = /^\[[a-z0-9_:]+\]$/
-
-/** The state text exactly as sent, with its channel headers picked out. */
-function EvidenceText({ text, name }: { text: string; name: string }) {
-  const lines = text.split('\n')
-  return (
-    <pre className="evidence-text" data-testid="evidence-text" data-instance={name} tabIndex={0}>
-      {lines.map((line, i) => (
-        <span key={i} className={HEADER.test(line) ? 'ev-head' : undefined}>
-          {line}
-          {i < lines.length - 1 ? '\n' : ''}
-        </span>
-      ))}
-    </pre>
-  )
-}
 
 /** The eighteen channels: the ones in the instance's scope, and the ones it was not shown. */
 function ScopeChips({ view }: { view: InstanceView }) {

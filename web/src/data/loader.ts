@@ -32,6 +32,8 @@ export interface EpisodeBundle {
   proposals: ProposalTrace[]
   /** What System 2 did while the episode was played, in the order it happened. */
   records: System2Record[]
+  /** Which moment `relevance` is from: a live episode read while playing holds the ledger as it started. */
+  ledgerAt: 'start' | 'end'
   /** The relevance ledger after the episode (as it started, for a live episode in progress); null when absent. */
   relevance: RelevanceLedger | null
   /** How often each action was tried in each context in training; only bundles played with networks have it. */
@@ -164,7 +166,25 @@ export async function loadEpisode(
     proposals: latestProposals(parseJsonl<ProposalTrace>(proposalsText, `${name}/proposals.jsonl`)),
     records: parseJsonl<System2Record>(reflectionsText, `${name}/reflections.jsonl`),
     relevance: relevanceText === null ? null : parseJson<RelevanceLedger>(relevanceText, `${name}/relevance.json`),
+    ledgerAt: options.live ? 'start' : 'end',
     trust: trustText === null ? null : parseJson<TrustFile>(trustText, `${name}/trust.json`),
+  }
+}
+
+/**
+ * Another recording's relevance ledger alone, for the ledger's growth over episodes; null when it has none or
+ * cannot be read, since a missing point on that line is no reason to stop the screen.
+ */
+export async function loadLedger(
+  name: string,
+  root = 'episodes',
+  fetcher: Fetcher = defaultFetcher,
+): Promise<RelevanceLedger | null> {
+  try {
+    const text = await fetchText(`${root}/${name}/relevance.json`, fetcher, true)
+    return text ? parseJson<RelevanceLedger>(text, `${name}/relevance.json`) : null
+  } catch {
+    return null
   }
 }
 

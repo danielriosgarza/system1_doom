@@ -4,6 +4,10 @@ import { TopBar } from './components/TopBar'
 import { LIVE_COPY } from './content/live'
 import { PACE_MS } from './data/playback'
 import { Instances } from './screens/Instances'
+import { Learning } from './screens/Learning'
+import { Menu } from './screens/Menu'
+import { Reference } from './screens/Reference'
+import { SlowSystem } from './screens/SlowSystem'
 import { Watch } from './screens/Watch'
 import {
   SCREENS,
@@ -11,6 +15,7 @@ import {
   getState,
   onHashChange,
   setScreen,
+  setState,
   setTickIndex,
   start,
   step,
@@ -52,6 +57,20 @@ export default function App() {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
+  // A "see it" link names a panel: once its screen shows, scroll to it, let it flash, then forget it.
+  const focusPanel = useApp((s) => s.focusPanel)
+  useEffect(() => {
+    if (!focusPanel) return
+    const frame = window.requestAnimationFrame(() =>
+      document.getElementById(`panel-${focusPanel}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+    )
+    const timer = window.setTimeout(() => setState({ focusPanel: null }), 1600)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+    }
+  }, [focusPanel, screen])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
@@ -88,6 +107,10 @@ export default function App() {
         <>
           {screen === 'watch' && <Watch bundle={bundle} tick={tick} tickIndex={tickIndex} />}
           {screen === 'instances' && <Instances bundle={bundle} tick={tick} tickIndex={tickIndex} />}
+          {screen === 'slow' && <SlowSystem bundle={bundle} tick={tick} tickIndex={tickIndex} />}
+          {screen === 'learning' && <Learning bundle={bundle} tick={tick} />}
+          {screen === 'menu' && <Menu bundle={bundle} tick={tick} />}
+          {screen === 'reference' && <Reference bundle={bundle} />}
           {screen !== 'watch' && <Scrubber bundle={bundle} />}
         </>
       )}

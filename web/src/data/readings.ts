@@ -568,14 +568,14 @@ export interface RelevancePoint {
 
 /**
  * The open episode's ledger before and after it: the file holds the ledger after the episode, and the ticks
- * hold what the episode added, so the ledger before is the one minus the other. A live episode in progress
- * serves the ledger as it started, so there the file is the ledger before.
+ * hold what the episode added, so the ledger before is the one minus the other. A live episode read while it
+ * played holds the ledger as it started (`ledgerAt`), so there the file is the ledger before.
  */
 export function ledgerBeforeAfter(
-  bundle: Pick<EpisodeBundle, 'relevance' | 'ticks' | 'meta'>,
-  live: boolean,
+  bundle: Pick<EpisodeBundle, 'relevance' | 'ticks' | 'meta' | 'ledgerAt'>,
 ): RelevancePoint[] {
   const ledger: RelevanceLedger | null = bundle.relevance
+  const live = bundle.ledgerAt === 'start'
   if (!ledger) return []
   const { return_steps, return_gamma } = boundsOf(bundle.meta)
   const added = episodeEntries(bundle.ticks, ledger.return_steps ?? return_steps, ledger.return_gamma ?? return_gamma)
