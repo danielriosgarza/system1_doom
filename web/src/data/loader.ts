@@ -153,8 +153,10 @@ export async function loadEpisode(
     meta = { ...meta, tick_count: ticks.length, last_tick: ticks[ticks.length - 1]?.tick ?? meta.last_tick }
   }
   const listed = new Set(meta.files ?? [])
+  // Serve writes an episode's relevance.json before its first tick, so a live episode reads it even from a meta
+  // read too early to list it; trust.json exists only with value networks, and only a listed one is fetched.
   const extra = (file: string) =>
-    listed.has(file) || options.live
+    listed.has(file) || (options.live && file === 'relevance.json')
       ? fetchText(`${base}/${file}`, fetcher, true).then((text) => text || null)
       : Promise.resolve(null)
   const [relevanceText, trustText] = await Promise.all([extra('relevance.json'), extra('trust.json')])

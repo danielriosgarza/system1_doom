@@ -168,6 +168,8 @@ describe('loadEpisode for an episode in progress', () => {
       live: true,
     })
     expect(bundle.relevance?.episodes).toBe(3)
+    // Without value networks serve writes no trust.json and does not list it: the app does not ask for it.
+    expect(bundle.trust).toBeNull()
   })
 })
 

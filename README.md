@@ -14,9 +14,9 @@ instance's yes.
 
 The design is in
 [`docs/superpowers/specs/2026-10-25-d1-decision-maker-design.md`](docs/superpowers/specs/2026-10-25-d1-decision-maker-design.md);
-System 1 (the senses and the central) and System 2 (a slow loop that
-changes what each instance sees) are built; the web app's rewrite around
-them is the third pull request.
+System 1 (the senses and the central), System 2 (a slow loop that
+changes what each instance sees) and the web app that shows both are
+built.
 
 ## System 2
 
@@ -61,26 +61,39 @@ its templates.
 
 ## Web explainer
 
-**<https://danielriosgarza.github.io/system1_doom/>** replays recordings
-of the agent in the corridor, tick by tick, with every level of each
-decision explained. Its four recordings and its screens show the
-architecture this design replaced (five hand-written modules and an
-arbiter); they read trace schema 1. The Python side now writes schema 2,
-in which each tick holds the six instances, the evidence each one saw
-verbatim, their answers and the pick, and the app is rewritten around it
-with new recordings in the design's third pull request. The app is
-described in [`web/README.md`](web/README.md); the bundles and how they
-are made are in
-[`docs/DOCUMENTATION.md` §8.15](docs/DOCUMENTATION.md#815-episode-bundles--the-web-explainer--exportpy-servepy-web).
+**<https://danielriosgarza.github.io/system1_doom/>** opens on the agent
+playing the corridor at its own pace, and beside the game what each of
+the six d1-ultra instances answered at that decision: which senses spoke
+or stayed silent, with what action, reason and strength, and what the
+central picked. Every decision can be checked: a click on a row opens
+that instance with the evidence it was sent, verbatim, the channels in
+its scope and those it was not shown (the survival sense never sees the
+pickups unless System 2 widens its scope), and its answers as bars. The
+slow system's screen shows every configuration version with the change,
+the reflector that proposed it and System 2's central's choice, the
+history test's whole table, the trial and the judge, and the relevance
+ledger; Learning, Growing the menu and Reference (the one rule, a drawing
+of the two systems, the glossary) follow.
 
-`python -m system1_doom.serve` plays live and streams schema-2 ticks to a
-local server (the current app will render them from the third pull
-request on):
+It ships three recordings of `deadly_corridor.cfg` with the best
+networks as evidence: seeds 9 and 11 from the design's version 1 (both
+clear the corridor, in 59 and 179 decisions) and seed 9 again from
+version 2, the strategy System 2 chose and kept on the same run folder
+(it tries another strategy, the judge reverts it, and the episode dies
+after 233 decisions). The app reads trace schema 2 and is described in
+[`web/README.md`](web/README.md); the bundles, the screens and how they
+are made are in
+[`docs/DOCUMENTATION.md` §8.15](docs/DOCUMENTATION.md#815-episode-bundles--the-web-explainer--exportpy-servepy-web),
+and the recordings' numbers in §15.
+
+To watch it decide live, `python -m system1_doom.serve` plays on your
+machine and the same app follows each decision as it is made, and each of
+System 2's records as it is written:
 
 ```bash
 (cd web && npm install && npm run build)
 python -m system1_doom.serve --scenario deadly_corridor.cfg --networks best
-# http://127.0.0.1:8765/   (Ctrl+C stops it)
+# http://127.0.0.1:8765/#live/watch   (Ctrl+C stops it)
 ```
 
 ## Documentation

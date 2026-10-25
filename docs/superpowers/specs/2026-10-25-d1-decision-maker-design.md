@@ -1,6 +1,6 @@
 # d1-ultra as the decision maker — design (2026-10-25)
 
-Status: agreed with the project owner on 2026-10-25; built in three pull requests (section 12).
+Status: agreed with the project owner on 2026-10-25; built in three pull requests (section 12), all three built (package 0.4.0).
 This document is the design; `DOCUMENTATION.md` describes the code as it is after each PR.
 
 ## 1. The concept

@@ -231,6 +231,20 @@ def test_index_lists_shippable_schema_2_bundles(bundle):
     assert export.BundleIndexEntry.model_validate(old).configuration_start == 1
 
 
+SHIPPED = sorted(p.parent for p in RECORDINGS.glob("*/episode.json"))
+
+
+@pytest.mark.skipif(not SHIPPED, reason="no shipped recordings")
+@pytest.mark.parametrize("shipped", SHIPPED, ids=[p.name for p in SHIPPED])
+def test_every_shipped_recording_is_a_valid_schema_2_bundle_played_by_d1_ultra(shipped):
+    assert export.check_bundle(shipped) == []
+    meta = export.EpisodeMeta.model_validate_json((shipped / "episode.json").read_text())
+    assert meta.schema_version == 2 and meta.decider == "d1-ultra" and meta.name == shipped.name
+    assert meta.result.finished_reason != "connection_lost"
+    listed = json.loads((RECORDINGS / "index.json").read_text())
+    assert export.index_entry(shipped.name, meta).model_dump() in listed["episodes"]
+
+
 def test_the_schema_names_every_model_the_app_reads():
     defs = export.bundle_json_schema()["$defs"]
     for name in (
