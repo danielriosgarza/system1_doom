@@ -21,7 +21,7 @@ def test_the_default_is_the_designs_tables():
         "survival": ("vitals", "threats", "incoming", "projections", "menu"),
         "combat": ("threats", "outgoing", "vitals", "frame", "projections", "menu"),
         "navigation": ("landmarks", "geometry", "position", "progress", "menu"),
-        "resource": ("pickups", "landmarks", "vitals", "menu"),
+        "resource": ("landmarks", "vitals", "menu"),
         "goal": ("landmarks", "progress", "history", "archive", "values", "menu"),
     }
     assert {n: s.target for n, s in configuration.senses.items()} == {

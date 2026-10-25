@@ -629,7 +629,7 @@ tables):
 | survival | `vitals`, `threats`, `incoming`, `projections`, `menu` | health_critical, under_fire, enemy_too_close, recovering, no_threat | — |
 | combat | `threats`, `outgoing`, `vitals`, `frame`, `projections`, `menu` | target_aimed, target_off_centre, several_enemies, low_ammo, no_target | `enemy` |
 | navigation | `landmarks`, `geometry`, `position`, `progress`, `menu` | path_clear, wall_ahead, stalled, off_course, door_or_switch_ahead, unexplored_side | — |
-| resource | `pickups`, `landmarks`, `vitals`, `menu` | health_pickup_near, ammo_pickup_near, pickup_guarded, nothing_needed, nothing_visible | `pickup` |
+| resource | `landmarks`, `vitals`, `menu` | health_pickup_near, ammo_pickup_near, pickup_guarded, nothing_needed, nothing_visible | `pickup` |
 | goal | `landmarks`, `progress`, `history`, `archive`, `values`, `menu` | making_progress, plateau, off_course, strategy_fits, strategy_failing, nearly_done | — |
 | central | `messages`, `relevance`, `exploration`, `vitals`, `menu` (+ `novelty` while exploring, if there is room) | — | — |
 
@@ -638,6 +638,13 @@ chooses which visible enemy the aim locks onto, the resource sense which
 remembered pickup a pickup-seeking action walks to (§8.2, §8.6). Each
 target kind is chosen by one sense at most; a configuration saved before
 targets existed loads with these two.
+
+No sense is shown `pickups` at first: `landmarks` lists every visible
+pickup too (“in view”), with what walking at it has done. Shown both, the
+resource sense kept choosing a clip that dozens of walks had failed to
+reach, because the visible list named it plainly at 60 units without that
+fact; shown `landmarks` alone it chose a pickup not yet failed in 11 of 12
+logged moments. `pickups` stays a channel System 2 can widen a scope to.
 
 **Validation** (a configuration that breaks any of these does not load):
 the senses are exactly the five, in order; every channel is known and

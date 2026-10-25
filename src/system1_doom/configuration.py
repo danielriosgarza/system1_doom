@@ -246,7 +246,7 @@ DEFAULT_SENSES: Dict[str, SenseConfig] = {
         reasons=("path_clear", "wall_ahead", "stalled", "off_course", "door_or_switch_ahead", "unexplored_side"),
     ),
     "resource": SenseConfig(
-        scope=("pickups", "landmarks", "vitals", "menu"),
+        scope=("landmarks", "vitals", "menu"),
         concern="health, armor and ammo",
         reasons=("health_pickup_near", "ammo_pickup_near", "pickup_guarded", "nothing_needed", "nothing_visible"),
         target="pickup",
