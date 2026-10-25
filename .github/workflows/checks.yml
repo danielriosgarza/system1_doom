@@ -34,6 +34,9 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
+      # The app's type is Inter, first in its font stack; without it the runner falls back to the
+      # wider DejaVu Sans, and the top bar's one-row checks at 1280 px would measure other text.
+      - run: sudo apt-get install -y --no-install-recommends fonts-inter
       # CI is set, so Playwright starts its own servers (playwright.config.ts).
       - run: npm run e2e
 

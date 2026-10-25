@@ -1514,8 +1514,10 @@ trace.
 pull request and every push to main, in two jobs of at most ten minutes
 each. `web` (Node 22): `npm ci`, `npm run lint`,
 `npx prettier --check src e2e`, `npm test`, `npm run build`, then
-`npx playwright install --with-deps chromium` and `npm run e2e`, which
-starts its own preview and live stand-in servers. `python` (3.11):
+`npx playwright install --with-deps chromium`, the Inter font the app is
+set in (`fonts-inter`; the runner's default DejaVu Sans is wider, and the
+top bar's one-row checks at 1280 px are measured against Inter), and
+`npm run e2e`, which starts its own preview and live stand-in servers. `python` (3.11):
 torch from the CPU wheel index, `pip install -e ".[dev,learn]"`, and
 `python -m pytest -k "not live"`; the five live d1-ultra tests need
 `LIQUID_API_KEY` and are run locally. `.github/workflows/pages.yml`
