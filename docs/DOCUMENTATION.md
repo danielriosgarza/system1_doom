@@ -27,7 +27,7 @@
 
 **Package:** `system1-doom` 0.3.0 · **Python:** ≥ 3.11 · **Source layout:**
 `src/system1_doom/` (32 modules, ≈ 11,300 LOC) · **Tests:** `tests/`
-(25 files, 225 tests, 4 of them live) · **Web explainer:** `web/` (Vite +
+(25 files, 228 tests, 4 of them live) · **Web explainer:** `web/` (Vite +
 React + TypeScript; still on trace schema 1 until the third pull request
 of the design), online at <https://danielriosgarza.github.io/system1_doom/>
 
@@ -242,7 +242,7 @@ system1_doom/
 │       ├── specs/2026-10-23-learning-controller-design.md
 │       └── plans/2026-10-23-d1-ultra-doom-controller.md
 ├── src/system1_doom/               # the package (see table below)
-├── tests/                          # 25 files, 225 tests, fake_d1.py and system2_fixtures.py (§16)
+├── tests/                          # 25 files, 228 tests, fake_d1.py and system2_fixtures.py (§16)
 ├── web/                            # the web explainer: Vite + React app and demo bundles (§8.15)
 ├── runs/<scenario>/                # training output, the relevance ledger, the configuration and System 2's state (§13)
 ├── bundles/                        # episode bundles from `system1_doom.export` (§13)
@@ -257,7 +257,7 @@ system1_doom/
 | `vizdoom_env.py` | 454 | ViZDoom ⇄ controller bridge: builds `WorldState`, executes an action's primitives or an idle, level-clear rules |
 | `motor.py` | 378 | Closed-loop execution of a primitive plan (aim, tracking strafe, pickup steering); the idle burst |
 | `simulator.py` | 276 | Bounded analytic short-horizon projections + empirical transition cache: the `projections` channel |
-| `configuration.py` | 247 | The versioned configuration: scopes, concerns, reasons, exploration level, strategy, admitted macros, `Bounds` (System 2's included) |
+| `configuration.py` | 251 | The versioned configuration: scopes, concerns, reasons, exploration level, strategy, admitted macros, `Bounds` (System 2's included) |
 | `evidence.py` | 462 | The 18 evidence channels rendered as plain text; `EvidenceInputs`; deterministic scope rendering |
 | `instance.py` | 316 | One d1-ultra instance: the payload, the finite questions per kind, reading answers, typed misses; `run_system2_instance` for System 2's |
 | `senses.py` | 92 | The five senses: run in parallel, their messages |
@@ -270,11 +270,11 @@ system1_doom/
 | `d1_client.py` | 365 | d1-ultra HTTP client: typed questions, per-call budget, 429 handling, typed misses, usage and per-instance counters |
 | `llm_worker.py` | 242 | Async slow path: builds a bounded expansion prompt, runs `codex exec`, falls back to templates |
 | `admission.py` | 301 | Parse, legality and sandbox bounds, then the admit instance, for macro proposals |
-| `history_channels.py` | 604 | System 2's evidence: the history channels over three windows (`h_outcomes`, `h_sense:<name>`, `h_central`, `h_actions`, `h_strategy`, `h_exploration`, `h_config`, `h_tests`, `messages`) |
+| `history_channels.py` | 605 | System 2's evidence: the history channels over three windows (`h_outcomes`, `h_sense:<name>`, `h_central`, `h_actions`, `h_strategy`, `h_exploration`, `h_config`, `h_tests`, `messages`) |
 | `reflectors.py` | 430 | The nine reflectors: specs, finite change menus, the bounds that filter them, `apply_change`, configuration diffs |
 | `history_test.py` | 482 | The history test: a scope change's instance re-run on 24 stratified stored ticks; metrics, margin rule, noise estimate |
-| `system2.py` | 979 | `System2`: its thread, the cycle, System 2's central, trials and the judge, safety reverts, cooling, `system2.json` |
-| `reflection.py` | 229 | `ReflectionTrace`, `TrialVerdictTrace`, `System2Note` (`reflections.jsonl`) and an episode's System 2 counts |
+| `system2.py` | 996 | `System2`: its thread, the cycle, System 2's central, trials and the judge, safety reverts, cooling, `system2.json` |
+| `reflection.py` | 235 | `ReflectionTrace`, `TrialVerdictTrace`, `System2Note` (`reflections.jsonl`) and an episode's System 2 counts |
 | `controller.py` | 750 | `DoomDecisionController`: one tick and one episode; configuration hook; System 2's host; misses; cost |
 | `logger.py` | 145 | Schema-2 `TickTrace`/`ProposalTrace` JSONL logging, and System 2's `reflections.jsonl` |
 | `tracing.py` | 276 | Typed trace records (state, pruning, projections, outcome, slow-path request), read-only |
@@ -628,7 +628,8 @@ per decision; an 8-step return with discount 0.9; a probability
 tolerance of 0.02; a thin record under 5; a stall under 4 units. And
 System 2's: a cycle every 20 new decisions; windows of 20 and 100
 decisions and 3 episodes; trials of 60 decisions, extended by 20 when the
-judge misses; a history test of 24 ticks with 4 noise re-asks, at most 4
+judge misses and ended as a revert with no verdict at its third miss; a
+history test of 24 ticks with 4 noise re-asks, at most 4
 per context, bad and good as the bottom and top quarter of returns, a
 pass margin of 0.05 and a worst drop of 0.10; a safety revert at a
 paid-off rate drop of 0.15 on 10 followed messages.
@@ -1464,7 +1465,13 @@ history test's prediction.
   reverted retire re-admits the macro. It waits for the next tick
   boundary like any change.
 * **A missed judge** extends the trial by 20 decisions
-  (`judge_extension`), and the judge is asked again then.
+  (`judge_extension`), and the judge is asked again then. At its third
+  miss (`judge_extensions_max`) the trial ends as `revert` with no
+  verdict: a `TrialVerdictTrace` like the others, its table included,
+  with `by: "no verdict"`, and a `no_verdict` note saying the judge never
+  answered. Nothing stands in for a missed verdict, and the configuration
+  before the change is the honest state to return to; cooling starts as
+  after any verdict.
 * **Cooling.** From the verdict, the changed instance rests 60 decisions
   (`cooling_decisions`): no change to it is offered. After a menu,
   strategy or level change, System 2 as a whole rests.
@@ -1485,9 +1492,10 @@ choice and tie, the outcome, the history test's whole table, the change
 applied with its configuration diff, the calls and the usage. A verdict
 is a `TrialVerdictTrace` (`record: "verdict"`) referring to the cycle
 that made the change, with the trial record: when it started and was
-judged, every judge attempt, the before-and-during table, the verdict
-and `safety_revert`. Short `System2Note`s (`record: "note"`) mark what
-happens in between: `trial_started`, `judge_missed`, `macro_admitted`,
+judged, every judge attempt, the before-and-during table, the verdict,
+`by` (the trial judge, the safety bound, or no verdict) and
+`safety_revert`. Short `System2Note`s (`record: "note"`) mark what
+happens in between: `trial_started`, `judge_missed`, `no_verdict`, `macro_admitted`,
 `macro_rejected`, `macro_abandoned`, `revert_applied`, `external_change`
 (a configuration System 2 did not make), `restored`, `fresh_start` and
 `error`. `load_reflections` reads a file; `summarize` gives the counts
@@ -1809,6 +1817,7 @@ their checkpoints load (the gate keys are ignored) and serve the
 | A history-test re-run misses | Counted as silent (for the central, as no action) and counted | `new_missed`, `noise_missed` in the test |
 | Fewer than 24 stored ticks for the history test, or too few calls left in the cycle | No test: the change waits, and a later cycle may propose it again | outcome `test_waiting` |
 | The trial judge misses | The trial is extended by 20 decisions and the judge asked again | note `judge_missed`; `extensions` on the trial |
+| The trial judge misses a third time (`judge_extensions_max`) | The trial ends as revert with no verdict: the configuration before the change is restored at the next tick boundary, and cooling starts | verdict `by: "no verdict"` with its table; note `no_verdict` |
 | The slow path cannot take System 2's macro request (off or busy) | No change this cycle | outcome `macro_not_enqueued` |
 | System 2's macro request unanswered for 60 decisions | Abandoned; cycles resume | note `macro_abandoned` |
 | The session ends with a revert queued but not yet in play | Saved in `system2.json` and queued again when the next session starts from the same configuration | note `restored` |
@@ -1912,8 +1921,8 @@ with `train --evaluate` (no, latest and best networks on the same seeds).
 ## 16. Testing
 
 ```bash
-python -m pytest                 # 225 tests, 25 files, from the repo root
-python -m pytest -k "not live"   # the 221 that need no key, as CI runs them
+python -m pytest                 # 228 tests, 25 files, from the repo root
+python -m pytest -k "not live"   # the 224 that need no key, as CI runs them
 ```
 
 Every behaviour is exercised without a key through `tests/fake_d1.py`:
@@ -1951,7 +1960,7 @@ and about 45 seconds with them.
 | `test_history_channels.py` | The three windows as the history holds them, across a long ring; paid off as the per-episode n-step return; each channel's golden text; a scope renders only its channels, in order and deterministically; what a sense could add and drop follows the bounds; an empty history says so |
 | `test_reflectors.py` | Nine reflectors, each over its history channel and `h_outcomes`; questions that name the reflector and never say how to weigh; one channel at a time, never `menu`; the menu, strategy and exploration menus; the bounds (cooling, the trial, scope size, built-ins, `menu`); a change bumps the version and the diff says what changed; one call, and a proposal only when it speaks for a change; a change outside the criteria is a miss |
 | `test_history_test.py` | The sense and central metrics on labelled ticks; the margin rule on both sides; strata by rank; the seeded stratified sample, the context cap and when it is relaxed; a change that quiets a sense on its unpaid messages passes, one under the margin fails; no test and no call under 24 ticks; the noise estimate; a missed re-run counts as silent; the screen attached when `frame` joins the scope; the central's test; one live re-run on 4 ticks |
-| `test_system2.py` | On a synthetic history and on `basic.cfg` with the fake: a cycle every 20 decisions or at an episode end, none during a trial; each reflector sees only its channels and the central its three; the central's criteria are the allowed proposals and `none`; one change per cycle, at a tick boundary; the judge keeps after 60 decisions; a revert restores the previous configuration exactly with the version bumped, then cooling; a revert queued again on restore; a missed judge extends the trial by 20; the safety revert; a missed central changes nothing and a tie goes to the first option; the calls counted and kept under the bound; a macro request through the slow path, and a reverted macro retired; the state saved and restored only onto its configuration; end to end, a widen tested, applied and kept, ending at configuration version 2, in the controller and in served bundles; off unless asked; one live cycle on a short real history |
+| `test_system2.py` | On a synthetic history and on `basic.cfg` with the fake: a cycle every 20 decisions or at an episode end, none during a trial; each reflector sees only its channels and the central its three; the central's criteria are the allowed proposals and `none`; one change per cycle, at a tick boundary; the judge keeps after 60 decisions; a revert restores the previous configuration exactly with the version bumped, then cooling; a revert queued again on restore; a missed judge extends the trial by 20; a judge that never answers ends the trial as revert with no verdict, and one that misses twice and then answers is followed; the safety revert; a missed central changes nothing and a tie goes to the first option; the calls counted and kept under the bound; a macro request through the slow path, and a reverted macro retired; the state saved and restored only onto its configuration; end to end, a widen tested, applied and kept, ending at configuration version 2, in the controller and in served bundles; off unless asked; one live cycle on a short real history |
 | `test_d1_client.py` | Request serialisation through an injected transport; typed misses counted per instance; `Retry-After` parsing; the default transport's typed 429; one live call |
 | `test_controller_e2e.py` | On `basic.cfg` with the fake: six instances per tick with the payload's state equal to the evidence; a fake that shoots when aimed clears the level; a scripted outage gives missed ticks with idle steps, then `connection_lost`; isolated misses do not end the episode; every motor step follows the action's plan; the value networks learn and appear in `values`; the ledger updates and is restored; a pending configuration applies at the boundary; explore draws reproduce; an admitted macro enters at the next boundary; play needs the key; one live tick with six instances answering |
 | `test_architecture.py` | The removed `modules.py`, `arbiter.py` and `exploration.py` are gone and nothing in `src/` or `tests/` imports them; keys are pressed only in `controller.py`, from the pick or the typed miss; only `system1.py` builds a `Pick`, and only it and `history_test.py` (the seeded sample of stored ticks) import `random`; at run time the executed action is the central's answer and a miss idles |

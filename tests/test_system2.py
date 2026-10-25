@@ -334,6 +334,39 @@ def test_a_missed_judge_extends_the_trial_by_20_decisions_and_asks_again(hosts):
     assert verdict.trial.table.during.decisions == 80 and verdict.calls == 2
 
 
+def test_a_judge_that_never_answers_ends_the_trial_as_revert_with_no_verdict(hosts):
+    host, fake = _level_trial(hosts, "keep", judge_faults=(0, 1, 2))
+    play(host, "a", 20, start=80)  # the second miss: extended again, to 100
+    assert verdicts(host) == [] and len(notes(host, "judge_missed")) == 2 and notes(host, "no_verdict") == []
+    play(host, "a", 20, start=100)  # the third miss (judge_extensions_max): no verdict, so the change is reverted
+    (verdict,) = verdicts(host)
+    trial = verdict.trial
+    assert trial.verdict == "revert" and trial.by == "no verdict" and not trial.safety_revert
+    assert [r.missed for r in trial.judge] == [True, True, True] and trial.extensions == 2 and verdict.calls == 3
+    assert trial.table is not None and trial.table.during.decisions == 100 and trial.revert.new_version == 3
+    (note,) = notes(host, "no_verdict")
+    assert "never answered (3 misses" in note.detail and "ends as revert with no verdict" in note.detail
+    restored = host.pending
+    assert restored.version == 3 and restored.model_dump(exclude={"version"}) == CONFIG.model_dump(exclude={"version"})
+    status = host.system2.status()
+    assert status.verdicts[-1].by == "no verdict" and status.cooling_left["system2"] == CONFIG.bounds.cooling_decisions
+    play(host, "a", 1, start=120)
+    assert host.configuration == restored and host.system2.status().change_log[-1].by == "revert with no verdict"
+    assert fake.count(TRIAL_JUDGE) == 3
+
+
+@pytest.mark.parametrize("answer", ["keep", "revert"])
+def test_a_judge_that_misses_twice_and_then_answers_is_followed(hosts, answer):
+    host, fake = _level_trial(hosts, answer, judge_faults=(0, 1))
+    play(host, "a", 20, start=80)
+    assert verdicts(host) == []
+    play(host, "a", 20, start=100)
+    (verdict,) = verdicts(host)
+    assert verdict.trial.verdict == answer and verdict.trial.by == "the trial judge" and verdict.trial.extensions == 2
+    assert [r.missed for r in verdict.trial.judge] == [True, True, False] and notes(host, "no_verdict") == []
+    assert (host.pending is not None) == (answer == "revert")
+
+
 def test_the_safety_bound_reverts_a_scope_change_without_asking(hosts):
     always = lambda p: reflector_answer(p, 0.9, "widen:survival:pickups", "missing_evidence")  # noqa: E731
     fake = FakeD1(survival_until_pickups, system2_policy=s2_policy(survival_auditor=always))
@@ -348,6 +381,7 @@ def test_the_safety_bound_reverts_a_scope_change_without_asking(hosts):
     play(host, "b", 1, start=16)
     (verdict,) = verdicts(host)
     assert verdict.trial.safety_revert and verdict.trial.verdict == "revert" and verdict.trial.judge == []
+    assert verdict.trial.by == "the safety bound"
     assert fake.count(TRIAL_JUDGE) == 0 and "safety bound: survival's paid-off rate fell from 1.00 to 0.00" in verdict.trial.table.text
     assert host.pending.version == 3 and host.pending.senses["survival"].scope == CONFIG.senses["survival"].scope
     assert host.system2.status().verdicts[-1].by == "the safety bound"

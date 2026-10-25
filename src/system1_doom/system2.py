@@ -30,7 +30,9 @@ reward and damage per decision, kills, deaths, missed ticks, the changed instanc
 the history test's prediction. For a scope change, the safety bound reverts without asking when the
 paid-off rate of the changed instance falls by more than 0.15 on at least 10 followed messages. A revert
 restores the previous configuration exactly, with the version bumped (a reverted macro is retired, a
-reverted retire re-admits). A missed judge extends the trial by 20 decisions and is asked again. After the
+reverted retire re-admits). A missed judge extends the trial by 20 decisions and is asked again; after its
+third miss (`judge_extensions_max`) the trial ends as `revert` with no verdict, because nothing stands in for
+a missed verdict and the configuration before the change is the honest state to return to. After the
 verdict the changed instance rests 60 decisions, or System 2 as a whole after a menu, strategy or level
 change.
 
@@ -79,6 +81,7 @@ from system1_doom.reflection import (
     ReflectionTrace,
     System2EpisodeSummary,
     System2Note,
+    TrialBy,
     TrialRecord,
     TrialRow,
     TrialTable,
@@ -229,6 +232,7 @@ class PendingChange(BaseModel):
     prediction: Optional[str] = None
     macro_id: Optional[str] = None
     safety: bool = False
+    no_verdict: bool = Field(default=False, description="A revert because the trial judge never answered")
     restore: Optional[Configuration] = Field(default=None, description="A revert: the configuration it restores (before the version bump)")
 
 
@@ -485,7 +489,7 @@ class System2:
             if pending is not None and pending.stage == "queued" and new.version == pending.version:
                 self._start_trial(pending, old, new)
             elif pending is not None and pending.stage == "revert" and new.version == pending.version:
-                by = "safety revert" if pending.safety else "revert"
+                by = "safety revert" if pending.safety else ("revert with no verdict" if pending.no_verdict else "revert")
                 self._log_change(ChangeLogEntry(version=new.version, change=pending.change, by=by, cycle_id=pending.cycle_id, decision=self.state.decisions))
                 self.state.pending = None
                 self._note("revert_applied", f"{pending.change} took effect: version {new.version} restores the configuration before the change", pending.cycle_id, new.version)
@@ -853,6 +857,17 @@ class System2:
                 return
             trial.judge.append(result)
             if result.missed or result.verdict is None:
+                misses = sum(1 for r in trial.judge if r.missed or r.verdict is None)
+                if misses >= bounds.judge_extensions_max:
+                    self._note(
+                        "no_verdict",
+                        f"the trial judge never answered ({misses} misses, the last {result.miss_reason}); the trial of "
+                        f"{trial.change} ends as revert with no verdict, and the configuration before it is restored",
+                        trial.cycle_id,
+                        trial.version,
+                    )
+                    self._finish_trial(trial, "revert", table, by="no verdict")
+                    return
                 trial.extensions += 1
                 trial.of += bounds.judge_extension
                 self._note(
@@ -864,7 +879,7 @@ class System2:
                 )
                 self.save()
                 return
-            self._finish_trial(trial, result.verdict, table, safety=False)  # type: ignore[arg-type]
+            self._finish_trial(trial, result.verdict, table, by="the trial judge")  # type: ignore[arg-type]
 
     def _safety_revert(self, why: str) -> None:
         with self._lock:
@@ -874,10 +889,11 @@ class System2:
             bounds = self.host.configuration.bounds
             table = trial_table(trial, bounds.return_steps, bounds.return_gamma)
             table = table.model_copy(update={"text": table.text + f"\nsafety bound: {why}"})
-            self._finish_trial(trial, "revert", table, safety=True)
+            self._finish_trial(trial, "revert", table, by="the safety bound")
 
-    def _finish_trial(self, trial: TrialState, verdict: Literal["keep", "revert"], table: TrialTable, *, safety: bool) -> None:
+    def _finish_trial(self, trial: TrialState, verdict: Literal["keep", "revert"], table: TrialTable, *, by: TrialBy) -> None:
         """Record the verdict; on revert, queue the previous configuration exactly, with the version bumped."""
+        safety = by == "the safety bound"
         s = self.state
         bounds = self.host.configuration.bounds
         revert: Optional[ConfigDiff] = None
@@ -888,13 +904,13 @@ class System2:
             self.host.request_configuration(restored)
             s.pending = PendingChange(
                 cycle_id=trial.cycle_id, change=f"revert:{trial.change}", kind=trial.kind, stage="revert",
-                instance=trial.instance, decision=s.decisions, version=restored.version, safety=safety, restore=trial.previous,
+                instance=trial.instance, decision=s.decisions, version=restored.version, safety=safety,
+                no_verdict=by == "no verdict", restore=trial.previous,
             )
         s.change_log = [
             e.model_copy(update={"status": "kept" if verdict == "keep" else "reverted"}) if e.version == trial.version and e.status == "trial" else e
             for e in s.change_log
         ]
-        by = "the safety bound" if safety else "the trial judge"
         s.verdicts = (s.verdicts + [VerdictSummary(cycle_id=trial.cycle_id, change=trial.change, version=trial.version, verdict=verdict, by=by)])[-VERDICTS_KEPT:]
         if trial.cooling_key is not None:
             s.cooling[trial.cooling_key] = s.decisions + bounds.cooling_decisions
@@ -904,7 +920,8 @@ class System2:
             previous_version=trial.previous.version, version=trial.version, started_at=trial.started_at,
             started_decision=trial.started_decision, started_episode=trial.started_episode, started_tick=trial.started_tick,
             due_decision=trial.started_decision + trial.of, extensions=trial.extensions, judged_at=DecisionLogger.now_iso(),
-            judged_decision=s.decisions, judge=list(trial.judge), table=table, verdict=verdict, safety_revert=safety, revert=revert,
+            judged_decision=s.decisions, judge=list(trial.judge), table=table, verdict=verdict, safety_revert=safety, by=by,
+            revert=revert,
         )
         self.save()
         self._emit(

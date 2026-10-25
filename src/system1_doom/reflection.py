@@ -6,8 +6,10 @@ each was offered and the bounds that removed the rest, the messages, System 2's 
 choice, the history test's whole table when one ran, the change queued with its configuration diff, and
 the calls and cost. A trial's verdict is appended later as its own `TrialVerdictTrace`, referring to the
 cycle that made the change, with the trial record (started at, judged at, every judge attempt, the
-before-and-during table, the verdict, and whether the safety bound reverted it without asking). Short
-`System2Note`s mark what happens between: a trial starting at a tick boundary, a missed judge, a macro the
+before-and-during table, the verdict, and who gave it: the judge, the safety bound without asking, or no
+one, when the judge missed `judge_extensions_max` times and the trial ended as revert). Short
+`System2Note`s mark what happens between: a trial starting at a tick boundary, a missed judge, a judge that
+never answered, a macro the
 admit instance admitted or rejected, a revert taking effect, a change System 2 did not make, a restore.
 
 The three are told apart by `record` (`cycle`, `verdict`, `note`); `ReflectionRecordAdapter` reads any line.
@@ -49,8 +51,11 @@ NoteKind = Literal[
     "external_change",
     "restored",
     "fresh_start",
+    "no_verdict",
     "error",
 ]
+# Who ended a trial: the judge's answer, the safety bound, or no verdict (the judge missed `judge_extensions_max` times).
+TrialBy = Literal["the trial judge", "the safety bound", "no verdict"]
 
 
 class TrialRow(BaseModel):
@@ -103,6 +108,7 @@ class TrialRecord(BaseModel):
     table: Optional[TrialTable] = None
     verdict: Optional[Literal["keep", "revert"]] = None
     safety_revert: bool = Field(default=False, description="Reverted by the safety bound, without asking the judge")
+    by: TrialBy = Field(default="the trial judge", description="Who ended the trial; 'no verdict' reverts after the judge's last allowed miss")
     revert: Optional[ConfigDiff] = Field(default=None, description="The revert queued: previous configuration restored, version bumped")
 
 

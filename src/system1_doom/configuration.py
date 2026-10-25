@@ -11,7 +11,8 @@ The design's numbers live in `Bounds`, not scattered as literals: the 0.5 at whi
 own yes), the 5 s per-call budget, the pool of 6 calls in flight, the 7-channel scope, the channel caps,
 the 2,000-tick history ring, the 8-decision return with discount 0.9, the 3 consecutive central misses,
 and the 8 frames a decision lasts; and System 2's: a cycle every 20 decisions, windows of 20 and 100
-decisions and 3 episodes, trials and cooling of 60 decisions, a judge extension of 20, the history test's
+decisions and 3 episodes, trials and cooling of 60 decisions, a judge extension of 20 (at most 3 judge misses
+before a trial ends as revert with no verdict), the history test's
 24-tick sample with 4 noise ticks, at most 4 ticks per context, its 0.05 and 0.10 margins, the 0.15
 safety drop on 10 followed messages, and 40 calls per cycle.
 """
@@ -95,6 +96,9 @@ class Bounds(BaseModel):
     window_episodes: int = Field(default=3, ge=1, description="Episodes in System 2's episode window, and the history test's")
     trial_decisions: int = Field(default=60, ge=1, description="Decisions a change is observed for before the trial judge")
     judge_extension: int = Field(default=20, ge=1, description="Decisions a trial is extended by when the judge misses")
+    judge_extensions_max: int = Field(
+        default=3, ge=1, description="Judge misses that end a trial as revert, with no verdict (each miss before extends it)"
+    )
     history_test_noise: int = Field(default=4, ge=0, description="Sampled ticks the old scope is re-asked on, as a noise estimate")
     history_test_margin: float = Field(default=0.05, ge=0.0, description="How far the new composite must be above the old")
     history_test_worst_drop: float = Field(default=0.10, ge=0.0, description="No quality metric may be worse than the old by more")

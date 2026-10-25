@@ -66,7 +66,7 @@ class ChangeLogEntry(BaseModel):
 
     version: int
     change: str = Field(description="A change id, 'revert:<change id>', or what changed when System 2 did not make it")
-    by: str = Field(description="system 2, revert, safety revert, slow path, or outside System 2")
+    by: str = Field(description="system 2, revert, safety revert, revert with no verdict, slow path, or outside System 2")
     cycle_id: Optional[str] = None
     decision: int = Field(default=0, description="System 2's decision count when the version took effect")
     status: str = Field(default="applied", description="trial, kept, reverted, or applied")
@@ -103,7 +103,7 @@ class VerdictSummary(BaseModel):
     change: str
     version: int
     verdict: str = Field(description="keep or revert")
-    by: str = Field(description="the trial judge, or the safety bound")
+    by: str = Field(description="the trial judge, the safety bound, or no verdict")
 
 
 class System2Status(BaseModel):
@@ -562,7 +562,8 @@ def _h_tests(inp: HistoryInputs) -> List[str]:
     if status.verdicts:
         lines.append("recent trial verdicts (latest last):")
         for v in status.verdicts[-TESTS_SHOWN:]:
-            lines.append(f"- {v.change} (version {v.version}): {v.verdict}, by {v.by}")
+            how = "with no verdict (the trial judge never answered)" if v.by == "no verdict" else f"by {v.by}"
+            lines.append(f"- {v.change} (version {v.version}): {v.verdict}, {how}")
     else:
         lines.append("no trial judged yet")
     return lines
