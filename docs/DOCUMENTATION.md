@@ -1899,8 +1899,13 @@ the end of episode 1 and ran as episode 2 began.
 deadly_corridor.cfg --networks best`: the run folder's `best.pt` after 7
 training episodes, network share 0.43; the default 5 s budget; the slow
 path on, with templates; System 2 on). Three bundles, 30.2 MB in all,
-which is over the 25 MB a static site should carry; the frames are most
-of it.
+which is over the 25 MB a static site should carry: 11.2 MB of
+`ticks.jsonl` (the six instances' verbatim evidence and answers, about
+23 KB a decision), 12.0 MB of `history.jsonl` (the same decisions as
+System 2's history store keeps them, which the app does not read) and
+5.6 MB of frames. The text files are served compressed (a 4.5 MB
+`ticks.jsonl` is 0.5 MB gzipped), so the size weighs on the repository
+more than on a visit.
 
 | Recording | Configuration | Decisions | Result | Mean tick | Calls (System 1 + System 2) | Cost (System 1 + System 2) | Misses | Size |
 |---|---|---:|---|---:|---:|---:|---:|---:|
