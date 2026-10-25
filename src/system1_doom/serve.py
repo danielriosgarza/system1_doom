@@ -1,8 +1,14 @@
 """Play episodes live and stream every tick to the web app as it is decided.
 
     cd web && npm run build && cd ..
-    python -m system1_doom.serve --scenario deadly_corridor.cfg --model latest
+    python -m system1_doom.serve --scenario deadly_corridor.cfg --networks latest
     # then open http://127.0.0.1:8765/
+
+Live play needs LIQUID_API_KEY: d1-ultra makes every decision.
+
+Schema version 2: the ticks this server streams are version 2 traces (six d1-ultra instances per tick).
+The web app in this repository still reads version 1 and will not render them until it is rewritten
+for version 2, together with the new recordings; the shipped recordings it serves are unchanged.
 
 The episodes are played exactly as `export` plays them (the same bridge, controller and
 configuration) and written as the same bundles, one folder per episode under `live/`:
@@ -19,8 +25,8 @@ On one origin:
     /live/status.json         what is playing and what has been played (404 means no live mode)
     /live/events              server-sent events: hello, start, tick, proposals, end, stopped
 
-The fast path never waits for the network: publishing a tick is a queue put, a viewer whose
-queue is full is dropped, and pacing is a sleep after a tick, never inside it.
+Publishing never waits for a viewer: publishing a tick is a queue put, a viewer whose queue is full
+is dropped, and pacing is a sleep after a tick, never inside it.
 """
 
 from __future__ import annotations
@@ -43,23 +49,25 @@ import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import unquote, urlsplit
 
+from system1_doom.configuration import ExplorationLevel
+from system1_doom.controller import NO_KEY_MESSAGE
+from system1_doom.d1_client import TransportFn, load_api_key
 from system1_doom.export import (
-    D1_SYNC_HELP,
     BundleIndexEntry,
     EpisodeMeta,
-    Model,
+    Networks,
     Player,
     _action_catalog,
-    _load_model,
     build_player,
     copy_run_files,
     default_title,
     episode_meta,
     finish_bundle,
     index_entry,
+    load_networks,
     play_episode,
 )
-from system1_doom.logger import DecisionLogger, ProposalTrace, TickTrace
+from system1_doom.logger import TRACE_SCHEMA_VERSION, ProposalTrace, TickTrace
 from system1_doom.train import RunStore, default_run_dir
 
 LIVE_NAME = re.compile(r"^live-(\d+)$")
@@ -75,6 +83,7 @@ ZERO_RESULT: Dict[str, Any] = {
     "finished": False,
     "cleared": False,
     "died": False,
+    "finished_reason": None,
 }
 NO_APP = (
     "No built app in {app}. Build it with `cd web && npm run build`, or run the Vite dev server "
@@ -87,14 +96,13 @@ NO_APP = (
 class ServeConfig:
     scenario: str = "deadly_corridor.cfg"
     seed: int = 7
-    model: Model = "heuristics"
+    networks: Networks = "none"
     run_dir: Optional[Path] = None
     max_ticks: int = 500
-    d1: bool = False
-    d1_sync: bool = False
+    call_budget_sec: Optional[float] = None
+    exploration_level: Optional[ExplorationLevel] = None
     codex: bool = False
     slow_path: bool = True
-    deterministic: bool = False
     episodes: Optional[int] = None
     pace: float = 0.23
     rest: float = 3.0
@@ -103,18 +111,21 @@ class ServeConfig:
     out: Path = Path("live")
     app: Path = Path("web/dist")
     recordings: Path = Path("web/public/episodes")
+    # Answers d1-ultra calls in tests; None posts to the real endpoint with LIQUID_API_KEY.
+    transport: Optional[TransportFn] = None
+    api_key: Optional[str] = None
 
     def status(self) -> Dict[str, Any]:
         """The settings the app shows, and builds the serve command from."""
         return {
             "scenario": self.scenario,
             "seed": self.seed,
-            "model": self.model,
-            "d1": self.d1,
-            "d1_sync": self.d1_sync,
+            "decider": "d1-ultra",
+            "networks": self.networks,
+            "call_budget_sec": self.call_budget_sec,
+            "exploration_level": self.exploration_level,
             "codex": self.codex,
             "slow_path": self.slow_path,
-            "deterministic": self.deterministic,
             "max_ticks": self.max_ticks,
             "pace_sec": self.pace,
             "episodes": self.episodes,
@@ -244,7 +255,7 @@ class LiveHub:
     def status(self) -> Dict[str, Any]:
         with self._lock:
             return {
-                "schema_version": 1,
+                "schema_version": TRACE_SCHEMA_VERSION,
                 "running": self._running,
                 "current": self._current,
                 "tick": self._last_tick,
@@ -403,11 +414,11 @@ def play_live_episode(player: Player, config: ServeConfig, hub: LiveHub, stop: t
     out = config.out / name
     seed = config.seed + k - 1
     player.env.frames_dir = out / "frames"
-    player.ctrl.logger = DecisionLogger(log_dir=out)
+    player.ctrl.use_log_dir(out)
     player.env.reset_tick_count()
     player.keeper.last = None
     files, checkpoint = copy_run_files(player, out)
-    title = f"{default_title(config.scenario, config.model, seed)}, live"
+    title = f"{default_title(config.scenario, config.networks, seed)}, live"
     opening = episode_meta(player, name, title, seed, ZERO_RESULT, [], files, checkpoint)
     (out / "episode.json").write_text(opening.model_dump_json(indent=2), encoding="utf-8")
     hub.start_episode(name, opening)
@@ -450,21 +461,22 @@ def play_live_episode(player: Player, config: ServeConfig, hub: LiveHub, stop: t
 def play(config: ServeConfig, hub: LiveHub, stop: threading.Event, log: bool = False) -> None:
     """Build once and play episode after episode until `config.episodes` are done or `stop` is set."""
     store = RunStore(config.run_dir or default_run_dir(config.scenario))
-    learner, model_path = _load_model(store, config.model)
+    learner, model_path = load_networks(store, config.networks)
     player = build_player(
         config.scenario,
         config.seed,
         config.out / "live-1",
-        config.model,
+        config.networks,
         store,
         learner,
         model_path,
         config.max_ticks,
-        config.d1,
         config.slow_path,
         config.codex,
-        config.deterministic,
-        config.d1_sync,
+        config.call_budget_sec,
+        config.exploration_level,
+        config.transport,
+        config.api_key,
     )
     try:
         k = 0
@@ -486,14 +498,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Play episodes live and stream them to the web app")
     parser.add_argument("--scenario", default="deadly_corridor.cfg", help="ViZDoom scenario config filename")
     parser.add_argument("--seed", type=int, default=7, help="Seed of the first episode; each next one takes the next seed")
-    parser.add_argument("--model", choices=["heuristics", "best", "latest"], default="heuristics")
-    parser.add_argument("--run-dir", default=None, help="Run folder with trained models (default: runs/<scenario name>)")
+    parser.add_argument(
+        "--networks", choices=["none", "best", "latest"], default="none", help="Value networks for the values evidence channel"
+    )
+    parser.add_argument("--run-dir", default=None, help="Run folder with trained networks (default: runs/<scenario name>)")
     parser.add_argument("--max-ticks", type=int, default=500, help="Decision cap per episode")
-    parser.add_argument("--d1", action="store_true", help="Use Liquid AI d1-ultra (needs LIQUID_API_KEY)")
-    parser.add_argument("--d1-sync", action="store_true", help=D1_SYNC_HELP)
+    parser.add_argument("--call-budget", type=float, default=None, help="Per-call budget in seconds for each d1-ultra call (default 5)")
+    level = parser.add_mutually_exclusive_group()
+    level.add_argument("--explore", dest="level", action="store_const", const="explore", help="Start at the explore level")
+    level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Start at the exploit level (default)")
     parser.add_argument("--codex", action="store_true", help="Let the slow path call the Codex CLI instead of templates")
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
-    parser.add_argument("--deterministic", action="store_true", help="Always take the arbiter's top-scored action")
     parser.add_argument("--episodes", type=int, default=None, help="Episodes to play (default: until Ctrl+C)")
     parser.add_argument(
         "--pace", type=float, default=0.23, help="Least wall time per tick in seconds (default 0.23: 8 frames at 35 fps; 0 runs flat out)"
@@ -515,14 +530,13 @@ def config_from_args(args: argparse.Namespace) -> ServeConfig:
     return ServeConfig(
         scenario=args.scenario,
         seed=args.seed,
-        model=args.model,
+        networks=args.networks,
         run_dir=Path(args.run_dir) if args.run_dir else None,
         max_ticks=args.max_ticks,
-        d1=args.d1,
-        d1_sync=args.d1_sync,
+        call_budget_sec=args.call_budget,
+        exploration_level=args.level,
         codex=args.codex,
         slow_path=not args.no_slow_path,
-        deterministic=args.deterministic,
         episodes=args.episodes,
         pace=max(0.0, args.pace),
         rest=max(0.0, args.rest),
@@ -537,8 +551,9 @@ def config_from_args(args: argparse.Namespace) -> ServeConfig:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.d1_sync and not args.d1:
-        parser.error("--d1-sync needs --d1")
+    if not load_api_key():
+        print(NO_KEY_MESSAGE, file=sys.stderr)
+        return 2
     config = config_from_args(args)
     try:
         prepare_live_dir(config.out)
@@ -566,7 +581,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not (config.app / "index.html").is_file():
         print(NO_APP.format(app=config.app))
     seeds = f"seed {config.seed}" + ("" if config.episodes == 1 else " onwards")
-    print(f"Playing {config.scenario} with {config.model}, {seeds}, into {config.out}/")
+    print(f"Playing {config.scenario} with d1-ultra deciding, {config.networks} value networks, {seeds}, into {config.out}/")
     try:
         try:
             play(config, hub, stop, log=True)

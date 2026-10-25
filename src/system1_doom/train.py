@@ -1,6 +1,12 @@
-"""Train the controller's learned modules over many episodes, resuming across runs.
+"""Train the value networks on episodes d1-ultra plays, resuming across runs.
 
-    python -m system1_doom.train --scenario deadly_corridor.cfg --episodes 200
+    python -m system1_doom.train --scenario deadly_corridor.cfg --episodes 50
+    python -m system1_doom.train --scenario deadly_corridor.cfg --evaluate 5
+
+d1-ultra makes every decision (it needs LIQUID_API_KEY); the five value networks learn between
+episodes from what it played, and serve the `values` evidence channel. Training is therefore a d1
+cost too: about six calls per decision. The run folder also keeps the relevance ledger
+(`relevance.json`), which every episode updates.
 """
 
 from __future__ import annotations
@@ -16,7 +22,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Union
 
 from system1_doom.actions import ActionSpec
 from system1_doom.charts import render_learning_curves, rolling_mean
-from system1_doom.controller import ControllerConfig, DoomDecisionController
+from system1_doom.controller import NO_KEY_MESSAGE, ControllerConfig, DoomDecisionController
+from system1_doom.d1_client import TransportFn, load_api_key
 from system1_doom.vizdoom_env import ViZDoomBridge
 
 if TYPE_CHECKING:
@@ -31,7 +38,7 @@ BEST_WINDOW = 20
 
 
 class RunStore:
-    """Files of one training run: models, experience, admitted macros, metrics, and charts."""
+    """Files of one run: value networks, experience, admitted macros, the relevance ledger, metrics, and charts."""
 
     def __init__(self, run_dir: Union[str, Path]) -> None:
         self.root = Path(run_dir)
@@ -42,11 +49,12 @@ class RunStore:
         self.macros = self.root / "macros.json"
         self.metrics = self.root / "metrics.jsonl"
         self.curves = self.root / "learning_curves.png"
+        self.relevance = self.root / "relevance.json"
 
     def reset(self) -> None:
-        for path in (self.checkpoint, self.best, self.replay, self.macros, self.metrics, self.curves):
+        for path in (self.checkpoint, self.best, self.replay, self.macros, self.metrics, self.curves, self.relevance):
             path.unlink(missing_ok=True)
-        for name in ("ticks.jsonl", "proposals.jsonl"):
+        for name in ("ticks.jsonl", "proposals.jsonl", "history.jsonl"):
             (self.root / name).unlink(missing_ok=True)
 
     def load_metrics(self) -> List[Dict[str, Any]]:
@@ -76,13 +84,6 @@ def default_run_dir(scenario: str) -> Path:
     return Path("runs") / Path(scenario).stem
 
 
-def exploration_schedule(episode_index: int, start: float, end: float, decay_episodes: int) -> float:
-    if decay_episodes <= 0:
-        return end
-    frac = min(1.0, max(0.0, episode_index / decay_episodes))
-    return start + (end - start) * frac
-
-
 def load_learner(store: RunStore, overrides: Optional[Dict[str, Any]] = None, fresh: bool = False) -> "Learner":
     """Resume from the run folder, or start new networks. `overrides` only holds explicitly given settings."""
     from system1_doom.learning import Learner, LearnerConfig
@@ -96,7 +97,7 @@ def load_learner(store: RunStore, overrides: Optional[Dict[str, Any]] = None, fr
 
 
 def load_play_learner(store: RunStore) -> Optional["Learner"]:
-    """The strongest saved model for watching or evaluation: best.pt if present, else the latest checkpoint."""
+    """The strongest saved networks for watching or evaluation: best.pt if present, else the latest checkpoint."""
     from system1_doom.learning import Learner
 
     for path in (store.best, store.checkpoint):
@@ -138,14 +139,15 @@ def learn_from_episode(
         "died": bool(result.get("died", False)),
         "transitions": int(result.get("transitions", 0)),
         "replay_size": learner.replay.size,
-        "network_share": round(float(result.get("network_share", 0.0)), 4),
-        "exploration_floor": round(ctrl.exploration_floor, 4),
-        "explored_steps": int(result.get("explored_steps", 0)),
+        "network_share": round(learner.network_share, 4),
+        "finished_reason": str(result.get("finished_reason", "")),
+        "missed_ticks": int(result.get("misses", {}).get("missed_ticks", 0)),
+        "cost_usd": round(float(result.get("cost", {}).get("usd", 0.0)), 6),
         "losses": losses,
         "macros": len(ctrl.admitted_macros()),
         "episode_sec": round(episode_sec, 2),
         "train_sec": round(train_sec, 2),
-        "d1_calls": ctrl.d1_client.call_count,
+        "d1_calls": int(result.get("cost", {}).get("calls", 0)),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     store.append_metrics(row)
@@ -169,7 +171,7 @@ def format_row(row: Dict[str, Any]) -> str:
     loss_txt = f"{sum(module_losses) / len(module_losses):6.3f}" if module_losses else "     -"
     return (
         f"ep {row['episode']:5d}  reward {row['reward']:9.1f}  kills {row['kills']:3.0f}  hp {row['health']:4.0f}  "
-        f"{status}  net {100 * row['network_share']:3.0f}%  explore {row['exploration_floor']:.2f}  "
+        f"{status}  missed {row.get('missed_ticks', 0):3d}  calls {row.get('d1_calls', 0):5d}  ${row.get('cost_usd', 0.0):.4f}  "
         f"loss {loss_txt}  ticks {row['ticks']:4d}  {row['episode_sec'] + row['train_sec']:5.1f}s"
         f"{'  * best' if row.get('best') else ''}"
     )
@@ -188,8 +190,8 @@ def summarize(rows: List[Dict[str, Any]], new_rows: int, store: RunStore) -> str
         f"Run folder {store.root}: {len(rows)} episodes total, {new_rows} this session.",
         f"  Mean reward   first {k}: {mean(first, 'reward'):9.1f}   last {k}: {mean(last, 'reward'):9.1f}",
         f"  Success rate  first {k}: {100 * mean(first, 'cleared'):8.0f}%   last {k}: {100 * mean(last, 'cleared'):8.0f}%",
-        f"  Network share now {100 * rows[-1]['network_share']:.0f}%, replay {rows[-1]['replay_size']} transitions, "
-        f"{rows[-1]['macros']} admitted macros.",
+        f"  Replay {rows[-1]['replay_size']} transitions, {rows[-1]['macros']} admitted macros, "
+        f"d1-ultra cost this run ${sum(float(r.get('cost_usd', 0.0)) for r in rows):.4f}.",
         f"  Charts: {store.curves}",
     ]
     return "\n".join(lines)
@@ -198,27 +200,27 @@ def summarize(rows: List[Dict[str, Any]], new_rows: int, store: RunStore) -> str
 EVAL_SEED_BASE = 10_000
 
 
-def evaluate(scenario: str, store: RunStore, episodes: int, max_ticks: int) -> Dict[str, Dict[str, float]]:
-    """Play identical seeded episodes greedily, with and without the trained networks."""
+def evaluate(
+    scenario: str,
+    store: RunStore,
+    episodes: int,
+    max_ticks: int,
+    transport: Optional[TransportFn] = None,
+    api_key: Optional[str] = None,
+) -> Dict[str, Dict[str, float]]:
+    """Play identical seeded episodes with d1-ultra deciding, with no, the latest and the best value networks as evidence."""
     from system1_doom.learning import Learner
 
-    contenders: List[Any] = [("heuristics", None)]
+    contenders: List[Any] = [("none", None)]
     for label, path in (("latest", store.checkpoint), ("best", store.best)):
         if path.is_file():
             contenders.append((label, Learner.load(path)))
     trained_episodes = max((model.episodes for _, model in contenders if model is not None), default=0)
     report: Dict[str, Dict[str, float]] = {}
     for label, model in contenders:
-        env = ViZDoomBridge(scenario=scenario, window_visible=False, include_jpeg_frame=False)
-        cfg = ControllerConfig(
-            execution_mode="async_cached",
-            enable_d1_ultra=False,
-            enable_slow_llm=False,
-            tick_budget_sec=0.04,
-            log_dir=str(store.root / "eval"),
-            deterministic_arbiter=True,
-        )
-        ctrl = DoomDecisionController(env=env, config=cfg, learner=model)
+        env = ViZDoomBridge(scenario=scenario, window_visible=False)
+        cfg = ControllerConfig(seed=EVAL_SEED_BASE, enable_slow_llm=False, log_dir=str(store.root / "eval" / label))
+        ctrl = DoomDecisionController(env=env, config=cfg, learner=model, transport=transport, api_key=api_key)
         ctrl.restore_macros(store.load_macros())
         results = []
         try:
@@ -245,8 +247,8 @@ def evaluate(scenario: str, store: RunStore, episodes: int, max_ticks: int) -> D
 
 def format_evaluation(report: Dict[str, Dict[str, float]], scenario: str, episodes: int) -> str:
     lines = [
-        f"Evaluation on {scenario}: {episodes} identical seeded episodes each, no exploration, no learning.",
-        f"  {'':12s}{'reward':>9s}{'cleared':>9s}{'survived':>10s}{'kills':>7s}{'health':>8s}{'ticks':>7s}",
+        f"Evaluation on {scenario}: {episodes} identical seeded episodes each, d1-ultra deciding, no learning.",
+        f"  {'networks':12s}{'reward':>9s}{'cleared':>9s}{'survived':>10s}{'kills':>7s}{'health':>8s}{'ticks':>7s}",
     ]
     for label, m in report.items():
         lines.append(
@@ -259,9 +261,9 @@ def format_evaluation(report: Dict[str, Dict[str, float]], scenario: str, episod
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Train the Doom controller's learned decision modules")
+    parser = argparse.ArgumentParser(description="Train the value networks on episodes d1-ultra plays")
     parser.add_argument("--scenario", default="deadly_corridor.cfg", help="ViZDoom scenario config filename")
-    parser.add_argument("--episodes", type=int, default=100, help="Episodes to play in this session")
+    parser.add_argument("--episodes", type=int, default=50, help="Episodes to play in this session")
     parser.add_argument("--max-ticks", type=int, default=500, help="Decision cap per episode")
     parser.add_argument("--run-dir", default=None, help="Run folder (default: runs/<scenario name>)")
     parser.add_argument("--fresh", action="store_true", help="Delete the run folder's models and history first")
@@ -270,26 +272,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--trust-count",
         type=float,
         default=None,
-        help="Tries of an action in a situation before its network gets 50%% weight (default 25)",
+        help="Tries of an action in a situation at which the reported network share reaches 50%% (default 25)",
     )
-    parser.add_argument("--explore-start", type=float, default=0.6)
-    parser.add_argument("--explore-end", type=float, default=0.05)
-    parser.add_argument("--explore-decay", type=int, default=100, help="Episodes to decay exploration over")
     parser.add_argument("--chart-every", type=int, default=5, help="Redraw learning curves every N episodes")
-    parser.add_argument("--seed", type=int, default=None, help="ViZDoom and network seed")
-    parser.add_argument("--d1", action="store_true", help="Use Liquid AI d1-ultra (async cached) while training")
+    parser.add_argument("--seed", type=int, default=None, help="ViZDoom, network and System 1 draw seed")
+    parser.add_argument("--call-budget", type=float, default=None, help="Per-call budget in seconds for each d1-ultra call (default 5)")
+    level = parser.add_mutually_exclusive_group()
+    level.add_argument("--explore", dest="level", action="store_const", const="explore", help="Play at the explore level")
+    level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Play at the exploit level (default)")
     parser.add_argument("--codex", action="store_true", help="Let the slow Codex worker propose new macros")
     parser.add_argument(
         "--evaluate",
         type=int,
         default=0,
         metavar="N",
-        help="Skip training; compare trained networks against heuristics on N identical seeded episodes",
+        help="Skip training; play N identical seeded episodes with no, the latest and the best networks as evidence",
     )
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] = None) -> int:
+    """`transport` answers d1-ultra calls in tests; real play needs LIQUID_API_KEY."""
     args = build_parser().parse_args(argv)
     try:
         from system1_doom.learning import CheckpointMismatch
@@ -297,11 +300,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except ImportError:
         print(INSTALL_HINT, file=sys.stderr)
         return 2
+    api_key = load_api_key()
+    if not api_key:
+        if transport is None:
+            print(NO_KEY_MESSAGE, file=sys.stderr)
+            return 2
+        api_key = "test-transport"
 
     store = RunStore(args.run_dir or default_run_dir(args.scenario))
     if args.evaluate > 0:
         try:
-            report = evaluate(args.scenario, store, args.evaluate, args.max_ticks)
+            report = evaluate(args.scenario, store, args.evaluate, args.max_ticks, transport=transport, api_key=api_key)
         except CheckpointMismatch as exc:
             print(f"{exc}\nRetrain with --fresh.", file=sys.stderr)
             return 2
@@ -323,28 +332,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"{exc}\nStart over with --fresh, or point --run-dir at a new folder.", file=sys.stderr)
         return 2
 
-    env = ViZDoomBridge(
-        scenario=args.scenario,
-        window_visible=False,
-        include_jpeg_frame=args.d1,
-        seed=args.seed,
-    )
+    env = ViZDoomBridge(scenario=args.scenario, window_visible=False, seed=args.seed)
     cfg = ControllerConfig(
-        execution_mode="async_cached",
-        enable_d1_ultra=args.d1,
+        call_budget_sec=args.call_budget,
+        seed=args.seed or 0,
+        exploration_level=args.level,
         enable_slow_llm=args.codex,
-        tick_budget_sec=0.04,
         log_dir=str(store.root),
+        relevance_path=str(store.relevance),
         record_experience=True,
     )
-    ctrl = DoomDecisionController(env=env, config=cfg, learner=learner)
+    try:
+        ctrl = DoomDecisionController(env=env, config=cfg, learner=learner, transport=transport, api_key=api_key)
+    except Exception:
+        env.close()
+        raise
     ctrl.restore_macros(store.load_macros())
 
     resumed = learner.episodes
     print(
-        f"Training on {args.scenario} in {store.root} "
-        f"({'resuming after episode ' + str(resumed) if resumed else 'fresh start'}, "
-        f"network share {100 * learner.network_share:.0f}%)",
+        f"Training the value networks on {args.scenario} in {store.root}, d1-ultra deciding "
+        f"({'resuming after episode ' + str(resumed) if resumed else 'fresh start'})",
         flush=True,
     )
     played = 0
@@ -352,9 +360,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for i in range(args.episodes):
             if i > 0:
                 env.restart_episode()
-            ctrl.exploration_floor = exploration_schedule(
-                learner.episodes, args.explore_start, args.explore_end, args.explore_decay
-            )
             t0 = time.perf_counter()
             result = ctrl.run_episode(max_ticks=args.max_ticks)
             row = learn_from_episode(ctrl, learner, store, result, args.scenario, time.perf_counter() - t0)

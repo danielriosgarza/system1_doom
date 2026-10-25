@@ -1,41 +1,61 @@
+"""The HUD and the side panel show the tick's six d1-ultra instances."""
+
 from pathlib import Path
+
 import numpy as np
 
+from system1_doom.configuration import default_configuration
+from system1_doom.d1_client import D1UltraClient
 from system1_doom.logger import ProposalTrace, TickTrace
-from system1_doom.visualizer import EpisodeRecorder, render_decision_dashboard, render_hud_frame
+from system1_doom.system1 import Pick, System1
+from system1_doom.tracing import OutcomeTrace
+from system1_doom.visualizer import EpisodeRecorder, instance_rows, render_decision_dashboard, render_hud_frame
+from tests.fake_d1 import FakeD1
+from tests.test_evidence import golden_inputs
 
 
-def make_dummy_trace(tick: int = 1) -> TickTrace:
+def make_dummy_trace(tick: int = 1, fake: FakeD1 = None) -> TickTrace:
+    """A schema-2 trace from one System 1 tick on the golden evidence, answered by the fake."""
+    client = D1UltraClient(api_key="liquid_test_key", transport=fake or FakeD1(), max_workers=6)
+    s1 = System1(client, pool_size=6)
+    try:
+        inputs = golden_inputs().model_copy(update={"messages": ()})
+        result = s1.tick(default_configuration(), inputs)
+    finally:
+        s1.shutdown()
+        client.shutdown(wait=False)
     return TickTrace(
-        timestamp="2026-10-23T15:00:00Z",
+        timestamp="2026-10-25T15:00:00Z",
         tick=tick,
+        episode_id="test",
+        configuration_version=1,
         state_hash="abcdef0123456789",
-        context_signature="hp:healthy|ammo:stocked|enemies:2:mid|dmg:clear|pickup:pickup_visible",
-        budget_mode="full",
-        available_actions=["circle_strafe_left", "peek_and_fire", "shoot", "move_forward"],
-        module_outputs={
-            "survival": {"top_action": "circle_strafe_left", "confidence": 0.82, "uncertainty": 0.18, "used_d1_ultra": True, "probabilities": {"circle_strafe_left": 0.6}},
-            "combat": {"top_action": "peek_and_fire", "confidence": 0.77, "uncertainty": 0.23, "used_d1_ultra": True, "probabilities": {"peek_and_fire": 0.55}},
-            "navigation": {"top_action": "move_forward", "confidence": 0.64, "uncertainty": 0.36, "used_d1_ultra": True, "probabilities": {"move_forward": 0.5}},
-            "resource": {"top_action": "move_forward", "confidence": 0.51, "uncertainty": 0.49, "used_d1_ultra": True, "probabilities": {"move_forward": 0.4}},
-            "goal": {"top_action": "circle_strafe_left", "confidence": 0.73, "uncertainty": 0.27, "used_d1_ultra": True, "probabilities": {"circle_strafe_left": 0.52}},
-        },
-        projection_results_used={
-            "circle_strafe_left": {"expected_value": 1.85, "expected_damage_taken": 2.1, "expected_damage_dealt": 24.0, "survival_probability": 0.92}
-        },
-        arbiter_distribution={
-            "circle_strafe_left": 0.54,
-            "peek_and_fire": 0.26,
-            "shoot": 0.12,
-            "move_forward": 0.08,
-        },
-        selected_action="circle_strafe_left",
-        primitive_steps_executed=["strafe_left", "turn_right", "shoot", "strafe_left"],
-        exploration_state={"exploration_pressure": 0.22, "temperature": 0.32, "recent_failures": 0},
-        active_strategy="strat_tactical_combat",
+        context_signature=inputs.context,
+        state=inputs.state,
+        available_actions=inputs.menu_ids(),
+        instances=result.instances,
+        messages=list(result.messages),
+        pick=result.pick,
+        executed_action=result.pick.action,
+        primitive_steps_executed=["shoot", "shoot", "shoot", "shoot"],
+        outcome=OutcomeTrace(reward=14.5),
         reward_outcome=14.5,
-        used_d1_ultra=True,
+        missed=result.missed,
+        exploration_level="exploit",
+        active_strategy="strat_tactical_combat",
+        timing_ms={"total": 812.0, "senses": 520.0, "central": 290.0},
+        usage=result.usage(),
     )
+
+
+def test_instance_rows_name_each_sense_and_the_centrals_pick():
+    trace = make_dummy_trace()
+    rows = instance_rows(trace)
+    assert [r[0] for r in rows] == ["survival", "combat", "navigation", "resource", "goal", "central"]
+    assert rows[1][:2] == ("combat", "spoke") and rows[1][3] == 0.9 and "shoot" in rows[1][2]
+    assert rows[0][1] == "silent" and rows[-1][:2] == ("central", "top") and rows[-1][2] == "shoot"
+    missed = trace.model_copy(update={"pick": Pick(kind="missed"), "executed_action": None, "missed": True})
+    assert instance_rows(missed)[-1][1] == "missed"
 
 
 def test_render_hud_frame_and_save_gif(tmp_path: Path):
@@ -43,36 +63,21 @@ def test_render_hud_frame_and_save_gif(tmp_path: Path):
     screen[:, :, 0] = 60
     trace = make_dummy_trace(1)
     hud_img = render_hud_frame(screen, trace, health=85.0, armor=25.0, ammo=18)
-    assert hud_img.width >= 800
-    assert hud_img.height >= 400
+    assert hud_img.size == (1080, 480)
 
     rec = EpisodeRecorder()
     rec.add_step([screen, screen], trace, health=85.0, armor=25.0, ammo=18)
     gif_path = tmp_path / "test_out.gif"
     rec.save_gif(gif_path, fps=8)
-    assert gif_path.is_file()
-    assert gif_path.stat().st_size > 500
+    assert gif_path.is_file() and gif_path.stat().st_size > 500
 
 
-def test_decision_dashboard_shows_d1_and_codex_sections():
-    trace = make_dummy_trace(4)
-    trace = trace.model_copy(
-        update={
-            "d1_arbiter_distribution": {"circle_strafe_left": 0.62, "shoot": 0.38},
-            "module_outputs": {
-                **trace.module_outputs,
-                "combat": {
-                    **trace.module_outputs["combat"],
-                    "d1_top_action": "peek_and_fire",
-                    "d1_probabilities": {"peek_and_fire": 0.71, "shoot": 0.29},
-                    "request_action_expansion": True,
-                },
-            },
-        }
-    )
+def test_decision_dashboard_shows_the_instances_and_proposals():
+    trace = make_dummy_trace(4, FakeD1().fail("navigation", [0], "raise"))
+    assert instance_rows(trace)[2][1] == "missed"
     proposal = ProposalTrace(
-        timestamp="2026-10-23T15:00:01Z",
-        request_context="combat:corridor:need a new strafe",
+        timestamp="2026-10-25T15:00:01Z",
+        request_context="test:corridor:need a new strafe",
         raw_proposal="{}",
         parsed_proposal={"id": "evasive_burst_1", "description": "Sidestep, fire, and leave the line of fire."},
         validation_result="valid",
@@ -80,16 +85,7 @@ def test_decision_dashboard_shows_d1_and_codex_sections():
         admitted_action_id="evasive_burst_1",
         d1_admission_probability=0.81,
     )
-    panel = render_decision_dashboard(
-        trace,
-        proposals=[proposal],
-        health=80,
-        armor=10,
-        ammo=20,
-        d1_enabled=True,
-        codex_enabled=True,
-        codex_busy=False,
-    )
+    panel = render_decision_dashboard(trace, proposals=[proposal], health=80, armor=10, ammo=20, codex_enabled=True)
     assert panel.size == (560, 760)
     colors = panel.getcolors(maxcolors=50000)
     assert colors is not None and len(colors) > 8

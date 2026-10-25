@@ -10,7 +10,7 @@ from PIL import Image
 import vizdoom as vzd
 
 from system1_doom.actions import ActionSpec
-from system1_doom.motor import TacticalMotor, _screen_size, is_enemy_name, is_ignored_actor, is_pickup_name
+from system1_doom.motor import MotorBurst, TacticalMotor, _screen_size, is_enemy_name, is_ignored_actor, is_pickup_name
 from system1_doom.state import (
     ControllerMemory,
     EnemyObservation,
@@ -366,16 +366,15 @@ class ViZDoomBridge:
         )
         return WorldState(observation=obs, memory=mem)
 
+    @property
+    def episode_cells_discovered(self) -> int:
+        """Map cells (128 x 128 units) visited this episode, shown in the position channel."""
+        return len(self._episode_cells)
+
     def execute_action(self, action: ActionSpec) -> ExecutionStepResult:
         """Realize the selected action as a bounded closed-loop reflex burst."""
         if self.game.is_episode_finished() and not self.auto_restart:
-            return ExecutionStepResult(
-                reward=0.0,
-                primitive_steps_executed=["idle"],
-                terminated_early=True,
-                episode_finished=True,
-            )
-
+            return self._finished_result()
         self._episode_cells.add(self._current_cell())
         x0 = self._safe_var(vzd.GameVariable.POSITION_X, 0.0)
         y0 = self._safe_var(vzd.GameVariable.POSITION_Y, 0.0)
@@ -385,13 +384,39 @@ class ViZDoomBridge:
             steer_to_pickup=steer,
             step_delay_ms=self.step_delay_ms,
         )
+        displacement = self._displacement(x0, y0)
+        if steer and self.motor.last_pickup_target is not None and displacement < UNREACHABLE_PICKUP_PROGRESS:
+            # Walking at this pickup got nowhere (ledge, wall, or a full inventory); stop chasing it this episode.
+            self.motor.ignored_pickups.add(self.motor.last_pickup_target)
+        return self._account(action.id, burst, displacement)
+
+    def execute_idle(self, frames: int) -> ExecutionStepResult:
+        """Hold no key for `frames` game frames: what a decision the central instance missed executes."""
+        if self.game.is_episode_finished() and not self.auto_restart:
+            return self._finished_result()
+        self._episode_cells.add(self._current_cell())
+        x0 = self._safe_var(vzd.GameVariable.POSITION_X, 0.0)
+        y0 = self._safe_var(vzd.GameVariable.POSITION_Y, 0.0)
+        burst = self.motor.idle(frames)
+        return self._account("missed", burst, self._displacement(x0, y0))
+
+    @staticmethod
+    def _finished_result() -> ExecutionStepResult:
+        return ExecutionStepResult(
+            reward=0.0,
+            primitive_steps_executed=["idle"],
+            terminated_early=True,
+            episode_finished=True,
+        )
+
+    def _displacement(self, x0: float, y0: float) -> float:
         self._last_displacement = math.hypot(
             self._safe_var(vzd.GameVariable.POSITION_X, x0) - x0,
             self._safe_var(vzd.GameVariable.POSITION_Y, y0) - y0,
         )
-        if steer and self.motor.last_pickup_target is not None and self._last_displacement < UNREACHABLE_PICKUP_PROGRESS:
-            # Walking at this pickup got nowhere (ledge, wall, or a full inventory); stop chasing it this episode.
-            self.motor.ignored_pickups.add(self.motor.last_pickup_target)
+        return self._last_displacement
+
+    def _account(self, label: str, burst: MotorBurst, displacement: float) -> ExecutionStepResult:
         new_cells = 0
         if not burst.episode_finished:
             cell = self._current_cell()
@@ -402,9 +427,7 @@ class ViZDoomBridge:
         self._tick += 1
         self._episode_tick += 1
         self._total_reward += burst.reward
-        self._state_summaries.append(
-            f"tick={self._tick} act={action.id} hp={burst.health_after:.0f} r={burst.reward:+.1f}"
-        )
+        self._state_summaries.append(f"tick={self._tick} act={label} hp={burst.health_after:.0f} r={burst.reward:+.1f}")
         return ExecutionStepResult(
             reward=burst.reward,
             primitive_steps_executed=burst.primitives,
@@ -421,7 +444,7 @@ class ViZDoomBridge:
             ammo_gain=burst.ammo_gain,
             died=burst.died,
             new_cells=new_cells,
-            displacement=self._last_displacement,
+            displacement=displacement,
         )
 
     def close(self) -> None:

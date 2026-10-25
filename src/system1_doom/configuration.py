@@ -161,10 +161,14 @@ class Configuration(BaseModel):
         data["version"] = self.version + 1
         return Configuration.model_validate(data)
 
+    def replace(self, **changes: object) -> "Configuration":
+        """The same version with `changes` applied: for setting up the initial configuration before play."""
+        return Configuration.model_validate({**self.model_dump(), **changes})
+
     def with_bounds(self, **changes: object) -> "Configuration":
         """The same version with some bounds replaced (used before play starts, e.g. by --call-budget)."""
         bounds = Bounds.model_validate({**self.bounds.model_dump(), **changes})
-        return Configuration.model_validate({**self.model_dump(), "bounds": bounds.model_dump()})
+        return self.replace(bounds=bounds.model_dump())
 
     def save(self, path: Union[str, Path]) -> None:
         Path(path).write_text(self.model_dump_json(indent=2), encoding="utf-8")

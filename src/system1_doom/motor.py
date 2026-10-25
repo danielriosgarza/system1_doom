@@ -1,10 +1,11 @@
 """Bounded closed-loop motor for ViZDoom scenarios.
 
-The arbiter picks one action from a finite set and the motor executes that action's
-primitive list. Each primitive keeps a small amount of closed-loop assistance:
+d1-ultra's central instance picks one action from a finite set and the motor executes that
+action's primitive list. Each primitive keeps a small amount of closed-loop assistance:
 `shoot` aims at the locked target before firing, strafes keep tracking it, and the
 forward steps of a pickup-seeking action steer toward the nearest visible pickup.
-Every burst is bounded by the length of the action's primitive list.
+Every burst is bounded by the length of the action's primitive list. When the central
+instance missed, `idle` presses no key for the decision's frames: nothing stands in for it.
 """
 
 from __future__ import annotations
@@ -204,6 +205,51 @@ class TacticalMotor:
             reward=reward,
             primitives=primitives or ["idle"],
             frames=frames,
+            terminated_early=terminated_early or finished,
+            episode_finished=finished,
+            health_after=hp_after,
+            damage_taken=max(0.0, hp_before - hp_after),
+            kills=kills_after,
+            armor=armor_after,
+            kills_delta=max(0.0, kills_after - kills_before),
+            hits_delta=max(0.0, hits_after - hits_before),
+            health_gain=max(0.0, hp_after - hp_before),
+            armor_gain=max(0.0, armor_after - armor_before),
+            ammo_gain=max(0.0, ammo_after - ammo_before),
+            died=bool(self.game.is_player_dead()),
+        )
+
+    def idle(self, frames: int) -> MotorBurst:
+        """Press no key for `frames` game frames (a missed decision), in steps of the reflex frame skip."""
+        hp_before = self._var(vzd.GameVariable.HEALTH, 100.0)
+        kills_before = self._var(vzd.GameVariable.KILLCOUNT, 0.0)
+        hits_before = self._var(vzd.GameVariable.HITCOUNT, 0.0)
+        armor_before = self._var(vzd.GameVariable.ARMOR, 0.0)
+        ammo_before = self._var(vzd.GameVariable.SELECTED_WEAPON_AMMO, 0.0)
+        reward = 0.0
+        primitives: List[str] = []
+        last_frame: Optional[np.ndarray] = None
+        terminated_early = False
+        self.last_pickup_target = None
+        for _ in range(max(1, frames // REFLEX_FRAME_SKIP)):
+            if self.game.is_episode_finished():
+                terminated_early = True
+                break
+            reward += self._press(set())
+            primitives.append("idle")
+            state = self.game.get_state()
+            if state is not None and state.screen_buffer is not None:
+                last_frame = state.screen_buffer.copy()
+        finished = bool(self.game.is_episode_finished())
+        hp_after = self._var(vzd.GameVariable.HEALTH, hp_before)
+        kills_after = self._var(vzd.GameVariable.KILLCOUNT, kills_before)
+        hits_after = self._var(vzd.GameVariable.HITCOUNT, hits_before)
+        armor_after = self._var(vzd.GameVariable.ARMOR, armor_before)
+        ammo_after = self._var(vzd.GameVariable.SELECTED_WEAPON_AMMO, ammo_before)
+        return MotorBurst(
+            reward=reward,
+            primitives=primitives or ["idle"],
+            frames=[last_frame] if last_frame is not None else [],
             terminated_early=terminated_early or finished,
             episode_finished=finished,
             health_after=hp_after,

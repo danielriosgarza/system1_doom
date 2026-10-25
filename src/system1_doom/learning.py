@@ -1,10 +1,15 @@
-"""Learned decision modules (Spec Section 16).
+"""The five value networks: evidence learned from past play, never a decision.
 
-Each of the five modules owns a small value network that scores (state, action)
-pairs against that module's own reward signal. A gate network learns, per state,
-how much following each module's top pick has paid off in overall (goal) return.
-Training runs between episodes on a bounded replay buffer, so the real-time loop
-only ever performs fixed-size forward passes.
+Each network (survival, combat, navigation, resource, goal) scores (state, action) pairs against
+its own reward signal: the n-step discounted return of what followed the action. Their predictions,
+with how often each action was tried in the situation, are rendered in the `values` evidence channel
+(design spec, sections 3 and 6); no prediction is multiplied into a choice. Training runs between
+episodes on a bounded replay buffer of d1-played experience, so play only ever performs fixed-size
+forward passes.
+
+The arbiter gate network of earlier versions is gone (the relevance ledger replaced it). Checkpoints
+and replay files written with it still load: the gate's weights, its optimizer state and the replay's
+gate mask are ignored.
 """
 
 from __future__ import annotations
@@ -19,12 +24,15 @@ import numpy as np
 import torch
 from torch import nn
 
-# module_rewards lives with the torch-free encodings so traces can report it without importing torch.
-from system1_doom.features import ACTION_DIM, MODULE_NAMES, STATE_DIM, module_rewards
+# module_rewards and n_step_returns live with the torch-free encodings, so traces and the relevance
+# ledger can use them without importing torch.
+from system1_doom.features import ACTION_DIM, MODULE_NAMES, STATE_DIM, module_rewards, n_step_returns
 
-GOAL_INDEX = MODULE_NAMES.index("goal")
 CHECKPOINT_FORMAT = 1
-ARCHITECTURE_FIELDS = ("hidden", "gate_hidden")
+ARCHITECTURE_FIELDS = ("hidden",)
+# Checkpoints written before the gate was removed hold these; loading ignores them.
+LEGACY_GATE_KEYS = ("gate",)
+__all__ = ["CheckpointMismatch", "Learner", "LearnerConfig", "ReplayBuffer", "RunningStats", "n_step_returns"]
 
 
 class CheckpointMismatch(ValueError):
@@ -36,25 +44,12 @@ class LearnerConfig:
     gamma: float = 0.9
     n_step: int = 8
     hidden: int = 64
-    gate_hidden: int = 32
     lr: float = 1e-3
     batch_size: int = 256
     train_steps: int = 200
     replay_capacity: int = 100_000
     trust_count: float = 25.0
-    gate_temperature: float = 0.5
     seed: int = 0
-
-
-def n_step_returns(rewards: np.ndarray, gamma: float, n: int) -> np.ndarray:
-    """Discounted sum of the next `n` rewards for every step, truncated at episode end."""
-    steps = rewards.shape[0]
-    returns = np.zeros_like(rewards, dtype=np.float32)
-    for t in range(steps):
-        horizon = rewards[t : min(steps, t + n)]
-        discounts = gamma ** np.arange(horizon.shape[0], dtype=np.float32)
-        returns[t] = (horizon * discounts[:, None]).sum(axis=0)
-    return returns
 
 
 class RunningStats:
@@ -99,7 +94,7 @@ class RunningStats:
 
 
 class ReplayBuffer:
-    """Bounded ring buffer of (state, action, per-module return, gate credit mask)."""
+    """Bounded ring buffer of (state, action, per-network return)."""
 
     def __init__(self, capacity: int, state_dim: int = STATE_DIM, action_dim: int = ACTION_DIM) -> None:
         self.capacity = max(1, capacity)
@@ -107,17 +102,15 @@ class ReplayBuffer:
         self.states = np.zeros((self.capacity, state_dim), dtype=np.float32)
         self.actions = np.zeros((self.capacity, action_dim), dtype=np.float32)
         self.returns = np.zeros((self.capacity, width), dtype=np.float32)
-        self.gate_mask = np.zeros((self.capacity, width), dtype=np.float32)
         self.size = 0
         self._next = 0
 
-    def add(self, states: np.ndarray, actions: np.ndarray, returns: np.ndarray, gate_mask: np.ndarray) -> None:
+    def add(self, states: np.ndarray, actions: np.ndarray, returns: np.ndarray) -> None:
         for row in range(states.shape[0]):
             i = self._next
             self.states[i] = states[row]
             self.actions[i] = actions[row]
             self.returns[i] = returns[row]
-            self.gate_mask[i] = gate_mask[row]
             self._next = (i + 1) % self.capacity
             self.size = min(self.capacity, self.size + 1)
 
@@ -127,7 +120,6 @@ class ReplayBuffer:
             "states": self.states[idx],
             "actions": self.actions[idx],
             "returns": self.returns[idx],
-            "gate_mask": self.gate_mask[idx],
         }
 
     def save(self, path: Union[str, Path]) -> None:
@@ -140,7 +132,6 @@ class ReplayBuffer:
             states=self.states[order],
             actions=self.actions[order],
             returns=self.returns[order],
-            gate_mask=self.gate_mask[order],
         )
         os.replace(tmp, path)
 
@@ -151,17 +142,8 @@ class ReplayBuffer:
             keep = slice(max(0, data["states"].shape[0] - self.capacity), None)
             self.size = 0
             self._next = 0
-            self.add(data["states"][keep], data["actions"][keep], data["returns"][keep], data["gate_mask"][keep])
-
-
-def _mlp(in_dim: int, hidden: int, out_dim: int) -> nn.Sequential:
-    return nn.Sequential(
-        nn.Linear(in_dim, hidden),
-        nn.ReLU(),
-        nn.Linear(hidden, hidden),
-        nn.ReLU(),
-        nn.Linear(hidden, out_dim),
-    )
+            # A replay file from before the gate was removed also holds `gate_mask`; it is ignored.
+            self.add(data["states"][keep], data["actions"][keep], data["returns"][keep])
 
 
 class ModuleValueNets(nn.Module):
@@ -190,7 +172,7 @@ class ModuleValueNets(nn.Module):
 
 
 class Learner:
-    """Owns the module value networks, the arbiter gate, experience, and training."""
+    """Owns the five value networks, their experience, and training."""
 
     def __init__(self, config: LearnerConfig = LearnerConfig()) -> None:
         self.config = config
@@ -198,10 +180,7 @@ class Learner:
         torch.set_num_threads(1)
         torch.manual_seed(config.seed)
         self.value_nets = ModuleValueNets(len(MODULE_NAMES), STATE_DIM + ACTION_DIM, config.hidden)
-        self.gate = _mlp(STATE_DIM, config.gate_hidden, len(MODULE_NAMES))
-        self.optimizer = torch.optim.Adam(
-            list(self.value_nets.parameters()) + list(self.gate.parameters()), lr=config.lr
-        )
+        self.optimizer = torch.optim.Adam(list(self.value_nets.parameters()), lr=config.lr)
         self.stats = RunningStats(len(MODULE_NAMES))
         self.replay = ReplayBuffer(config.replay_capacity)
         self.episodes = 0
@@ -209,8 +188,8 @@ class Learner:
         self.updates = 0
         self.best_score = -math.inf
         self.last_losses: Dict[str, float] = {}
-        # How often each (context signature, action) and each context was experienced.
-        # Networks only get a say where they have actually seen data, never on extrapolated actions.
+        # How often each (context signature, action) and each context was experienced: shown beside the
+        # predictions in the values channel, so d1 sees how much play stands behind each number.
         self.action_counts: Dict[str, int] = {}
         self.context_counts: Dict[str, int] = {}
         self._rng = np.random.default_rng(config.seed)
@@ -218,23 +197,23 @@ class Learner:
             "states": [],
             "actions": [],
             "rewards": [],
-            "gate_mask": [],
             "keys": [],
         }
 
     def _trust(self, count: float) -> float:
         return count / (count + self.config.trust_count)
 
-    def action_trust(self, context_signature: str, action_ids: List[str]) -> Dict[str, float]:
-        """Weight of each module network versus its heuristic, per candidate action in this context."""
-        return {aid: self._trust(self.action_counts.get(f"{context_signature}|{aid}", 0)) for aid in action_ids}
+    def tried_counts(self, context_signature: str, action_ids: List[str]) -> Dict[str, int]:
+        """How often each action was tried in this context in training (the values channel's 'tried')."""
+        return {aid: int(self.action_counts.get(f"{context_signature}|{aid}", 0)) for aid in action_ids}
 
-    def gate_trust(self, context_signature: str) -> float:
-        return self._trust(self.context_counts.get(context_signature, 0))
+    def action_trust(self, context_signature: str, action_ids: List[str]) -> Dict[str, float]:
+        """n / (n + trust_count) of each action's tries in this context: a summary of experience, for reports."""
+        return {aid: self._trust(self.action_counts.get(f"{context_signature}|{aid}", 0)) for aid in action_ids}
 
     @property
     def network_share(self) -> float:
-        """Experience-weighted trust over everything seen so far: how much of play the networks now steer."""
+        """Experience-weighted trust over everything seen so far: how familiar play has become to the networks."""
         total = sum(self.action_counts.values())
         if total == 0:
             return 0.0
@@ -244,37 +223,26 @@ class Learner:
     def pending_steps(self) -> int:
         return len(self._pending["states"])
 
-    def module_utilities(self, state_vec: np.ndarray, action_mat: np.ndarray) -> Dict[str, np.ndarray]:
-        """Predicted standardised return of every candidate action, per module."""
+    def predict_returns(self, state_vec: np.ndarray, action_mat: np.ndarray) -> Dict[str, np.ndarray]:
+        """Predicted standardised return of every candidate action, per network."""
         with torch.no_grad():
             s = torch.as_tensor(state_vec, dtype=torch.float32).unsqueeze(0).expand(action_mat.shape[0], -1)
             x = torch.cat([s, torch.as_tensor(action_mat, dtype=torch.float32)], dim=1)
             preds = self.value_nets(x).numpy()
         return {name: preds[i] for i, name in enumerate(MODULE_NAMES)}
 
-    def gate_weights(self, state_vec: np.ndarray) -> Dict[str, float]:
-        with torch.no_grad():
-            values = self.gate(torch.as_tensor(state_vec, dtype=torch.float32).unsqueeze(0)).squeeze(0)
-            weights = torch.softmax(values / self.config.gate_temperature, dim=0).numpy()
-        return {name: float(w) for name, w in zip(MODULE_NAMES, weights)}
-
     def record_step(
         self,
         state_vec: np.ndarray,
         action_vec: np.ndarray,
         result: Any,
-        module_top_actions: Dict[str, Optional[str]],
         executed_action_id: str,
         context_signature: str = "",
     ) -> None:
-        mask = np.asarray(
-            [1.0 if module_top_actions.get(name) == executed_action_id else 0.0 for name in MODULE_NAMES],
-            dtype=np.float32,
-        )
+        """Keep one executed decision of the episode in play, for `end_episode`."""
         self._pending["states"].append(np.asarray(state_vec, dtype=np.float32))
         self._pending["actions"].append(np.asarray(action_vec, dtype=np.float32))
         self._pending["rewards"].append(module_rewards(result))
-        self._pending["gate_mask"].append(mask)
         self._pending["keys"].append((context_signature, executed_action_id))
 
     def discard_episode(self) -> None:
@@ -294,7 +262,6 @@ class Learner:
             np.stack(self._pending["states"]),
             np.stack(self._pending["actions"]),
             returns,
-            np.stack(self._pending["gate_mask"]),
         )
         for context, action_id in self._pending["keys"]:
             key = f"{context}|{action_id}"
@@ -309,19 +276,15 @@ class Learner:
         n_steps = self.config.train_steps if steps is None else steps
         if self.replay.size < 32 or n_steps <= 0:
             return {}
-        totals = {name: 0.0 for name in MODULE_NAMES + ("gate",)}
+        totals = {name: 0.0 for name in MODULE_NAMES}
         for _ in range(n_steps):
             batch = self.replay.sample(self.config.batch_size, self._rng)
             states = torch.as_tensor(batch["states"])
             x = torch.cat([states, torch.as_tensor(batch["actions"])], dim=1)
             targets = torch.as_tensor(self.stats.normalize(batch["returns"]))
-            mask = torch.as_tensor(batch["gate_mask"])
 
             module_mse = torch.mean((self.value_nets(x) - targets.T) ** 2, dim=1)
             losses = {name: module_mse[i] for i, name in enumerate(MODULE_NAMES)}
-            gate_values = self.gate(states)
-            gate_err = (gate_values - targets[:, GOAL_INDEX : GOAL_INDEX + 1]) ** 2
-            losses["gate"] = (gate_err * mask).sum() / mask.sum().clamp(min=1.0)
 
             self.optimizer.zero_grad()
             torch.stack(list(losses.values())).sum().backward()
@@ -342,7 +305,6 @@ class Learner:
             "modules": list(MODULE_NAMES),
             "config": asdict(self.config),
             "value_nets": self.value_nets.state_dict(),
-            "gate": self.gate.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "stats": self.stats.to_dict(),
             "counters": {
@@ -379,8 +341,7 @@ class Learner:
                 stored[key] = value
         learner = cls(LearnerConfig(**stored))
         learner.value_nets.load_state_dict(payload["value_nets"])
-        learner.gate.load_state_dict(payload["gate"])
-        learner.optimizer.load_state_dict(payload["optimizer"])
+        learner.optimizer.load_state_dict(_value_net_optimizer_state(payload["optimizer"], len(list(learner.value_nets.parameters()))))
         for group in learner.optimizer.param_groups:
             group["lr"] = learner.config.lr
         learner.stats = RunningStats.from_dict(payload["stats"])
@@ -392,5 +353,21 @@ class Learner:
         learner.best_score = float(best) if best is not None else -math.inf
         learner.action_counts = {str(k): int(v) for k, v in payload.get("action_counts", {}).items()}
         learner.context_counts = {str(k): int(v) for k, v in payload.get("context_counts", {}).items()}
-        learner.last_losses = dict(payload.get("last_losses", {}))
+        learner.last_losses = {k: v for k, v in dict(payload.get("last_losses", {})).items() if k not in LEGACY_GATE_KEYS}
         return learner
+
+
+def _value_net_optimizer_state(state: Dict[str, Any], count: int) -> Dict[str, Any]:
+    """The optimizer state of the value networks' `count` parameters.
+
+    Checkpoints from before the gate was removed hold one Adam state over the value networks'
+    parameters followed by the gate's; the value networks' come first, so the first `count` are kept.
+    """
+    groups = state.get("param_groups", [])
+    if len(groups) != 1 or len(groups[0].get("params", [])) == count:
+        return state
+    kept = list(groups[0]["params"])[:count]
+    return {
+        "state": {k: v for k, v in state.get("state", {}).items() if k in set(kept)},
+        "param_groups": [{**groups[0], "params": kept}],
+    }

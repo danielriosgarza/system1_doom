@@ -240,13 +240,8 @@ class D1UltraClient:
         default_timeout: float = 5.0,
         max_workers: int = 6,
         transport: Optional[TransportFn] = None,
-        enabled: bool = True,  # LEGACY-SHIM: removed with modules/arbiter in this PR
     ) -> None:
         self.api_key = api_key if api_key is not None else load_api_key()
-        self.enabled = enabled and bool(self.api_key)  # LEGACY-SHIM
-        self._legacy_cache: Dict[str, D1Response] = {}  # LEGACY-SHIM
-        self._legacy_inflight: set = set()  # LEGACY-SHIM
-        self.error_count = 0  # LEGACY-SHIM
         self.model = model
         self.endpoint_url = endpoint_url
         self.default_timeout = default_timeout
@@ -365,34 +360,6 @@ class D1UltraClient:
     def miss_count(self) -> int:
         with self._lock:
             return sum(sum(c.misses.values()) for c in self._counters.values())
-
-    # LEGACY-SHIM: the cached and blocking calls of the module/arbiter design, removed with them in this PR.
-    def decide(self, state: str, questions: Dict[str, QuestionSpec], images: Optional[List[str]] = None, timeout: Optional[float] = None) -> Optional[D1Response]:
-        if not self.enabled:
-            return None
-        result = self.call("legacy", state, questions, images=images, budget=(timeout or self.default_timeout) + 5.0)
-        if result.response is None:
-            self.error_count += 1
-        return result.response
-
-    def submit_async(self, context_key: str, state: str, questions: Dict[str, QuestionSpec], images: Optional[List[str]] = None, timeout: Optional[float] = None) -> bool:
-        if not self.enabled or context_key in self._legacy_inflight:
-            return False
-        self._legacy_inflight.add(context_key)
-
-        def _worker() -> None:
-            try:
-                resp = self.decide(state, questions, images, timeout)
-                if resp is not None:
-                    self._legacy_cache[context_key] = resp
-            finally:
-                self._legacy_inflight.discard(context_key)
-
-        threading.Thread(target=_worker, daemon=True).start()
-        return True
-
-    def get_cached(self, context_key: str, fallback_to_latest: bool = False) -> Optional[D1Response]:
-        return self._legacy_cache.get(context_key)
 
     def shutdown(self, wait: bool = True) -> None:
         self._pool.shutdown(wait=wait, cancel_futures=True)

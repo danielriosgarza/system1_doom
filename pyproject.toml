@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "system1-doom"
 version = "0.3.0"
-description = "Bounded decision controller for ViZDoom with learned per-module value networks, Liquid AI d1-ultra, and asynchronous Codex proposal generation"
+description = "A ViZDoom agent whose every decision is made by Liquid AI d1-ultra instances: five senses and a central chooser, with bounded evidence, value networks as evidence, and asynchronous macro proposals"
 readme = "docs/spec.md"
 requires-python = ">=3.11"
 dependencies = [

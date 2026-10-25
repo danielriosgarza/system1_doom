@@ -1,3 +1,11 @@
+"""The decision log: one TickTrace per tick (`ticks.jsonl`) and one ProposalTrace per proposal.
+
+Schema version 2 (design spec, section 10): a tick is the record of six d1-ultra instances, the five
+senses and the central, each with its scope, its verbatim evidence, its full answers, whether it
+spoke or missed, its timing and usage; the messages the central heard; the pick (`top`, `drawn` or
+`missed`); and the executed action, its primitives and what it changed.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -6,58 +14,55 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from system1_doom.admission import AdmissionStageResult
+from system1_doom.configuration import ExplorationLevel
+from system1_doom.d1_client import Usage
+from system1_doom.evidence import Message
+from system1_doom.instance import InstanceResult
+from system1_doom.system1 import Pick
 from system1_doom.tracing import (
-    ArbiterTrace,
-    ModuleTrace,
     OutcomeTrace,
     ProjectionChainTrace,
     SlowPathRequestTrace,
     StateTrace,
-    SteeringTrace,
 )
 
-TRACE_SCHEMA_VERSION = 1
+TRACE_SCHEMA_VERSION = 2
 
 
 class TickTrace(BaseModel):
-    """Compact per-tick decision trace (Spec Section 17).
-
-    The fields after `learning` are the decision's anatomy (see `tracing.py`). They are optional,
-    so traces written before they existed still parse.
-    """
+    """One tick (schema version 2): the evidence, the six instances, the pick, and what it did."""
 
     model_config = ConfigDict(frozen=True)
 
     timestamp: str
     tick: int
+    episode_id: str
+    configuration_version: int = Field(description="The configuration this tick was decided under")
+    configuration_changed: bool = Field(default=False, description="A pending configuration was applied at this tick's boundary")
     state_hash: str
     context_signature: str
-    budget_mode: Literal["full", "reduced", "critical"]
-    available_actions: List[str]
-    module_outputs: Dict[str, ModuleTrace]
-    projection_results_used: Dict[str, Dict[str, float]]
-    arbiter_distribution: Dict[str, float]
-    selected_action: str
+    state: StateTrace
+    available_actions: List[str] = Field(description="The legal menu, in menu order")
+    pruned_actions: Dict[str, str] = Field(default_factory=dict, description="Every other action and the first bound it failed")
+    instances: Dict[str, InstanceResult] = Field(description="The five senses in sense order, then the central")
+    messages: List[Message] = Field(default_factory=list, description="What the senses that spoke sent the central")
+    pick: Pick
+    executed_action: Optional[str] = Field(description="The central's pick; None when the central missed and the tick idled")
     primitive_steps_executed: List[str]
-    exploration_state: Dict[str, Any]
-    active_strategy: str
+    outcome: OutcomeTrace
     reward_outcome: float
-    used_d1_ultra: bool = False
-    d1_arbiter_distribution: Dict[str, float] = Field(default_factory=dict)
-    learning: Dict[str, Any] = Field(default_factory=dict)
-    state: Optional[StateTrace] = None
-    pruned_actions: Dict[str, str] = Field(default_factory=dict)
-    arbiter: Optional[ArbiterTrace] = None
+    missed: bool = Field(description="The central missed: no keys were held for the decision")
+    exploration_level: ExplorationLevel
+    active_strategy: str
+    projection_results_used: Dict[str, Dict[str, float]] = Field(default_factory=dict, description="The projections channel's numbers")
     projection_chain: Optional[ProjectionChainTrace] = None
-    steering: Optional[SteeringTrace] = None
-    outcome: Optional[OutcomeTrace] = None
     slow_path_request: Optional[SlowPathRequestTrace] = None
-    budget_sec: Optional[float] = None
     timing_ms: Dict[str, float] = Field(default_factory=dict)
+    usage: Usage = Field(default_factory=Usage, description="Summed over the tick's six calls")
 
 
 class ProposalTrace(BaseModel):
-    """Audit trace for asynchronous LLM proposals and admission decisions (Spec Section 17)."""
+    """A slow-path proposal and its admission: the bounds' stage results and the admit instance's answer."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -68,11 +73,12 @@ class ProposalTrace(BaseModel):
     validation_result: str
     admission_decision: bool
     admitted_action_id: Optional[str] = None
-    d1_admission_probability: Optional[float] = None
+    d1_admission_probability: Optional[float] = Field(default=None, description="The admit instance's probability")
+    admit_instance: Optional[InstanceResult] = Field(default=None, description="The admit instance's call, in full")
     subsequent_performance: List[float] = Field(default_factory=list)
     tick: Optional[int] = None
     source: Optional[Literal["codex", "template", "custom"]] = None
-    source_module: Optional[str] = None
+    source_module: Optional[str] = Field(default=None, description="Who asked for the proposal")
     stage_results: List[AdmissionStageResult] = Field(default_factory=list)
     sandbox_summary: Optional[Dict[str, float]] = None
     admitted_strategy_id: Optional[str] = None

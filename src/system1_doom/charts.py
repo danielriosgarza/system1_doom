@@ -22,7 +22,6 @@ MODULE_COLORS = {
     "navigation": "#58b4ff",
     "resource": "#2ecc71",
     "goal": "#b38cff",
-    "gate": "#dfe4ee",
 }
 
 
@@ -63,7 +62,7 @@ def render_learning_curves(rows: List[Dict[str, Any]], path: Union[str, Path], t
     survived = [0.0 if r.get("died") else 1.0 for r in rows]
     health = [float(r.get("health", 0.0)) for r in rows]
     kills = [float(r.get("kills", 0.0)) for r in rows]
-    share = [100.0 * float(r.get("network_share", 0.0)) for r in rows]
+    missed = [float(r.get("missed_ticks", 0)) for r in rows]
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 7.2), dpi=110)
     fig.patch.set_facecolor(BACKGROUND)
@@ -93,10 +92,10 @@ def render_learning_curves(rows: List[Dict[str, Any]], path: Union[str, Path], t
     twin.tick_params(colors=MUTED, labelsize=8)
 
     ax = axes[1][1]
-    _style(ax, "Network share (%) and training loss")
-    ax.fill_between(episodes, share, color=MUTED, alpha=0.18, linewidth=0)
-    ax.plot(episodes, share, color=MUTED, linewidth=1.4, label="network share")
-    ax.set_ylim(0, 100)
+    _style(ax, "Missed ticks and value-network loss")
+    ax.fill_between(episodes, missed, color=MUTED, alpha=0.18, linewidth=0)
+    ax.plot(episodes, missed, color=MUTED, linewidth=1.4, label="missed ticks")
+    ax.set_ylim(bottom=0, top=max(1.0, max(missed) * 1.1))
     twin = ax.twinx()
     twin.set_yscale("log")
     twin.tick_params(colors=MUTED, labelsize=8)

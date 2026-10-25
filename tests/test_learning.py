@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,6 +18,8 @@ from system1_doom.learning import (
     n_step_returns,
 )
 
+LEGACY_RUN = Path("/mnt/attach/project-files/runs/deadly_corridor")
+
 
 def _fake_result(**overrides):
     base = dict(
@@ -34,9 +37,9 @@ def _fake_result(**overrides):
     return SimpleNamespace(**base)
 
 
-def _fill(learner: Learner, states, actions, returns, mask) -> None:
+def _fill(learner: Learner, states, actions, returns) -> None:
     learner.stats.update(returns)
-    learner.replay.add(states, actions, returns, mask)
+    learner.replay.add(states, actions, returns)
 
 
 def test_n_step_returns_discount_and_truncate_at_episode_end():
@@ -65,7 +68,7 @@ def test_replay_buffer_is_bounded_and_round_trips(tmp_path):
     buf = ReplayBuffer(capacity=5)
     states = np.zeros((8, buf.states.shape[1]), dtype=np.float32)
     states[:, 0] = np.arange(8)
-    buf.add(states, np.zeros((8, buf.actions.shape[1]), np.float32), np.zeros((8, 5), np.float32), np.zeros((8, 5), np.float32))
+    buf.add(states, np.zeros((8, buf.actions.shape[1]), np.float32), np.zeros((8, 5), np.float32))
     assert buf.size == 5
     assert sorted(buf.states[:, 0].tolist()) == [3, 4, 5, 6, 7]
 
@@ -90,69 +93,40 @@ def test_each_module_network_learns_which_action_pays_off_for_it():
     returns[:, MODULE_NAMES.index("navigation")] = ~is_shoot
 
     learner = Learner(LearnerConfig(seed=0, batch_size=128))
-    _fill(learner, states, actions, returns, np.zeros((n, 5), np.float32))
+    _fill(learner, states, actions, returns)
     first = learner.train(steps=1)
     later = learner.train(steps=300)
     assert later["combat"] < first["combat"]
     assert later["navigation"] < first["navigation"]
 
-    utils = learner.module_utilities(states[0], np.stack([shoot, forward]))
+    utils = learner.predict_returns(states[0], np.stack([shoot, forward]))
     assert utils["combat"][0] > utils["combat"][1]
     assert utils["navigation"][1] > utils["navigation"][0]
 
 
-def test_gate_learns_to_trust_the_module_whose_advice_paid_off():
-    rng = np.random.default_rng(2)
-    n = 400
-    states = rng.random((n, STATE_DIM), dtype=np.float32)
-    actions = np.zeros((n, 12), dtype=np.float32)
-    returns = np.zeros((n, 5), dtype=np.float32)
-    mask = np.zeros((n, 5), dtype=np.float32)
-    followed_combat = np.arange(n) % 2 == 0
-    returns[:, MODULE_NAMES.index("goal")] = np.where(followed_combat, 1.0, -1.0)
-    mask[followed_combat, MODULE_NAMES.index("combat")] = 1.0
-    mask[~followed_combat, MODULE_NAMES.index("navigation")] = 1.0
-
-    learner = Learner(LearnerConfig(seed=0, batch_size=128))
-    _fill(learner, states, actions, returns, mask)
-    learner.train(steps=300)
-    weights = learner.gate_weights(states[0])
-    assert sum(weights.values()) == pytest.approx(1.0)
-    assert weights["combat"] > weights["navigation"]
-
-
-def test_recorded_episode_moves_into_replay_with_gate_credit_and_trust():
+def test_recorded_episode_moves_into_replay_with_its_tries():
     learner = Learner(LearnerConfig(trust_count=4.0))
     vocab = ActionVocabulary.default()
     state = np.zeros(STATE_DIM, dtype=np.float32)
     for _ in range(4):
-        learner.record_step(
-            state,
-            encode_action(vocab.get("shoot")),
-            _fake_result(hits_delta=1),
-            {"combat": "shoot", "goal": "move_forward"},
-            "shoot",
-            "ctx:a",
-        )
-    assert learner.action_trust("ctx:a", ["shoot"]) == {"shoot": 0.0}
+        learner.record_step(state, encode_action(vocab.get("shoot")), _fake_result(hits_delta=1), "shoot", "ctx:a")
+    assert learner.tried_counts("ctx:a", ["shoot"]) == {"shoot": 0}
     assert learner.end_episode() == 4
     assert learner.replay.size == 4
     assert learner.episodes == 1
-    assert learner.replay.gate_mask[0].tolist() == [0.0, 1.0, 0.0, 0.0, 0.0]
     assert learner.pending_steps == 0
+    assert not hasattr(learner, "gate") and not hasattr(learner.replay, "gate_mask")
 
-    # Networks earn a say only for actions actually tried in that situation.
-    trust = learner.action_trust("ctx:a", ["shoot", "move_forward"])
-    assert trust["shoot"] == pytest.approx(0.5)
-    assert trust["move_forward"] == 0.0
-    assert learner.action_trust("ctx:b", ["shoot"])["shoot"] == 0.0
-    assert learner.gate_trust("ctx:a") == pytest.approx(0.5)
+    # How often each action was tried in a situation is shown beside the predictions in the values channel.
+    assert learner.tried_counts("ctx:a", ["shoot", "move_forward"]) == {"shoot": 4, "move_forward": 0}
+    assert learner.tried_counts("ctx:b", ["shoot"]) == {"shoot": 0}
+    assert learner.action_trust("ctx:a", ["shoot"])["shoot"] == pytest.approx(0.5)
     assert learner.network_share == pytest.approx(0.5)
 
 
 def test_discarded_episode_leaves_no_trace():
     learner = Learner()
-    learner.record_step(np.zeros(STATE_DIM, np.float32), np.zeros(12, np.float32), _fake_result(), {}, "shoot", "ctx")
+    learner.record_step(np.zeros(STATE_DIM, np.float32), np.zeros(12, np.float32), _fake_result(), "shoot", "ctx")
     learner.discard_episode()
     assert learner.pending_steps == 0
     assert learner.end_episode() == 0
@@ -167,7 +141,6 @@ def test_checkpoint_round_trip_overrides_and_mismatch(tmp_path):
         rng.random((64, STATE_DIM), dtype=np.float32),
         rng.random((64, 12), dtype=np.float32),
         rng.random((64, 5), dtype=np.float32),
-        np.ones((64, 5), np.float32),
     )
     learner.transitions_seen = 64
     learner.episodes = 3
@@ -184,10 +157,62 @@ def test_checkpoint_round_trip_overrides_and_mismatch(tmp_path):
     assert loaded.config.hidden == learner.config.hidden
     s, a = rng.random(STATE_DIM, dtype=np.float32), rng.random((3, 12), dtype=np.float32)
     for name in MODULE_NAMES:
-        assert loaded.module_utilities(s, a)[name] == pytest.approx(learner.module_utilities(s, a)[name])
+        assert loaded.predict_returns(s, a)[name] == pytest.approx(learner.predict_returns(s, a)[name])
 
     payload = torch.load(path, weights_only=True)
     payload["state_dim"] = STATE_DIM + 1
     torch.save(payload, path)
     with pytest.raises(CheckpointMismatch):
         Learner.load(path)
+
+
+def _legacy_payload(path: Path) -> None:
+    """Rewrite a checkpoint as one from before the gate was removed: gate weights, its config and
+    loss, and an Adam state over the value networks' six parameters followed by the gate's six."""
+    from torch import nn
+
+    payload = torch.load(path, weights_only=True)
+    gate = nn.Sequential(nn.Linear(STATE_DIM, 32), nn.ReLU(), nn.Linear(32, 32), nn.ReLU(), nn.Linear(32, 5))
+    payload["gate"] = gate.state_dict()
+    payload["config"].update({"gate_hidden": 32, "gate_temperature": 0.5})
+    payload["last_losses"]["gate"] = 0.3
+    optimizer = payload["optimizer"]
+    for index in range(6, 12):
+        optimizer["state"][index] = {k: v.clone() if hasattr(v, "clone") else v for k, v in optimizer["state"][0].items()}
+    optimizer["param_groups"][0]["params"] = list(range(12))
+    torch.save(payload, path)
+
+
+def test_checkpoints_and_replays_from_before_the_gate_was_removed_still_load(tmp_path):
+    rng = np.random.default_rng(4)
+    learner = Learner(LearnerConfig(seed=0))
+    _fill(learner, rng.random((64, STATE_DIM), dtype=np.float32), rng.random((64, 12), dtype=np.float32), rng.random((64, 5), dtype=np.float32))
+    learner.train(steps=3)
+    path = tmp_path / "checkpoint.pt"
+    learner.save(path)
+    _legacy_payload(path)
+    replay = tmp_path / "replay.npz"
+    np.savez_compressed(
+        replay,
+        states=learner.replay.states[:64],
+        actions=learner.replay.actions[:64],
+        returns=learner.replay.returns[:64],
+        gate_mask=np.ones((64, 5), np.float32),
+    )
+
+    loaded = Learner.load(path)
+    assert "gate" not in loaded.last_losses and len(loaded.optimizer.state_dict()["state"]) == 6
+    s, a = rng.random(STATE_DIM, dtype=np.float32), rng.random((2, 12), dtype=np.float32)
+    assert loaded.predict_returns(s, a)["goal"] == pytest.approx(learner.predict_returns(s, a)["goal"])
+    loaded.replay.load(replay)
+    assert loaded.replay.size == 64
+    assert set(loaded.train(steps=2)) == set(MODULE_NAMES)
+
+
+@pytest.mark.skipif(not (LEGACY_RUN / "checkpoint.pt").is_file(), reason="the shipped training run is not attached")
+def test_the_shipped_training_runs_checkpoints_load():
+    for name in ("checkpoint.pt", "best.pt"):
+        learner = Learner.load(LEGACY_RUN / name)
+        assert learner.episodes > 0 and set(learner.last_losses) <= set(MODULE_NAMES)
+    learner.replay.load(LEGACY_RUN / "replay.npz")
+    assert learner.replay.size > 0

@@ -1,18 +1,15 @@
+"""The strategy archive: a bounded store of strategies, kept as evidence.
+
+The archive holds a handful of named strategies (a context signature, a short action sequence, and a
+record: observed reward, success rate, uses, failure modes). It decides nothing. The active strategy is
+part of the configuration (System 2 will change it); the archive's entries and records are rendered in
+the `archive` evidence channel, which the goal sense sees.
+"""
+
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field
-
-from system1_doom.d1_client import ChoiceQuestion, D1UltraClient
-from system1_doom.state import WorldState
-
-
-StrategyControlAction = Literal[
-    "continue_current_strategy",
-    "switch_to_archived_strategy",
-    "explore_variation",
-    "request_new_strategy_proposal",
-]
 
 
 class StrategyEntry(BaseModel):
@@ -28,19 +25,6 @@ class StrategyEntry(BaseModel):
     failure_modes: Tuple[str, ...] = ()
     usage_count: int = 0
     novelty_signature: str = "default"
-
-
-class StrategyDecision(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    choice: StrategyControlAction
-    selected_strategy_id: str
-    probabilities: Dict[str, float]
-    confidence: float
-    used_d1_ultra: bool = False
-    # The utility of each meta-choice before normalisation and the strategy active before deciding, for traces.
-    scores: Dict[str, float] = Field(default_factory=dict)
-    previous_strategy_id: Optional[str] = None
 
 
 DEFAULT_STRATEGIES: Tuple[StrategyEntry, ...] = (
@@ -78,23 +62,21 @@ DEFAULT_STRATEGIES: Tuple[StrategyEntry, ...] = (
 
 
 class StrategyArchive:
-    """
-    Bounded archive of distinct strategies / macro-action patterns (Spec Section 11).
-    Prevents permanent collapse into one local optimum.
-    """
+    """Bounded archive of distinct strategies (Spec Section 11): a store and evidence, never a chooser."""
 
     def __init__(
         self,
         max_entries: int = 12,
         initial_entries: Tuple[StrategyEntry, ...] = DEFAULT_STRATEGIES,
-        d1_client: Optional[D1UltraClient] = None,
+        active_strategy: Optional[str] = None,
     ) -> None:
         self.max_entries = max(2, max_entries)
-        self.d1_client = d1_client
         self._entries: Dict[str, StrategyEntry] = {}
         for entry in initial_entries[: self.max_entries]:
             self._entries[entry.strategy_id] = entry
         self._active_id: str = next(iter(self._entries.keys()))
+        if active_strategy is not None:
+            self.set_active(active_strategy)
 
     def entries(self) -> List[StrategyEntry]:
         return list(self._entries.values())
@@ -105,13 +87,18 @@ class StrategyArchive:
     def get(self, strategy_id: str) -> Optional[StrategyEntry]:
         return self._entries.get(strategy_id)
 
+    def set_active(self, strategy_id: str) -> None:
+        """Make `strategy_id` the active strategy, as the configuration says; unknown ids are refused."""
+        if strategy_id not in self._entries:
+            raise KeyError(f"no strategy {strategy_id!r} in the archive; it holds {list(self._entries)}")
+        self._active_id = strategy_id
+
     def admit_strategy(self, entry: StrategyEntry) -> None:
+        """Store a strategy; when the archive is full, the oldest entry that is not active makes room."""
         if entry.strategy_id not in self._entries and len(self._entries) >= self.max_entries:
-            # Evict lowest-scoring non-active entry to respect bounded capacity
-            candidates = [e for e in self._entries.values() if e.strategy_id != self._active_id]
-            if candidates:
-                worst = min(candidates, key=lambda e: e.observed_reward + e.success_rate * 5.0)
-                del self._entries[worst.strategy_id]
+            oldest = next((sid for sid in self._entries if sid != self._active_id), None)
+            if oldest is not None:
+                del self._entries[oldest]
         self._entries[entry.strategy_id] = entry
 
     def record_outcome(
@@ -139,69 +126,4 @@ class StrategyArchive:
                 "failure_modes": tuple(modes),
                 "usage_count": n,
             }
-        )
-
-    def decide_strategy_action(
-        self,
-        state: WorldState,
-        exploration_pressure: float,
-        recent_failures: int,
-        use_d1_sync: bool = False,
-    ) -> StrategyDecision:
-        active = self.active_strategy()
-        previous_id = self._active_id
-        used_d1 = False
-
-        # Bounded utility scores over the 4 finite strategy meta-choices
-        scores: Dict[StrategyControlAction, float] = {
-            "continue_current_strategy": active.success_rate * 1.2 - 0.35 * recent_failures,
-            "switch_to_archived_strategy": 0.4 + 0.25 * recent_failures + 0.3 * exploration_pressure,
-            "explore_variation": 0.3 + 0.7 * exploration_pressure,
-            "request_new_strategy_proposal": 0.2 + (0.9 if recent_failures >= 3 else 0.0) + 0.4 * exploration_pressure,
-        }
-
-        if use_d1_sync and self.d1_client is not None and self.d1_client.enabled:
-            resp = self.d1_client.decide(
-                state=(
-                    f"{state.to_d1_state_text()}\nActive strategy: {active.strategy_id} "
-                    f"(sr={active.success_rate:.2f}, reward={active.observed_reward:.2f}, failures={recent_failures})"
-                ),
-                questions={
-                    "strategy_choice": ChoiceQuestion(
-                        instructions="How should the controller manage its high-level strategy archive on this tick?",
-                        criteria={
-                            "continue_current_strategy": "Keep executing the current strategy because it fits the context",
-                            "switch_to_archived_strategy": "Switch to a better-matching strategy from the archive",
-                            "explore_variation": "Increase variation around the active strategy",
-                            "request_new_strategy_proposal": "Request the slow LLM worker to synthesize a new strategy/macro",
-                        },
-                    )
-                },
-                timeout=1.5,
-            )
-            if resp is not None and "strategy_choice" in resp.raw_answers:
-                c_ans = resp.choice("strategy_choice")
-                for k in scores:
-                    scores[k] = 0.65 * float(c_ans.probabilities.get(k, 0.0)) + 0.35 * max(0.0, scores[k])
-                used_d1 = True
-
-        # Convert to valid distribution
-        shifted = {k: max(0.01, v) for k, v in scores.items()}
-        tot = sum(shifted.values())
-        probs = {k: v / tot for k, v in shifted.items()}
-        best_choice: StrategyControlAction = max(probs.keys(), key=lambda k: probs[k])  # type: ignore[assignment]
-
-        if best_choice == "switch_to_archived_strategy" and len(self._entries) > 1:
-            alternatives = [e for e in self._entries.values() if e.strategy_id != self._active_id]
-            best_alt = max(alternatives, key=lambda e: e.success_rate + 0.1 * e.observed_reward)
-            self._active_id = best_alt.strategy_id
-
-        return StrategyDecision(
-            choice=best_choice,
-            selected_strategy_id=self._active_id,
-            probabilities=probs,
-            confidence=max(probs.values()),
-            used_d1_ultra=used_d1,
-            scores={k: round(v, 4) for k, v in scores.items()},
-            previous_strategy_id=previous_id,
         )

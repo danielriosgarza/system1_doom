@@ -1,8 +1,8 @@
-"""Fixed-size numeric encodings of world states and actions for the learned modules.
+"""Fixed-size numeric encodings of world states and actions for the value networks, and their rewards.
 
-The encodings are scenario-agnostic. Actions are described by their primitive
-composition rather than by identity, so a newly admitted macro-action can be
-scored by the networks the moment it enters the vocabulary.
+The encodings are scenario-agnostic. Actions are described by their primitive composition rather
+than by identity, so a newly admitted macro-action gets predictions in the values channel the moment
+it enters the menu. `n_step_returns` is the return both the networks and the relevance ledger use.
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ def n_step_returns(rewards: np.ndarray, gamma: float, n: int) -> np.ndarray:
 
 
 def module_rewards(result: Any) -> np.ndarray:
-    """Per-module reward for one executed decision, ordered like MODULE_NAMES."""
+    """Each value network's reward for one executed decision, ordered like MODULE_NAMES."""
     died = 1.0 if getattr(result, "died", False) else 0.0
     return np.asarray(
         [
