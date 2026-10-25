@@ -4,6 +4,10 @@ import type { EpisodeMeta, TickTrace } from '../schema/bundle'
 import {
   AIM_BAND_DEG,
   MODULES,
+  choiceWords,
+  d1Arbiter,
+  d1Modules,
+  d1Sync,
   explainPick,
   fmt,
   learning,
@@ -21,7 +25,8 @@ export type Invariant = 'finite menu' | 'bounded time' | 'advisory learning'
 
 export const INVARIANTS: Record<Invariant, string> = {
   'finite menu': 'Finite menu: every level chooses from a short list it cannot extend.',
-  'bounded time': 'Bounded time: every step has a hard limit, and nothing waits for a slow part.',
+  'bounded time':
+    'Bounded time: every step has a hard limit, and nothing waits for a slow part unless a recording asks it to wait for d1-ultra.',
   'advisory learning': 'Advisory learning: the networks re-weigh the options; they never add one or skip a level.',
 }
 
@@ -77,13 +82,15 @@ function opinions({ tick, meta }: TourContext): string[] {
   const budget = (tick.budget_sec ?? meta.config.tick_budget_sec) * 1000
   const ran = tick.timing_ms?.modules
   const lambda = learning(tick).network_share ?? 0
+  const advised = d1Modules(tick).length
+  const waited = d1Sync(meta) && advised > 0
   return [
     `Five modules score the same ${tick.available_actions.length} options, each for its own question: ${named.join('; ')}. ${agree} of ${list.length} agree with what the arbiter will pick.`,
-    `${ran !== undefined ? `They ran in ${fmt(ran, 1)} ms against a deadline of ${fmt(0.65 * budget, 0)} ms, 65% of the tick. ` : ''}${
+    `${ran !== undefined ? `They ran in ${fmt(ran, 1)} ms against a deadline of ${fmt(0.65 * budget, 0)} ms, 65% of the tick${waited ? ", most of it spent waiting for d1-ultra's answer" : ''}. ` : ''}${
       meta.brains.learned_networks
         ? `The hatched part of each bar is the networks' share, ${pct(lambda)} here: trust they earned by trying these actions in this kind of situation.`
         : 'No networks are loaded, so every bar is the hand-written heuristic.'
-    }`,
+    }${advised > 0 ? ` The dotted part is d1-ultra's advice, mixed into ${advised === list.length ? 'every' : `${advised} of the`} module${advised === 1 ? '' : 's'}.` : ''}`,
   ]
 }
 
@@ -95,10 +102,20 @@ function decision({ tick, meta }: TourContext): string[] {
   const g = tick.arbiter?.gate_share ?? 0
   return [
     `The arbiter adds the weighted opinions, a fifth of the simulator's expected value and a few small bonuses: ${prettyId(tick.selected_action)} scores ${fmt(scores[tick.selected_action] ?? 0, 2)}${runnerUp ? ` against ${fmt(scores[runnerUp] ?? 0, 2)} for ${prettyId(runnerUp)}` : ''}. ${pick.headline}`,
-    meta.brains.learned_networks
+    (meta.brains.learned_networks
       ? `The gate network set ${pct(g)} of the weights given to the five modules; the hand-written table set the rest.`
-      : 'The weights given to the five modules come from the hand-written table alone.',
+      : 'The weights given to the five modules come from the hand-written table alone.') + d1Advice(tick),
   ]
+}
+
+/** d1-ultra's bonus in the arbiter's score, when it answered the arbiter's question. */
+function d1Advice(tick: TickTrace): string {
+  const d1 = d1Arbiter(tick)
+  const top = d1?.ranked[0]
+  if (!d1 || !top) return ''
+  return top.action === tick.selected_action
+    ? ` d1-ultra favoured the same action at ${pct(top.p)}, adding ${fmt(top.bonus, 2)} to its score.`
+    : ` d1-ultra favoured ${prettyId(top.action)} at ${pct(top.p)}, adding ${fmt(top.bonus, 2)} to its score; the pick was ${choiceWords(d1.pickRank)}.`
 }
 
 function act({ tick, meta }: TourContext): string[] {

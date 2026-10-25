@@ -6,6 +6,7 @@ import {
   type RequestSpan,
   TRIGGER_OTHER,
   prettyId,
+  proposalId,
   triggerAt,
 } from '../data/derive'
 import type { TickTrace } from '../schema/bundle'
@@ -128,9 +129,9 @@ function ModuleStrip({
         {mine.map((s) =>
           s.arrived === null ? null : (
             <g key={`arrive-${s.arrived}`} className="rt-mark">
-              <Mark kind="admission" x={x(indexOf(s.arrived))} y={7} />
+              <Mark kind={s.proposal?.admission_decision ? 'admission' : 'rejection'} x={x(indexOf(s.arrived))} y={7} />
               <title>
-                Tick {s.arrived}: {prettyId(s.proposal?.admitted_action_id ?? 'the proposal')} reached the gate
+                Tick {s.arrived}: {s.proposal ? prettyId(proposalId(s.proposal)) : 'the proposal'} reached the gate
                 {s.proposal?.admission_decision ? ' and was admitted' : ' and was rejected'}
               </title>
             </g>
@@ -204,7 +205,13 @@ export function RequestTimeline({ ticks, spans }: { ticks: TickTrace[]; spans: R
           <svg width={12} height={12}>
             <Mark kind="admission" x={6} y={6} />
           </svg>
-          reached the gate
+          admitted at the gate
+        </span>
+        <span>
+          <svg width={12} height={12}>
+            <Mark kind="rejection" x={6} y={6} />
+          </svg>
+          rejected at the gate
         </span>
       </div>
     </div>

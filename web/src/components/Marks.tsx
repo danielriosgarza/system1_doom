@@ -17,6 +17,8 @@ export function Mark({ kind, x, y }: { kind: TickEventKind; x: number; y: number
       return <path d={`M${x - 3},${y + 5} v-10 l7,3 l-7,3`} fill="var(--goal)" stroke="var(--goal)" strokeWidth={1} />
     case 'admission':
       return <path d={`M${x - 4},${y} h8 M${x},${y - 4} v8`} stroke="var(--goal)" strokeWidth={2.5} />
+    case 'rejection':
+      return <path d={`M${x - 4},${y} h8`} stroke="var(--goal)" strokeWidth={2.5} />
     case 'strategy':
       return <rect x={x - 1} y={y - 5} width={2.5} height={10} fill="var(--navigation)" />
   }

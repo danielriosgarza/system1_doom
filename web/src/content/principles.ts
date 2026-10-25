@@ -1,5 +1,6 @@
 // The one invariant and the seven design principles (docs/DOCUMENTATION.md, section 1), each with
 // how the code enforces it and where the app shows it.
+import { D1_SYNC_FLAG } from '../data/derive'
 import type { SeeLink } from './glossary'
 
 export const INVARIANT =
@@ -23,8 +24,7 @@ export const PRINCIPLES: Principle[] = [
   },
   {
     principle: 'The real-time loop never blocks.',
-    enforced:
-      'No LLM call, network, disk search or unbounded planning on the fast path: d1-ultra is read from a cache, the slow worker runs on one background thread, and learning trains between episodes.',
+    enforced: `No LLM call, network, disk search or unbounded planning on the fast path: d1-ultra is read from a cache, the slow worker runs on one background thread, and learning trains between episodes. The one exception is chosen by hand: a recording made with ${D1_SYNC_FLAG} waits for d1-ultra at every tick, with a 5 s tick budget, so its advice can be shown at every tick.`,
     see: [
       { screen: 'menu', panel: 'requests', label: 'Growing the menu → the busy span' },
       { tab: 'glossary', term: 'budget-mode', label: 'Glossary → budget mode' },

@@ -3,6 +3,7 @@
 // test keeps the two in step.
 import {
   contextWords,
+  d1Words,
   explainPick,
   fmt,
   gameSeconds,
@@ -67,7 +68,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: 'budget mode',
     aliases: ['budget modes'],
     meaning:
-      'How much of the tick’s 40 ms budget was left. Full runs everything, reduced drops the projections, and critical repeats the cached action with stand-in module outputs.',
+      'How much time the tick’s budget allows: 40 ms by default, 5 s in a recording that waits for d1-ultra. Full runs everything, reduced drops the projections, and critical repeats the cached action with stand-in module outputs.',
     see: [{ screen: 'tick', panel: 'arbiter', label: 'Tick → One decision (the “out of time” rule)' }],
     code: 'controller.py · DoomDecisionController._select_budget_mode',
     now: ({ tick }) => `This tick ran in ${tick.budget_mode} mode.`,
@@ -100,10 +101,16 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: 'd1-ultra',
     aliases: ['d1'],
     meaning:
-      'Liquid AI’s decision model, asked small multiple-choice questions by the modules, the arbiter and the admission gate. Advisory everywhere it appears, and off in both recordings.',
-    see: [{ screen: 'hierarchy', label: 'Hierarchy (its side card)' }, { screen: 'overview' }],
+      'Liquid AI’s decision model, asked small multiple-choice questions by the modules, the arbiter, exploration and the admission gate. Advisory everywhere it appears, and switched on recording by recording.',
+    see: [
+      { screen: 'tick', panel: 'modules', label: 'Tick → Five opinions (the dotted share)' },
+      { screen: 'tick', panel: 'arbiter' },
+      { screen: 'hierarchy', label: 'Hierarchy (its side card)' },
+      { screen: 'overview' },
+    ],
     code: 'd1_client.py · D1UltraClient',
-    now: ({ meta }) => (meta.brains.d1_ultra ? 'On in this recording.' : 'Off in this recording.'),
+    now: ({ tick, meta }) =>
+      meta.brains.d1_ultra ? `On in this recording. ${d1Words(tick, meta)}` : 'Off in this recording.',
   },
   {
     id: 'exploration-floor',

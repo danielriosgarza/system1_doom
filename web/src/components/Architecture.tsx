@@ -2,6 +2,8 @@ import type { KeyboardEvent } from 'react'
 import { BOXES, type BoxId } from '../content/architecture'
 import {
   MODULES,
+  d1Arbiter,
+  d1Modules,
   fmt,
   learning,
   moduleOpinions,
@@ -117,8 +119,16 @@ function readings(bundle: EpisodeBundle, tick: TickTrace, tickIndex: number): Pa
       : 'off',
     simulator: `${Object.keys(tick.projection_results_used).length} actions projected`,
     archive: strategyName(tick.steering?.active_before ?? tick.active_strategy),
-    d1: meta.brains.d1_ultra ? (tick.used_d1_ultra ? 'advised' : 'no answer') : 'off',
+    d1: d1Value(tick, meta.brains.d1_ultra),
   }
+}
+
+/** The d1-ultra box: its answer to the arbiter's question, or whether it advised the modules alone. */
+function d1Value(tick: TickTrace, on: boolean): string {
+  if (!on) return 'off'
+  const top = d1Arbiter(tick)?.ranked[0]
+  if (top) return `${prettyId(top.action)} ${pct(top.p)}`
+  return d1Modules(tick).length > 0 ? 'advised the modules' : 'no answer'
 }
 
 /** The tick a still-unanswered request was made at, if the slow worker is busy at this tick. */
@@ -142,6 +152,7 @@ function Box({
   value,
   lit,
   off,
+  advised,
   selected,
   onSelect,
 }: {
@@ -149,6 +160,8 @@ function Box({
   value: string
   lit?: boolean
   off?: boolean
+  /** d1-ultra answered this tick: the box carries the answer. */
+  advised?: boolean
   selected: boolean
   onSelect: (id: BoxId) => void
 }) {
@@ -164,7 +177,7 @@ function Box({
   const midY = g.y + g.h / 2
   return (
     <g
-      className={`arch-box ${box.beat ? 'beat' : ''} ${lit ? 'lit' : ''} ${off ? 'off' : ''} ${selected ? 'selected' : ''}`}
+      className={`arch-box ${box.beat ? 'beat' : ''} ${lit ? 'lit' : ''} ${off ? 'off' : ''} ${advised ? 'advised' : ''} ${selected ? 'selected' : ''}`}
       data-box={id}
       role="button"
       tabIndex={0}
@@ -257,7 +270,7 @@ export function Architecture({
   const slow = slowPathAt(tick, bundle.proposals)
   const learned = meta.brains.learned_networks
   const d1 = meta.brains.d1_ultra
-  const box = (id: BoxId, extra: { lit?: boolean; off?: boolean } = {}) => (
+  const box = (id: BoxId, extra: { lit?: boolean; off?: boolean; advised?: boolean } = {}) => (
     <Box key={id} id={id} value={values[id] ?? ''} selected={selected === id} onSelect={onSelect} {...extra} />
   )
   const chainX = CHAIN.x + CHAIN.w / 2
@@ -354,7 +367,7 @@ export function Architecture({
       {box('gate', { lit: slow.arrived.length > 0 })}
       {box('join', { lit: slow.arrived.some((p) => p.admission_decision) })}
       {box('archive')}
-      {box('d1', { off: !d1 })}
+      {box('d1', { off: !d1, advised: d1 && tick.used_d1_ultra })}
       {box('simulator')}
       {box('rewards')}
       {box('replay')}

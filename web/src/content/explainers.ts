@@ -4,6 +4,11 @@ import type { EpisodeMeta, MetricsRow, ProposalTrace, TickTrace, TrustFile } fro
 import {
   AIM_BAND_DEG,
   ARCHIVE_ALPHA,
+  D1_ADMIT,
+  D1_ARBITER_BONUS,
+  D1_SYNC_FLAG,
+  D1_SYNC_TICK_BUDGET_SEC,
+  D1_WEIGHT,
   ARCHIVE_SLOTS,
   BASE_TEMPERATURE,
   ENCODING_LABELS,
@@ -27,6 +32,11 @@ import {
   WORKER_TIMEOUT_SEC,
   aimBandHalfWidth,
   contextBuckets,
+  d1Arbiter,
+  d1GateWords,
+  d1Modules,
+  d1Pressure,
+  d1Sync,
   encodeAction,
   exploration,
   floorAt,
@@ -36,6 +46,7 @@ import {
   gameSeconds,
   holdFor,
   learning,
+  moduleD1Part,
   moduleVoteParts,
   nStepReturns,
   pct,
@@ -147,7 +158,7 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
     sentence:
       'Each slot is one decision; the controller makes one every 8 game frames, about a quarter of a second of play.',
     paragraphs: [
-      'Click or drag along the line, or use the arrow keys, to move through the episode. The line under the slots is health. Marks flag the moments worth stopping at: damage taken, a kill, a pick that was sampled rather than taken greedily, a module committing the arbiter, a module asking for a new macro, a macro admitted into the menu, and a change of strategy.',
+      'Click or drag along the line, or use the arrow keys, to move through the episode. The line under the slots is health. Marks flag the moments worth stopping at: damage taken, a kill, a pick that was sampled rather than taken greedily, a module committing the arbiter, a module asking for a new macro, a macro admitted into the menu or rejected at the gate, and a change of strategy.',
       "Every panel above is a reading of the tick under the cursor, taken from the controller's own trace.",
     ],
     formula: 'game time = tick × 4 steps × 2 frames ÷ 35 frames per second',
@@ -298,9 +309,10 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
     paragraphs: [
       'Every module scores each legal action with a hand-written heuristic, turns the scores into probabilities with a softmax, and reports how sure it is: a peaked distribution is confident, a flat one is not.',
       `When trained networks are loaded, a module's score for an action is blended with its network's learned value in proportion to trust, λ = n ÷ (n + ${TRUST_COUNT}), where n counts how often that action was tried in this kind of situation. The hatched part of a bar is the share the network has earned; the heuristic keeps the rest. With no networks every bar is solid.`,
+      `When d1-ultra answered the module's question, its probabilities are mixed in: at ${D1_WEIGHT.open}, or at ${D1_WEIGHT.settled} when the module's own top action already leads by ${D1_WEIGHT.gap} or more. The dotted part of a bar is d1's share of it.`,
       'A module whose own memory shows a concrete, repeated failure (for example damage on four ticks in a row) can ask the slow path for a new macro. That request never waits: the tick goes on.',
     ],
-    formula: `u(a) = (1 − λ)·heuristic(a) + λ·learned(a);  p(a) = softmax(u ÷ ${MODULE_TEMPERATURE});  confidence = 1 − entropy(p) ÷ log(menu size)`,
+    formula: `u(a) = (1 − λ)·heuristic(a) + λ·learned(a);  p(a) = softmax(u ÷ ${MODULE_TEMPERATURE}), or with d1: ((1 − w)·softmax(a) + w·d1(a)) ÷ Σ;  confidence = 1 − entropy(p) ÷ log(menu size)`,
     substitute: ({ tick, focus }) =>
       MODULES.flatMap((m) => {
         const out = tick.module_outputs[m]
@@ -315,7 +327,17 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
           l === undefined || lambda === undefined
             ? `u = heuristic = ${fmt(h, 2)}`
             : `u = (1 − ${fmt(lambda, 2)})·${term(h)} + ${fmt(lambda, 2)}·${term(l)} = ${fmt(u, 2)}`
-        return [{ label: `${m}, for ${focus}`, expr, result: `p ${pct(p, 1)}` }]
+        const line = { label: `${m}, for ${focus}`, expr, result: `p ${pct(p, 1)}` }
+        if (!out.used_d1_ultra) return [line]
+        const part = moduleD1Part(out, focus)
+        return [
+          { ...line, result: `softmax ${pct(part.own, 1)}` },
+          {
+            label: `${m}, with d1-ultra at w ${fmt(part.w, 2)}`,
+            expr: `((1 − ${fmt(part.w, 2)})·${pct(part.own, 1)} + ${fmt(part.w, 2)}·${pct(part.d1, 1)}) ÷ ${fmt(part.total, 3)}`,
+            result: `p ${pct(p, 1)}`,
+          },
+        ]
       }),
     code: 'modules.py · DecisionModule.build_output, BatchModuleEvaluator',
   },
@@ -326,11 +348,10 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
       'One score per legal action, built from the five opinions plus evidence and small bonuses; then one rule picks.',
     paragraphs: [
       "The coloured part of each bar is the module votes: every module's probability for the action, weighted by how much the arbiter trusts that module right now. The weights start from a hand-written table (in a fight combat counts most, otherwise navigation) scaled by each module's confidence. A learned gate network proposes its own weights, and the two are blended by the gate's trust in this situation; the rings show both.",
-      "Then come a fifth of the simulator's expected value, a bonus for actions in the active strategy, small exploration and novelty bonuses, minus a risk penalty for projected damage and the action's execution cost.",
+      `Then come a fifth of the simulator's expected value, a bonus for actions in the active strategy, ${D1_ARBITER_BONUS} × d1-ultra's probability for the action when it answered the arbiter's own question, small exploration and novelty bonuses, minus a risk penalty for projected damage and the action's execution cost.`,
       'Four rules pick. A module that is nearly certain commits the arbiter. Otherwise the top score wins, unless the top two are within 0.08 and exploration pressure is at least 0.45; then the arbiter samples from a softmax of the scores.',
     ],
-    formula:
-      'score(a) = Σₘ wₘ·pₘ(a) + 0.2·EV(a) + strategy + exploration + novelty − risk − cost;  w = (1 − g)·w_table + g·w_gate',
+    formula: `score(a) = Σₘ wₘ·pₘ(a) + 0.2·EV(a) + strategy + ${D1_ARBITER_BONUS}·d1(a) + exploration + novelty − risk − cost;  w = (1 − g)·w_table + g·w_gate`,
     substitute: ({ tick, focus }) => {
       const arbiter = tick.arbiter
       const parts = arbiter?.component_breakdown?.[focus]
@@ -498,7 +519,7 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
     title: 'The admission gate',
     sentence: 'Five checks decide whether a proposed macro may join the menu: parse, legality, sandbox, d1 and admit.',
     paragraphs: [
-      'Parse: the text must be a well-formed proposal. Legality: a well-formed id that is not a primitive’s, known primitives only, at most 16 steps and no more than its own maximum duration. Sandbox: the bounded simulator rolls the macro out, and it fails if the rollout predicts death from a state that was not already critical. d1: when d1-ultra is on it is asked whether the macro is worth adding; it is off here, so the stage is skipped. Admit: the macro is registered in the vocabulary and a matching strategy is added to the archive.',
+      `Parse: the text must be a well-formed proposal. Legality: a well-formed id that is not a primitive’s, known primitives only, at most 16 steps and no more than its own maximum duration. Sandbox: the bounded simulator rolls the macro out, and it fails if the rollout predicts death from a state that was not already critical. d1: when d1-ultra is on it is asked whether the macro is worth adding; a probability under ${D1_ADMIT.floor} rejects it, and so does one under ${D1_ADMIT.threshold} unless d1 rates its tactics at least ${D1_ADMIT.quality}. When d1 is off or does not answer, the stage is skipped. Admit: the macro is registered in the vocabulary and a matching strategy is added to the archive.`,
       'A failed stage stops the proposal and nothing changes. An admitted macro is scored like any other action from then on, and the only way it is used is by winning the same arbiter as everything else.',
     ],
     formula: `admitted = parse ∧ legality ∧ sandbox ∧ (d1 or skipped) → admit;  sandbox fails ⇔ survival = 0 ∧ health when asked > ${SANDBOX_CRITICAL_HEALTH}`,
@@ -506,11 +527,20 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
       const arrived = slowPathAt(tick, proposals).arrived
       if (arrived.length === 0) return [{ label: 'this tick', expr: 'no proposal reached the gate', result: 'idle' }]
       return arrived.flatMap((p) => {
-        const stages = (p.stage_results ?? []).map((s) => ({
+        const stages: FormulaLine[] = (p.stage_results ?? []).map((s) => ({
           label: s.stage,
           expr: s.reason ?? '',
           result: s.skipped ? 'skipped' : s.passed ? 'passed' : 'failed',
         }))
+        const d1Stage = (p.stage_results ?? []).find((s) => s.stage === 'd1')
+        const d1P = p.d1_admission_probability ?? null
+        if (d1Stage && !d1Stage.skipped && d1P !== null) {
+          stages.push({
+            label: 'the d1 rule',
+            expr: d1GateWords(d1P, d1Stage.passed),
+            result: d1Stage.passed ? 'passes' : 'rejects',
+          })
+        }
         const survival = p.sandbox_summary?.survival_probability
         const asked = [...ticks].reverse().find((t) => t.tick < (p.tick ?? 0) && t.slow_path_request)
         if (survival === undefined || !asked?.state) return stages
@@ -753,9 +783,10 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
     paragraphs: [
       'Four quarter-terms add up: uncertainty (how unsure the modules were), failures (recent failed steps), plateau (no progress for a while) and novelty (how new this situation is). Each is at most 0.25.',
       'Three dampers can cut the sum: steady progress multiplies it by 0.55, a risky moment (health 30 or less, or heavy fire with an enemy in view) by 0.35, and a kill or full armor just now by 0.25. The result is clamped to [0.02, 1].',
+      `In a recording that waits for d1-ultra (${D1_SYNC_FLAG}), d1 is also asked how much to explore after each action. Its answer, from 0 for exploit to 2 for explore, is halved and gets half the say: the pressure becomes the average of the controller's own value and d1's, before the clamp. The dotted stretch of the gauge is that pull.`,
       `Pressure sets the arbiter's softmax temperature, ${fmt(BASE_TEMPERATURE, 2)} + pressure, and scales its exploration and novelty bonuses. It also gates sampling: the arbiter draws from the softmax instead of taking the top score only when the top two are within ${SAMPLE_MARGIN} and pressure is at least ${SAMPLE_PRESSURE}. Because it is computed after each action, a tick's arbiter uses the value from the end of the tick before.`,
     ],
-    formula: `pressure = clamp((uncertainty + failures + plateau + novelty) × dampers, ${PRESSURE_FLOOR}, 1);  temperature = ${fmt(BASE_TEMPERATURE, 2)} + pressure`,
+    formula: `own = (uncertainty + failures + plateau + novelty) × dampers;  pressure = clamp(own, or ½·own + ½·d1 when d1-ultra answered, ${PRESSURE_FLOOR}, 1);  temperature = ${fmt(BASE_TEMPERATURE, 2)} + pressure`,
     substitute: ({ prev }) => {
       const r = pressureReading(prev ? exploration(prev) : null)
       if (r.initial) {
@@ -791,7 +822,7 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
     sentence:
       "Only a concrete failure pattern in a module's own memory may ask for a new macro; one request is in flight at a time, and a busy worker drops the rest.",
     paragraphs: [
-      "Each strip is one module over the whole episode. The line is the counter its rule watches (damage streak for survival, failures for combat, stalls for navigation, plateau for goal), drawn up to its threshold; the squares mark ticks where the rule's other condition held in the frozen state. A flag is a request, the band is the time the worker spent on it, and a plus is its proposal reaching the gate. Click any mark to move there.",
+      "Each strip is one module over the whole episode. The line is the counter its rule watches (damage streak for survival, failures for combat, stalls for navigation, plateau for goal), drawn up to its threshold; the squares mark ticks where the rule's other condition held in the frozen state. A flag is a request, the band is the time the worker spent on it, and a plus or a minus is its proposal admitted or rejected at the gate. Click any mark to move there.",
       `The worker writes one proposal at a time and has ${WORKER_TIMEOUT_SEC} seconds for it. While it is busy, any other module that crosses its threshold is dropped and has to ask again on a later tick. In this version the controller never advances the goal module's plateau counter, so goal never asks.`,
     ],
     formula: 'asks = (counter ≥ threshold ∨ other condition) ∧ the worker is idle',
@@ -903,12 +934,58 @@ export const EXPLAINERS: Record<ExplainerId, Explainer> = {
   d1: {
     title: 'd1-ultra advice',
     sentence:
-      'An optional outside model that can advise the modules, the arbiter and the admission gate; off in these recordings.',
+      'An optional outside model that advises the modules, the arbiter, exploration and the admission gate when a recording switches it on.',
     paragraphs: [
-      "When on, d1-ultra answers small multiple-choice questions: which actions a module should favour, which action the arbiter should pick, and whether a proposed macro is worth admitting. Its advice enters as a dotted share of a module's bar and as a bonus of 0.3 × its probability in the arbiter's score. In the synchronous mode it can also pull the exploration pressure halfway toward its own estimate.",
-      'It never adds an action or lifts a bound. It needs an API key and answers asynchronously, so a tick never waits for it; an unanswered question is simply skipped.',
+      `When on, d1-ultra answers small multiple-choice questions about the frozen state and the screen: which actions each module should favour, which action the arbiter should pick, how much to explore, and whether a proposed macro is worth admitting. Its advice enters as the dotted share of a module's bar, as ${D1_ARBITER_BONUS} × its probability in the arbiter's score, as half the say in exploration pressure, and as a stage of the gate.`,
+      `It never adds an action or lifts a bound, and it needs an API key. By default (execution mode async_cached) a tick never waits for it: answers are cached by situation and read when the same situation comes back, so most ticks carry none. A recording made with ${D1_SYNC_FLAG} (sync_d1) waits for its answers at every tick instead, with a tick budget of ${D1_SYNC_TICK_BUDGET_SEC} s so a network round trip fits; it gives up the rule that the fast path never waits for the network, on purpose, so the advice is there at every tick. The gate always waits, on the slow worker's thread.`,
     ],
-    code: 'd1_client.py · D1UltraClient',
+    formula: `module: p(a) = ((1 − w)·softmax(a) + w·d1(a)) ÷ Σ, w = ${D1_WEIGHT.open} or ${D1_WEIGHT.settled};  arbiter: + ${D1_ARBITER_BONUS}·d1(a);  exploration: ½·own + ½·d1;  gate: rejects under ${D1_ADMIT.floor}, or under ${D1_ADMIT.threshold} without a tactics score of ${D1_ADMIT.quality}`,
+    substitute: ({ tick, meta }) => {
+      if (!meta.brains.d1_ultra) return [{ label: 'this recording', expr: 'd1-ultra was off', result: 'no advice' }]
+      const lines: FormulaLine[] = []
+      const arbiter = d1Arbiter(tick)
+      const top = arbiter?.ranked[0]
+      if (arbiter && top) {
+        lines.push({
+          label: "the arbiter's question",
+          expr: `d1 favours ${top.action} at ${pct(top.p, 1)}: + ${D1_ARBITER_BONUS} × ${fmt(top.p, 3)}`,
+          result: `+${fmt(top.bonus, 3)}`,
+        })
+        if (top.action !== tick.selected_action) {
+          lines.push({
+            label: `the pick, ${tick.selected_action}`,
+            expr: `d1 ${pct(arbiter.pickP, 1)}: + ${D1_ARBITER_BONUS} × ${fmt(arbiter.pickP, 3)}`,
+            result: `+${fmt(D1_ARBITER_BONUS * arbiter.pickP, 3)}`,
+          })
+        }
+      }
+      for (const m of d1Modules(tick)) {
+        const out = tick.module_outputs[m]
+        const first = out?.d1_top_action ?? ''
+        lines.push({
+          label: `${m}'s question`,
+          expr: `d1 favours ${first} at ${pct(out?.d1_probabilities?.[first] ?? 0, 1)}, mixed in at w`,
+          result: fmt(out?.d1_weight ?? 0, 2),
+        })
+      }
+      const pressure = d1Pressure(tick)
+      if (pressure !== null) {
+        lines.push({
+          label: 'exploration, after the action',
+          expr: "d1's level, ½ of its 0 to 2 score",
+          result: fmt(pressure, 3),
+        })
+      }
+      if (lines.length === 0) {
+        lines.push({
+          label: 'this tick',
+          expr: d1Sync(meta) ? 'the call failed or ran out of time' : 'no cached answer for this situation yet',
+          result: 'no advice',
+        })
+      }
+      return lines
+    },
+    code: 'd1_client.py · D1UltraClient; modules.py · build_output; arbiter.py · arbitrate; exploration.py · update_and_decide',
   },
 }
 
@@ -924,7 +1001,7 @@ export const BOUNDS: Record<string, string> = {
   '≤ 50 samples':
     'The empirical cache keeps at most 50 real outcomes per situation and action, so old experience fades and memory stays small.',
   'deadline 65% of tick':
-    'Modules run in parallel with a deadline at 65% of the tick budget; a late module is recomputed locally, so the tick never waits.',
+    'Modules run in parallel with a deadline at 65% of the tick budget; a late module is recomputed locally, so the tick never waits for one.',
   'one pick from the menu': 'The arbiter returns exactly one legal action. It cannot invent an action or combine two.',
   '8 frames':
     'Each decision is executed for at most 4 steps of 2 game frames, then the controller decides again with a fresh snapshot.',

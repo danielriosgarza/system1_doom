@@ -109,7 +109,8 @@ export function Overview({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: T
               <span className="key hatched" style={{ ['--c' as string]: 'var(--n2)' }} /> learned (dashed arrows)
             </span>
             <span>
-              <span className="key dotted" style={{ ['--c' as string]: 'var(--n2)' }} /> d1-ultra (dotted arrows)
+              <span className="key dotted" style={{ ['--c' as string]: 'var(--n2)' }} /> d1-ultra (dotted arrows
+              {bundle.meta.brains.d1_ultra ? '; a dotted ring round its box when it answered this tick' : ''})
             </span>
             <span>
               <span className="key solid" style={{ ['--c' as string]: 'var(--goal)' }} /> lit: the slow path is busy

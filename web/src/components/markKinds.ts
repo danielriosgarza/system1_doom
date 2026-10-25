@@ -9,6 +9,7 @@ export const KIND_LANE: Record<TickEventKind, 'top' | 'bottom'> = {
   committed: 'bottom',
   expansion: 'bottom',
   admission: 'bottom',
+  rejection: 'bottom',
   strategy: 'bottom',
 }
 
@@ -21,5 +22,6 @@ export const MARK_LEGEND: Array<{ kind: TickEventKind; label: string }> = [
   { kind: 'committed', label: 'module committed' },
   { kind: 'expansion', label: 'asked for a macro' },
   { kind: 'admission', label: 'macro admitted' },
+  { kind: 'rejection', label: 'macro rejected' },
   { kind: 'strategy', label: 'strategy switch' },
 ]

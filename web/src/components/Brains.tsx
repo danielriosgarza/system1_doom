@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { fmt, pct, stillPlaying, stoppedEarly } from '../data/derive'
+import { d1Sync, fmt, pct, stillPlaying, stoppedEarly } from '../data/derive'
 import type { EpisodeMeta } from '../schema/bundle'
 
 /** Which deciders were switched on for this recording. */
@@ -17,7 +17,8 @@ export function Brains({ meta, children }: { meta: EpisodeMeta; children?: React
           : 'Learned networks: off'}
       </span>
       <span className={`brain ${meta.brains.d1_ultra ? 'on' : ''}`}>
-        <span className="dot" /> d1-ultra advice: {meta.brains.d1_ultra ? 'on' : 'off'}
+        <span className="dot" /> d1-ultra advice:{' '}
+        {meta.brains.d1_ultra ? (d1Sync(meta) ? 'on, waited for every tick' : 'on, from a cache') : 'off'}
       </span>
       <span className={`brain ${meta.brains.slow_path !== 'off' ? 'on' : ''}`}>
         <span className="dot" /> Slow path:{' '}

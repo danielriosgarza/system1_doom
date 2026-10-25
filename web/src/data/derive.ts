@@ -5,6 +5,7 @@ import type {
   ArbiterTrace,
   EpisodeMeta,
   MetricsRow,
+  ModuleTrace,
   ProposalTrace,
   StateTrace,
   TickTrace,
@@ -219,7 +220,7 @@ export function admissions(proposals: ProposalTrace[]): Admission[] {
 // Events marked on the scrubber.
 
 export type TickEventKind =
-  'damage' | 'kill' | 'sampled' | 'committed' | 'expansion' | 'admission' | 'strategy' | 'death'
+  'damage' | 'kill' | 'sampled' | 'committed' | 'expansion' | 'admission' | 'rejection' | 'strategy' | 'death'
 
 export interface TickEvent {
   kind: TickEventKind
@@ -251,12 +252,11 @@ export function tickEvents(tick: TickTrace, admitted: Admission[]): TickEvent[] 
   }
   for (const a of admitted) {
     if (a.tick !== tick.tick) continue
-    events.push({
-      kind: 'admission',
-      label: a.admitted
-        ? `admitted ${prettyId(a.actionId ?? 'a macro')} into the menu`
-        : 'rejected a proposed macro at the gate',
-    })
+    events.push(
+      a.admitted
+        ? { kind: 'admission', label: `admitted ${prettyId(a.actionId ?? 'a macro')} into the menu` }
+        : { kind: 'rejection', label: `rejected ${prettyId(proposalId(a.proposal))} at the gate` },
+    )
   }
   const steering = tick.steering
   if (steering && steering.active_before && steering.active_before !== steering.active_after) {
@@ -871,21 +871,26 @@ function opinionsLevel(tick: TickTrace): TowerLevel {
     bounds: ['deadline 65% of tick'],
     menuSize: tick.available_actions.length,
     menu: tick.available_actions.map((id) => ({ id, label: prettyId(id), state: 'legal' })),
-    candidates: opinions.map((o) => ({
-      id: o.module,
-      label: o.module,
-      share: o.topProbability,
-      value: `${prettyId(o.top ?? '–')} ${pct(o.topProbability)}`,
-      chosen: o.agrees,
-      style: o.learned > 0 ? 'hatched' : 'solid',
-    })),
+    candidates: opinions.map((o) => {
+      const out = tick.module_outputs[o.module]
+      const d1Top = out?.used_d1_ultra ? out.d1_top_action : null
+      return {
+        id: o.module,
+        label: o.module,
+        share: o.topProbability,
+        value: `${prettyId(o.top ?? '–')} ${pct(o.topProbability)}`,
+        chosen: o.agrees,
+        style: o.learned > 0 ? 'hatched' : 'solid',
+        note: d1Top ? `d1-ultra favoured ${prettyId(d1Top)} at ${pct(out?.d1_probabilities?.[d1Top] ?? 0)}` : undefined,
+      }
+    }),
     choice: favourite,
     choiceLabel:
       opinions.length === 0
         ? 'no opinions: a cached decision'
         : `${votes} of ${opinions.length} put ${prettyId(favourite)} first`,
     rule: 'each module ranks the menu with its own softmax; none of them decides',
-    reads: "the legal set, the world state, the simulator's projections, trust λ",
+    reads: `the legal set, the world state, the simulator's projections, trust λ${d1Modules(tick).length > 0 ? ", d1-ultra's advice" : ''}`,
     writes: 'five probability lists for the arbiter',
     idle: opinions.length === 0,
   }
@@ -899,6 +904,7 @@ function arbiterLevel(tick: TickTrace, meta: EpisodeMeta): TowerLevel {
   const lo = Math.min(0, ...values)
   const hi = Math.max(...values, lo + 1e-6)
   const rule = tick.arbiter?.pick_rule ?? 'greedy'
+  const d1 = Object.keys(tick.d1_arbiter_distribution ?? {}).length > 0 ? tick.d1_arbiter_distribution : null
   // The greedy line names this tick's reason, as the inspector does; the other rules read the same every tick.
   const ruleLine =
     rule === 'greedy' && tick.arbiter
@@ -917,12 +923,12 @@ function arbiterLevel(tick: TickTrace, meta: EpisodeMeta): TowerLevel {
       value: fmt(scores[id] ?? 0, 2),
       chosen: id === tick.selected_action,
       style: 'solid',
-      note: `chance ${pct(tick.arbiter_distribution[id] ?? 0)}`,
+      note: `chance ${pct(tick.arbiter_distribution[id] ?? 0)}${d1 ? `, d1-ultra ${pct(d1[id] ?? 0)}` : ''}`,
     })),
     choice: tick.selected_action,
     choiceLabel: prettyId(tick.selected_action),
     rule: ruleLine,
-    reads: 'five opinions, simulator evidence, the strategy bonus, exploration pressure',
+    reads: `five opinions, simulator evidence, the strategy bonus, exploration pressure${d1 ? ", d1-ultra's advice" : ''}`,
     writes: 'one action for the motor',
     idle: false,
   }
@@ -1382,6 +1388,130 @@ export function tickRange(ticks: number[]): string {
 }
 
 // ---------------------------------------------------------------------------------------------
+// d1-ultra's advice (modules.py DecisionModule.build_output, arbiter.py FinalArbiter.arbitrate,
+// exploration.py ExplorationController.update_and_decide, admission.py evaluate_and_admit).
+
+/** A module mixes d1's answer in at 0.75, or at 0.25 when its own top action already leads by 0.45. */
+export const D1_WEIGHT = { open: 0.75, settled: 0.25, gap: 0.45 } as const
+/** The arbiter adds 0.3 × d1's probability for an action to that action's score. */
+export const D1_ARBITER_BONUS = 0.3
+/** The gate rejects below 0.20, and below 0.40 unless d1 rates the macro's tactics at least 0.85. */
+export const D1_ADMIT = { floor: 0.2, threshold: 0.4, quality: 0.85 } as const
+/** export.py: the tick budget under --d1-sync, long enough for a round trip to d1-ultra. */
+export const D1_SYNC_TICK_BUDGET_SEC = 5
+/** The flag in running text, with non-breaking hyphens so a line never ends at "--". */
+export const D1_SYNC_FLAG = '\u2011\u2011d1\u2011sync'
+
+/** True when the recording waited for d1-ultra at every full-budget tick (export --d1-sync). */
+export function d1Sync(meta: EpisodeMeta): boolean {
+  return meta.brains.d1_ultra && meta.config.execution_mode === 'sync_d1'
+}
+
+export interface ModuleD1Part {
+  /** d1-ultra's own probability for the action. */
+  d1: number
+  /** The module's own softmax probability for it, before d1 was mixed in. */
+  own: number
+  /** d1's weight w, and the sum over the menu that renormalises the mix. */
+  w: number
+  total: number
+  /** The part of the module's final probability that came from d1's answer; 0 when it did not answer. */
+  fromD1: number
+  /** The rest, from the module's own softmax. */
+  local: number
+}
+
+/** The two sources of one bar of a module: p(a) = ((1 − w)·softmax(a) + w·d1(a)) ÷ Σ over the menu. */
+export function moduleD1Part(out: ModuleTrace, action: string): ModuleD1Part {
+  const p = out.probabilities?.[action] ?? 0
+  const answers = out.d1_probabilities ?? {}
+  if (!out.used_d1_ultra || Object.keys(answers).length === 0) {
+    return { d1: 0, own: p, w: 0, total: 1, fromD1: 0, local: p }
+  }
+  const w = out.d1_weight ?? 0
+  const total = w * Object.values(answers).reduce((s, v) => s + v, 0) + (1 - w) || 1
+  const d1 = answers[action] ?? 0
+  const fromD1 = Math.min(p, (w * d1) / total)
+  const local = p - fromD1
+  return { d1, own: w < 1 ? (local * total) / (1 - w) : 0, w, total, fromD1, local }
+}
+
+export interface D1ArbiterReading {
+  /** d1's answer to the arbiter's question, best first, with the bonus each answer adds to the score. */
+  ranked: Array<{ action: string; p: number; bonus: number }>
+  /** The picked action's probability, and its place in d1's ranking (0 is first). */
+  pickP: number
+  pickRank: number
+}
+
+/** d1-ultra's answer to the arbiter's question at this tick, or null when it gave none. */
+export function d1Arbiter(tick: TickTrace): D1ArbiterReading | null {
+  const ranked = Object.entries(tick.d1_arbiter_distribution ?? {})
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([action, p]) => ({ action, p, bonus: D1_ARBITER_BONUS * p }))
+  if (ranked.length === 0) return null
+  const pickRank = ranked.findIndex((r) => r.action === tick.selected_action)
+  return { ranked, pickP: ranked[pickRank]?.p ?? 0, pickRank }
+}
+
+/** The modules that mixed d1's answer into their bars at this tick. */
+export function d1Modules(tick: TickTrace): ModuleName[] {
+  return MODULES.filter((m) => tick.module_outputs[m]?.used_d1_ultra)
+}
+
+/** d1's exploration level after this tick (sync mode only): its score of 0 to 2, halved. */
+export function d1Pressure(tick: TickTrace): number | null {
+  return exploration(tick).terms?.d1_pressure ?? null
+}
+
+/** Why the gate's d1 stage passed or failed, from d1's admission probability and the rule (admission.py). */
+export function d1GateWords(p: number, passed: boolean): string {
+  const { floor, threshold, quality } = D1_ADMIT
+  if (p >= threshold) return `${fmt(p, 2)} is at least ${threshold}, so this stage passed.`
+  if (p < floor) return `${fmt(p, 2)} is under ${floor}, which rejects a macro whatever else d1 says.`
+  return passed
+    ? `${fmt(p, 2)} is under ${threshold}, but d1 rated its tactics at least ${quality} on its scale of 0 to 2, so this stage passed.`
+    : `${fmt(p, 2)} is under ${threshold}, and d1 rated its tactics below ${quality} on its scale of 0 to 2, so the macro was rejected; a rating of ${quality} or more lets a probability from ${floor} to ${threshold} through.`
+}
+
+const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth']
+
+/** "its first choice", "its third choice", for a place in a ranking. */
+export function choiceWords(rank: number): string {
+  return `its ${ORDINALS[rank] ?? `number ${rank + 1}`} choice`
+}
+
+/** What d1-ultra advised at this tick, in a sentence or two, for the cards that show it. */
+export function d1Words(tick: TickTrace, meta: EpisodeMeta): string {
+  if (!meta.brains.d1_ultra) return 'Off in this recording.'
+  const arbiter = d1Arbiter(tick)
+  const modules = d1Modules(tick)
+  if (!arbiter && modules.length === 0) {
+    return d1Sync(meta)
+      ? 'No answer this tick: the call failed or ran out of time, so nothing was mixed in.'
+      : 'No answer this tick: this situation had not been answered yet, so nothing was mixed in.'
+  }
+  const parts: string[] = []
+  const top = arbiter?.ranked[0]
+  if (arbiter && top) {
+    parts.push(
+      `For the arbiter it favoured ${prettyId(top.action)} at ${pct(top.p)}` +
+        (top.action === tick.selected_action
+          ? ', the action picked.'
+          : `; the pick, ${prettyId(tick.selected_action)}, was ${choiceWords(arbiter.pickRank)} at ${pct(arbiter.pickP)}.`),
+    )
+  }
+  if (modules.length > 0) {
+    parts.push(
+      `${modules.length === MODULES.length ? 'All five' : `${modules.length} of 5`} modules mixed its answer in.`,
+    )
+  }
+  const pressure = d1Pressure(tick)
+  if (pressure !== null) parts.push(`After the action it put exploration at ${fmt(pressure, 2)}.`)
+  return parts.join(' ')
+}
+
+// ---------------------------------------------------------------------------------------------
 // Provenance: how a recording was made, and the command that makes it again (export.py).
 
 /** export.py's --max-ticks default. */
@@ -1404,6 +1534,7 @@ export function exportCommand(meta: EpisodeMeta): string {
   ]
   if (meta.config.deterministic_arbiter) parts.push('--deterministic')
   if (meta.brains.d1_ultra) parts.push('--d1')
+  if (d1Sync(meta)) parts.push('--d1-sync')
   if (meta.brains.slow_path === 'codex') parts.push('--codex')
   if (meta.brains.slow_path === 'off') parts.push('--no-slow-path')
   if (meta.config.max_ticks !== EXPORT_MAX_TICKS) parts.push(`--max-ticks ${meta.config.max_ticks}`)
@@ -1440,6 +1571,7 @@ export function serveCommand(config: LiveConfig): string {
   ]
   if (config.deterministic) parts.push('--deterministic')
   if (config.d1) parts.push('--d1')
+  if (config.d1 && config.d1_sync) parts.push('--d1-sync')
   if (config.codex) parts.push('--codex')
   if (!config.slow_path) parts.push('--no-slow-path')
   if (config.max_ticks !== EXPORT_MAX_TICKS) parts.push(`--max-ticks ${config.max_ticks}`)

@@ -9,6 +9,8 @@ export interface LiveConfig {
   seed: number
   model: EpisodeMeta['model']
   d1: boolean
+  /** Whether each tick waits for d1-ultra (serve --d1-sync); absent from a serve before 0.3.0. */
+  d1_sync?: boolean
   codex: boolean
   slow_path: boolean
   deterministic: boolean

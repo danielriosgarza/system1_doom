@@ -4,6 +4,7 @@ import {
   MAX_MACRO_STEPS,
   type RequestSpan,
   SANDBOX_CRITICAL_HEALTH,
+  d1GateWords,
   fmt,
   gateLevel,
   proposalShown,
@@ -53,6 +54,8 @@ export function AdmissionGate({
   const asked = span ? ticks.find((t) => t.tick === span.asked) : undefined
   const health = asked?.state?.health ?? null
   const survival = sandbox?.survival_probability ?? null
+  const d1Stage = (p.stage_results ?? []).find((s) => s.stage === 'd1')
+  const d1P = p.d1_admission_probability ?? null
   return (
     <div className={`admission-gate ${shown.current ? '' : 'earlier'}`}>
       <DecisionCard
@@ -117,6 +120,23 @@ export function AdmissionGate({
               </>
             )}
           </p>
+        </div>
+      )}
+      {d1Stage && !d1Stage.skipped && d1P !== null && (
+        <div className="sandbox" data-testid="gate-d1">
+          <p className="sandbox-head">
+            d1-ultra&apos;s verdict: asked whether this macro should join the menu, with the state, the request and the
+            sandbox&apos;s numbers in the question.
+          </p>
+          <table className="sandbox-table">
+            <tbody>
+              <tr>
+                <th scope="row">admission probability</th>
+                <td className="num">{fmt(d1P, 2)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="dc-note">{d1GateWords(d1P, d1Stage.passed)}</p>
         </div>
       )}
     </div>
