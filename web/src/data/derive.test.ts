@@ -592,7 +592,9 @@ describe("d1-ultra's advice", async () => {
       `For the arbiter it favoured ${(d1Arbiter(tick)?.ranked[0]?.action ?? '').replaceAll('_', ' ')}`,
     )
     expect(words).toContain('All five modules mixed its answer in.')
-    expect(words).toContain(`After the action it put exploration at ${(d1Pressure(tick) ?? NaN).toFixed(2)}.`)
+    expect(words).toContain(
+      `After the action it rated exploration at ${(d1Pressure(tick) ?? NaN).toFixed(2)}, half the say`,
+    )
     expect(d1Words(at(0), meta)).toBe('Off in this recording.')
     const silent: TickTrace = { ...tick, d1_arbiter_distribution: {}, module_outputs: at(0).module_outputs }
     expect(d1Words(silent, d1Meta)).toMatch(/^No answer this tick: the call failed or ran out of time/)
