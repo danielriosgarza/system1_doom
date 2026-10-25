@@ -14,9 +14,10 @@ function collectErrors(page: Page): string[] {
 const badge = (page: Page) => page.locator('.live-badge')
 const picker = (page: Page) => page.locator('.topbar select')
 
+/** The tick showing: Watch's counter on Watch, the timeline's on the other screens. */
 async function tickNow(page: Page): Promise<number> {
-  const text = (await page.getByTestId('tick-counter').textContent()) ?? ''
-  return Number(/Tick (\d+)/.exec(text)?.[1] ?? -1)
+  const counter = page.locator('[data-testid="watch-counter"], [data-testid="tick-counter"]').first()
+  return Number((await counter.getAttribute('data-tick')) ?? -1)
 }
 
 /** Follow the live episode from early in its run, so a test has most of an episode before it ends. */
@@ -43,15 +44,24 @@ test('#live follows the episode in progress: the badge, a rising count, a new fr
 }) => {
   const errors = collectErrors(page)
   await followEarly(page)
-  await expect(page).toHaveURL(/#live\/overview$/)
-  await expect(page.getByTestId('live-line')).toBeVisible()
-  const slots = page.locator('.scrubber svg rect')
-  const before = await slots.count()
+  await expect(page).toHaveURL(/#live\/watch$/)
+  await expect(page.locator('.watch-honesty')).toContainText('Live:')
+  const bar = page.getByRole('slider', { name: 'Decision' })
+  const before = Number(await bar.getAttribute('aria-valuemax'))
   const first = await tickNow(page)
   await expect.poll(() => tickNow(page), { timeout: 2_000 }).toBeGreaterThan(first)
-  expect(await slots.count()).toBeGreaterThan(before)
+  expect(Number(await bar.getAttribute('aria-valuemax'))).toBeGreaterThan(before)
+  await expect(page.getByTestId('watch-counter')).toContainText('playing now')
+  // Watch shows the newest frame as it arrives, and never loops while following.
+  const stage = page.locator('.watch-img.top')
+  const shown = await stage.getAttribute('src')
+  expect(shown).toMatch(/^episodes\/live-\d+\/frames\/\d{5}\.jpg$/)
+  await expect.poll(() => stage.getAttribute('src'), { timeout: 2_000 }).not.toBe(shown)
 
-  await page.keyboard.press('2')
+  await page.keyboard.press('4')
+  await expect(page).toHaveURL(/#live\/overview$/)
+  await expect(page.getByTestId('live-line')).toBeVisible()
+  await page.keyboard.press('3')
   await expect(page).toHaveURL(/#live\/tick$/)
   const frame = page.locator('.frame img')
   const src = await frame.getAttribute('src')
@@ -68,13 +78,13 @@ test('ArrowLeft stops following, and Follow returns to the newest tick', async (
   const held = await tickNow(page)
   await page.waitForTimeout(400)
   expect(await tickNow(page)).toBe(held)
-  await expect(page).toHaveURL(new RegExp(`#live-\\d+/${held}/overview$`))
+  await expect(page).toHaveURL(new RegExp(`#live-\\d+/${held}/watch$`))
 
   await follow.click()
   await expect(page.locator('.live-following')).toBeVisible()
   // Five ticks arrived during the 400 ms; Follow lands on the newest and keeps moving.
   await expect.poll(() => tickNow(page), { timeout: 2_000 }).toBeGreaterThan(held + 4)
-  await expect(page).toHaveURL(/#live\/overview$/)
+  await expect(page).toHaveURL(/#live\/watch$/)
 })
 
 test('at the end the picker lists the episode with its result, the badge reads ended, and the next is followed', async ({
@@ -86,13 +96,13 @@ test('at the end the picker lists the episode with its result, the badge reads e
   expect(name).toMatch(/^live-\d+$/)
   await expect(badge(page)).toHaveText('ended', { timeout: 6_000 })
   await expect(picker(page).locator(`optgroup[label="Live"] option[value="${name}"]`)).toHaveText(
-    /^deadly corridor · heuristics only · seed \d+ · died$/,
+    /^deadly corridor · heuristics only · run \d+ · died$/,
   )
   await expect(badge(page)).toHaveText('LIVE', { timeout: 3_000 })
   await expect(picker(page)).toHaveValue(`live-${Number(name.slice('live-'.length)) + 1}`)
   await expect(page.locator('.live-following')).toBeVisible()
   await expect(picker(page).locator('optgroup[label="Live"] option').first()).toHaveText(
-    /^live · deadly corridor · seed \d+ · tick \d+$/,
+    /^live · deadly corridor · run \d+ · tick \d+$/,
   )
 })
 
@@ -100,11 +110,12 @@ test('every screen renders the live episode without console errors', async ({ pa
   const errors = collectErrors(page)
   await followEarly(page)
   const screens: Array<[string, string]> = [
-    ['1', 'main.overview'],
-    ['2', 'main.main'],
-    ['3', 'main.hierarchy'],
-    ['4', 'main.learning'],
-    ['5', 'main.menu-screen'],
+    ['1', 'main.watch'],
+    ['2', 'main.hierarchy'],
+    ['3', 'main.main'],
+    ['4', 'main.overview'],
+    ['5', 'main.learning'],
+    ['6', 'main.menu-screen'],
   ]
   for (const [key, main] of screens) {
     await page.keyboard.press(key)
@@ -141,15 +152,17 @@ test('a visit while serve sets up its first episode, with no recordings, rides i
   await expect(badge(page)).toHaveText('LIVE', { timeout: 10_000 })
   await expect(page.locator('.live-following')).toBeVisible()
   await expect(page.getByRole('alert')).toHaveCount(0)
-  await expect(page).toHaveURL(/#live\/overview$/)
+  await expect(page).toHaveURL(/#live\/watch$/)
   expect(errors.filter((e) => !e.includes('404'))).toEqual([])
 })
 
 test('a shipped recording still opens from the picker, and l comes back to the live episode', async ({ page }) => {
   await followEarly(page)
   await picker(page).selectOption('deadly_corridor-learned-9')
-  await expect(page).toHaveURL(/#deadly_corridor-learned-9\/0\/overview$/)
-  await expect(page.getByTestId('tick-counter')).toContainText('Tick 0 / 51')
+  await expect(page).toHaveURL(/#deadly_corridor-learned-9\/0\/watch$/)
+  // On Watch a recording picked from the list plays from its start, as a card does.
+  await expect(page.getByTestId('watch-counter')).toContainText('of 52')
+  await expect.poll(() => tickNow(page), { timeout: 2_500 }).toBeGreaterThan(0)
   await expect(page.getByTestId('live-status')).toHaveCount(0)
   // The picker keeps the focus after a choice, and no key fires in a select.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())

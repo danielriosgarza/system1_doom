@@ -15,4 +15,7 @@ export const LIVE_COPY = {
   servePlaying: 'What is playing it',
   serveIntro: 'From the repository root, with the package installed and the app built:',
   exportAgain: 'To make the same seed again as a recording, played on its own:',
+  watchLive: 'Watch it decide live',
+  watchLiveIntro:
+    'This site replays recordings; it cannot run the game. On your machine, serve plays the same settings and streams each decision to this app as it is made.',
 }

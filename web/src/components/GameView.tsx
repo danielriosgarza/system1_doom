@@ -70,11 +70,18 @@ function Tag({
   )
 }
 
-export function GameView({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
+function frameSize(bundle: EpisodeBundle, tick: TickTrace): { width: number; height: number } {
+  return {
+    width: tick.state?.screen_width ?? bundle.meta.frames.width ?? 320,
+    height: tick.state?.screen_height ?? bundle.meta.frames.height ?? 240,
+  }
+}
+
+/** What the trace says about the frame, drawn over it: the aim band, the crosshair, enemies, pickups and the wall radar. */
+export function FrameOverlay({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
   const depth = useApp((s) => s.depth)
   const state = tick.state
-  const width = state?.screen_width ?? bundle.meta.frames.width ?? 320
-  const height = state?.screen_height ?? bundle.meta.frames.height ?? 240
+  const { width, height } = frameSize(bundle, tick)
   const centre = width / 2
   const band = aimBandHalfWidth(width)
   const enemies = state?.enemies ?? []
@@ -82,138 +89,155 @@ export function GameView({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTr
   const nearRing = wallRadius(NEAR_WALL)
   const walls = state?.walls
   return (
-    <>
-      <div className="frame">
-        <img
-          src={frameUrl(bundle, tick.tick)}
-          alt={`The game screen at tick ${tick.tick}`}
-          width={width}
-          height={height}
-        />
-        <svg
-          viewBox={`0 0 ${width} ${height}`}
-          preserveAspectRatio="none"
-          role="img"
-          aria-label="Overlays drawn from the trace"
-        >
-          <rect x={centre - band} y={0} width={band * 2} height={height} fill="var(--accent)" opacity={0.1} />
-          <line
-            x1={centre - band}
-            x2={centre - band}
-            y1={0}
-            y2={height}
-            stroke="var(--accent)"
-            strokeDasharray="3 3"
-            strokeWidth={0.8}
-            opacity={0.8}
-          />
-          <line
-            x1={centre + band}
-            x2={centre + band}
-            y1={0}
-            y2={height}
-            stroke="var(--accent)"
-            strokeDasharray="3 3"
-            strokeWidth={0.8}
-            opacity={0.8}
-          />
-          <text x={centre} y={11} fontSize={9} fill="var(--accent)" textAnchor="middle">
-            aim band ±{AIM_BAND_DEG}°
-          </text>
-          <path
-            d={`M${centre - 5},${height / 2} h10 M${centre},${height / 2 - 5} v10`}
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label="Overlays drawn from the trace"
+    >
+      <rect x={centre - band} y={0} width={band * 2} height={height} fill="var(--accent)" opacity={0.1} />
+      <line
+        x1={centre - band}
+        x2={centre - band}
+        y1={0}
+        y2={height}
+        stroke="var(--accent)"
+        strokeDasharray="3 3"
+        strokeWidth={0.8}
+        opacity={0.8}
+      />
+      <line
+        x1={centre + band}
+        x2={centre + band}
+        y1={0}
+        y2={height}
+        stroke="var(--accent)"
+        strokeDasharray="3 3"
+        strokeWidth={0.8}
+        opacity={0.8}
+      />
+      <text x={centre} y={11} fontSize={9} fill="var(--accent)" textAnchor="middle">
+        aim band ±{AIM_BAND_DEG}°
+      </text>
+      <path
+        d={`M${centre - 5},${height / 2} h10 M${centre},${height / 2 - 5} v10`}
+        stroke="#fff"
+        strokeWidth={1}
+        opacity={0.8}
+      />
+
+      {pickups.map((p, i) => {
+        const w = Math.max(8, p.width ?? 12)
+        const h = Math.max(8, p.height ?? 12)
+        return (
+          <g key={p.id}>
+            <rect
+              x={p.screen_x - w / 2}
+              y={p.screen_y - h / 2}
+              width={w}
+              height={h}
+              fill="none"
+              stroke="var(--pickup)"
+              strokeWidth={1.2}
+              strokeDasharray="3 2"
+            />
+            <Tag x={p.screen_x + w / 2 + 1} y={p.screen_y + h / 2 + 1} text={letter(i)} color="var(--pickup)" />
+            <title>{`${p.name} (${p.category}): ${fmt(p.distance, 0)} units away, ${signed(p.angle_offset, 1)}° from the crosshair`}</title>
+          </g>
+        )
+      })}
+
+      {enemies.map((e, i) => {
+        const w = Math.max(6, e.width)
+        const h = Math.max(6, e.height)
+        const aimed = Math.abs(e.angle_offset) <= AIM_BAND_DEG
+        return (
+          <g key={e.id}>
+            <rect
+              x={e.screen_x - w / 2}
+              y={e.screen_y - h / 2}
+              width={w}
+              height={h}
+              fill="none"
+              stroke="var(--enemy)"
+              strokeWidth={aimed ? 2 : 1.2}
+            />
+            <Tag
+              x={e.screen_x - w / 2 - 1}
+              y={e.screen_y - h / 2 - 1}
+              text={String(i + 1)}
+              color="var(--enemy)"
+              anchorEnd
+            />
+            <title>{describeEnemy(e)}</title>
+          </g>
+        )
+      })}
+
+      {walls && (
+        <g aria-label="Wall distances">
+          <circle cx={RADAR.x} cy={RADAR.y} r={RADAR.outer} fill="rgba(0,0,0,0.45)" />
+          {(
+            [
+              ['left', -50, walls.left ?? 0],
+              ['ahead', 0, walls.front ?? 0],
+              ['right', 50, walls.right ?? 0],
+            ] as const
+          ).map(([name, angle, distance]) => (
+            <path
+              key={name}
+              d={wedge(angle, 18, wallRadius(distance))}
+              fill={distance <= NEAR_WALL ? 'var(--neg)' : 'var(--navigation)'}
+              opacity={0.85}
+            >
+              <title>{`Wall ${name}: ${fmt(distance, 0)} units${distance <= NEAR_WALL ? ', closer than 64: blocking' : ''}`}</title>
+            </path>
+          ))}
+          <circle
+            cx={RADAR.x}
+            cy={RADAR.y}
+            r={nearRing}
+            fill="none"
             stroke="#fff"
-            strokeWidth={1}
+            strokeDasharray="2 2"
+            strokeWidth={0.7}
             opacity={0.8}
           />
+          <text x={RADAR.x} y={RADAR.y - RADAR.outer - 3} fontSize={8.5} fill="#fff" textAnchor="middle">
+            walls
+            {depth === 'formula'
+              ? ` ${fmt(walls.left ?? 0, 0)} · ${fmt(walls.front ?? 0, 0)} · ${fmt(walls.right ?? 0, 0)}`
+              : ''}
+          </text>
+        </g>
+      )}
+    </svg>
+  )
+}
 
-          {pickups.map((p, i) => {
-            const w = Math.max(8, p.width ?? 12)
-            const h = Math.max(8, p.height ?? 12)
-            return (
-              <g key={p.id}>
-                <rect
-                  x={p.screen_x - w / 2}
-                  y={p.screen_y - h / 2}
-                  width={w}
-                  height={h}
-                  fill="none"
-                  stroke="var(--pickup)"
-                  strokeWidth={1.2}
-                  strokeDasharray="3 2"
-                />
-                <Tag x={p.screen_x + w / 2 + 1} y={p.screen_y + h / 2 + 1} text={letter(i)} color="var(--pickup)" />
-                <title>{`${p.name} (${p.category}): ${fmt(p.distance, 0)} units away, ${signed(p.angle_offset, 1)}° from the crosshair`}</title>
-              </g>
-            )
-          })}
+/** The screen the controller saw when it decided this tick, with the overlays: no lists, no legend. */
+export function GameFrame({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
+  const { width, height } = frameSize(bundle, tick)
+  return (
+    <div className="frame">
+      <img
+        src={frameUrl(bundle, tick.tick)}
+        alt={`The game screen at tick ${tick.tick}`}
+        width={width}
+        height={height}
+      />
+      <FrameOverlay bundle={bundle} tick={tick} />
+    </div>
+  )
+}
 
-          {enemies.map((e, i) => {
-            const w = Math.max(6, e.width)
-            const h = Math.max(6, e.height)
-            const aimed = Math.abs(e.angle_offset) <= AIM_BAND_DEG
-            return (
-              <g key={e.id}>
-                <rect
-                  x={e.screen_x - w / 2}
-                  y={e.screen_y - h / 2}
-                  width={w}
-                  height={h}
-                  fill="none"
-                  stroke="var(--enemy)"
-                  strokeWidth={aimed ? 2 : 1.2}
-                />
-                <Tag
-                  x={e.screen_x - w / 2 - 1}
-                  y={e.screen_y - h / 2 - 1}
-                  text={String(i + 1)}
-                  color="var(--enemy)"
-                  anchorEnd
-                />
-                <title>{describeEnemy(e)}</title>
-              </g>
-            )
-          })}
-
-          {walls && (
-            <g aria-label="Wall distances">
-              <circle cx={RADAR.x} cy={RADAR.y} r={RADAR.outer} fill="rgba(0,0,0,0.45)" />
-              {(
-                [
-                  ['left', -50, walls.left ?? 0],
-                  ['ahead', 0, walls.front ?? 0],
-                  ['right', 50, walls.right ?? 0],
-                ] as const
-              ).map(([name, angle, distance]) => (
-                <path
-                  key={name}
-                  d={wedge(angle, 18, wallRadius(distance))}
-                  fill={distance <= NEAR_WALL ? 'var(--neg)' : 'var(--navigation)'}
-                  opacity={0.85}
-                >
-                  <title>{`Wall ${name}: ${fmt(distance, 0)} units${distance <= NEAR_WALL ? ', closer than 64: blocking' : ''}`}</title>
-                </path>
-              ))}
-              <circle
-                cx={RADAR.x}
-                cy={RADAR.y}
-                r={nearRing}
-                fill="none"
-                stroke="#fff"
-                strokeDasharray="2 2"
-                strokeWidth={0.7}
-                opacity={0.8}
-              />
-              <text x={RADAR.x} y={RADAR.y - RADAR.outer - 3} fontSize={8.5} fill="#fff" textAnchor="middle">
-                walls
-                {depth === 'formula'
-                  ? ` ${fmt(walls.left ?? 0, 0)} · ${fmt(walls.front ?? 0, 0)} · ${fmt(walls.right ?? 0, 0)}`
-                  : ''}
-              </text>
-            </g>
-          )}
-        </svg>
-      </div>
+export function GameView({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
+  const state = tick.state
+  const enemies = state?.enemies ?? []
+  const pickups = state?.pickups ?? []
+  return (
+    <>
+      <GameFrame bundle={bundle} tick={tick} />
       {(enemies.length > 0 || pickups.length > 0) && (
         <ul className="enemy-list" aria-label="What the labels say">
           {enemies.map((e, i) => (

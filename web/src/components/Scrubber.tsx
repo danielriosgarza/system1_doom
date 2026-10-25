@@ -1,7 +1,9 @@
-import { type PointerEvent, useEffect, useId, useState } from 'react'
+import { type PointerEvent, useId, useState } from 'react'
 import type { TickTrace } from '../schema/bundle'
-import { type Admission, type TickEvent, fmt, tickEvents } from '../data/derive'
-import { setState, setTickIndex, step, useApp } from '../store'
+import { WATCH } from '../content/watch'
+import { type Admission, type TickEvent, fmt, gameSeconds, tickEvents } from '../data/derive'
+import type { Pace } from '../data/playback'
+import { setPace, setTickIndex, step, togglePlay, useApp } from '../store'
 import { Mark } from './Marks'
 import { KIND_LANE, MARK_LEGEND } from './markKinds'
 import { ExplainerBody } from './Panel'
@@ -26,6 +28,8 @@ export function Scrubber({
 }) {
   const tickIndex = useApp((s) => s.tickIndex)
   const playing = useApp((s) => s.playing)
+  const pace = useApp((s) => s.pace)
+  const following = useApp((s) => s.following)
   const [ref, width] = useWidth<HTMLDivElement>()
   const [hover, setHover] = useState<number | null>(null)
   const [open, setOpen] = useState(false)
@@ -38,16 +42,6 @@ export function Scrubber({
   const events: TickEvent[][] = ticks.map((t) => tickEvents(t, admitted))
   const healthY = (h: number) => SLOT_BOTTOM - (Math.max(0, Math.min(100, h)) / 100) * (SLOT_BOTTOM - SLOT_TOP)
   const healthPath = ticks.map((t, i) => `${i === 0 ? 'M' : 'L'}${xOf(i)},${healthY(t.state?.health ?? 0)}`).join(' ')
-
-  useEffect(() => {
-    if (!playing) return
-    const timer = window.setInterval(() => step(1), 450)
-    return () => window.clearInterval(timer)
-  }, [playing])
-
-  useEffect(() => {
-    if (playing && tickIndex >= n - 1) setState({ playing: false })
-  }, [playing, tickIndex, n])
 
   const onPointer = (e: PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -76,10 +70,7 @@ export function Scrubber({
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (!playing && tickIndex >= n - 1) setTickIndex(0)
-              setState({ playing: !playing, following: false })
-            }}
+            onClick={togglePlay}
             aria-label={playing ? 'Pause' : 'Play'}
             title="Play or pause (space)"
           >
@@ -155,7 +146,19 @@ export function Scrubber({
             />
           </svg>
         </div>
-        <span />
+        {current && (
+          // While playing, or following a live episode, the count changes several times a second: too often to announce.
+          <span
+            className="tick-counter"
+            data-testid="tick-counter"
+            data-tick={current.tick}
+            aria-live={playing || following ? 'off' : 'polite'}
+          >
+            Tick {current.tick}
+            <span className="tick-last"> / {ticks[n - 1]?.tick ?? current.tick}</span>
+            <span className="tick-seconds"> · {fmt(gameSeconds(current.tick), 1)} s</span>
+          </span>
+        )}
         <div className="track-legend" aria-label="Mark legend">
           <span>
             <svg width={14} height={10} aria-hidden>
@@ -172,7 +175,19 @@ export function Scrubber({
             </span>
           ))}
         </div>
-        <span />
+        <span className="segmented scrub-pace" role="group" aria-label={WATCH.paceGroup}>
+          {(['real', 'slow'] as Pace[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              aria-pressed={pace === p}
+              title={WATCH.paceTitle[p]}
+              onClick={() => setPace(p)}
+            >
+              {WATCH.pace[p]}
+            </button>
+          ))}
+        </span>
         <div className="track-legend">
           <span className="scrub-sentence">{EXPLAINERS.scrubber.sentence}</span>
           <button

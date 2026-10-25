@@ -46,6 +46,7 @@ import {
   trustActions,
   trustLambda,
   serveCommand,
+  liveConfigOf,
   stillPlaying,
   stoppedEarly,
   trustRows,
@@ -507,6 +508,18 @@ describe('the command that makes a recording again', async () => {
     expect(serveCommand({ ...config, d1: true, d1_sync: true })).toBe(`${plain} --d1 --d1-sync`)
     // serve refuses --d1-sync without --d1, so a status that says so has no flag to show.
     expect(serveCommand({ ...config, d1_sync: true })).toBe(plain)
+  })
+
+  it('plays a recording’s own settings live with serve, as This recording offers', async () => {
+    expect(serveCommand(liveConfigOf(await meta('deadly_corridor-learned-9')))).toBe(
+      'python -m system1_doom.serve --scenario deadly_corridor.cfg --seed 9 --model latest',
+    )
+    expect(serveCommand(liveConfigOf(await meta('deadly_corridor-heuristics-11')))).toBe(
+      'python -m system1_doom.serve --scenario deadly_corridor.cfg --seed 11 --model heuristics',
+    )
+    expect(serveCommand(liveConfigOf(await meta('deadly_corridor-learned-d1-11')))).toBe(
+      'python -m system1_doom.serve --scenario deadly_corridor.cfg --seed 11 --model latest --d1 --d1-sync',
+    )
   })
 
   it('tells an episode still being played from a finished one', async () => {

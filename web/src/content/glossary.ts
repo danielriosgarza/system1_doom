@@ -69,7 +69,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     aliases: ['budget modes'],
     meaning:
       'How much time the tick’s budget allows: 40 ms by default, 5 s in a recording that waits for d1-ultra. Full runs everything, reduced drops the projections, and critical repeats the cached action with stand-in module outputs.',
-    see: [{ screen: 'tick', panel: 'arbiter', label: 'Tick → One decision (the “out of time” rule)' }],
+    see: [{ screen: 'tick', panel: 'arbiter', label: 'The inspector → One decision (the “out of time” rule)' }],
     code: 'controller.py · DoomDecisionController._select_budget_mode',
     now: ({ tick }) => `This tick ran in ${tick.budget_mode} mode.`,
   },
@@ -103,9 +103,9 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'Liquid AI’s decision model, asked small multiple-choice questions by the modules, the arbiter, exploration and the admission gate. Advisory everywhere it appears, and switched on recording by recording.',
     see: [
-      { screen: 'tick', panel: 'modules', label: 'Tick → Five opinions (the dotted share)' },
+      { screen: 'tick', panel: 'modules', label: 'The inspector → Five opinions (the dotted share)' },
       { screen: 'tick', panel: 'arbiter' },
-      { screen: 'hierarchy', label: 'Hierarchy (its side card)' },
+      { screen: 'hierarchy', label: 'The chain (its side card)' },
       { screen: 'overview' },
     ],
     code: 'd1_client.py · D1UltraClient',
@@ -131,7 +131,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     aliases: ['pressure'],
     meaning:
       'How inclined the arbiter is to try something other than its best guess: four readings of the situation, each worth up to 0.25, damped after success and clamped between 0.02 and 1. Temperature = 0.10 + pressure sets how flat its draw is. The arbiter of a tick uses the pressure left by the tick before.',
-    see: [{ screen: 'hierarchy', label: 'Hierarchy (the gauge)' }],
+    see: [{ screen: 'hierarchy', label: 'The chain (the gauge)' }],
     code: 'exploration.py · ExplorationController',
     now: ({ ticks, index }) => {
       const reading = pressureReading(pressureForArbiter(ticks, index))
@@ -491,7 +491,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'Twelve slots of remembered action sequences, each with a running reward (α 0.3) and a success count; when it is full, the slot with the lowest reward + 5 × successes among those not active is evicted. After each tick, steering chooses among its four options with that tick’s pressure, and from the next tick the legal actions of the active strategy’s sequence get +0.15 in the arbiter’s score.',
     see: [
-      { screen: 'hierarchy', label: 'Hierarchy (the steering level)' },
+      { screen: 'hierarchy', label: 'The chain (the steering level)' },
       { screen: 'tick', panel: 'outcome' },
     ],
     code: 'archive.py · StrategyArchive',

@@ -18,7 +18,7 @@ export const PRINCIPLES: Principle[] = [
     enforced:
       'Only an action from the legal set, chosen by the arbiter, is ever executed; the modules, the simulator, exploration, the archive, d1-ultra and Codex never press a key themselves.',
     see: [
-      { screen: 'hierarchy', label: 'Hierarchy (the tower)' },
+      { screen: 'hierarchy', label: 'The chain (the tower)' },
       { screen: 'tick', panel: 'legal' },
     ],
   },
@@ -40,7 +40,7 @@ export const PRINCIPLES: Principle[] = [
     principle: 'Boundedness everywhere.',
     enforced:
       'Macros at most 16 primitives; projections at most 16 candidates × depth 4 × branching 2 × 15 ms; archive 12; replay 100,000; the empirical cache 50 samples per context and action; module evaluation inside a deadline.',
-    see: [{ screen: 'hierarchy', label: 'Hierarchy (the bound badges on every level)' }],
+    see: [{ screen: 'hierarchy', label: 'The chain (the bound badges on every level)' }],
   },
   {
     principle: 'Modules are replaceable.',

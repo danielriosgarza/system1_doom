@@ -1,6 +1,9 @@
-import { Fragment, type ReactNode, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DecisionCard } from '../components/DecisionCard'
+import { HeadTools } from '../components/DepthToggle'
 import { ExplorationGauge } from '../components/ExplorationGauge'
+import { GameFrame } from '../components/GameView'
+import { flashElement } from '../components/flash'
 import { GateDetail, GatePipeline } from '../components/GateStages'
 import { BoundBadges, ExplainerBody } from '../components/Panel'
 import { SteeringCard } from '../components/SteeringCard'
@@ -14,6 +17,7 @@ import {
   exploration,
   explainPick,
   fmt,
+  gameSeconds,
   learning,
   moduleOpinions,
   motorSteps,
@@ -327,6 +331,28 @@ function MotorSteps({ tick, plan }: { tick: TickTrace; plan: string[] }) {
   )
 }
 
+/** The frame the agent saw at this decision, kept beside the chain so its six levels can be read against it. */
+function SawCard({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick: TickTrace; tickIndex: number }) {
+  return (
+    <section className="side-card saw-card" aria-labelledby="saw-title">
+      <header className="panel-head">
+        <span className="beat-num" title="Step 1 of a tick: freeze the world">
+          1
+        </span>
+        <h3 id="saw-title">What it saw</h3>
+      </header>
+      <p className="sentence">
+        Decision {tickIndex + 1} of {bundle.ticks.length} (tick {tick.tick}), {fmt(gameSeconds(tick.tick), 1)} s into
+        the game.
+      </p>
+      <GameFrame bundle={bundle} tick={tick} />
+      <button type="button" className="link-button" onClick={() => openInInspector('game')}>
+        See what it read from it in the inspector →
+      </button>
+    </section>
+  )
+}
+
 /** Arrows from each side input to the levels it feeds, measured from the laid-out cards. */
 function Connectors({ layoutKey }: { layoutKey: string }) {
   const ref = useRef<SVGSVGElement | null>(null)
@@ -427,7 +453,22 @@ export function Hierarchy({
   tickIndex: number
   ctx: ExplainerContext
 }) {
-  const [expanded, setExpanded] = useState<LevelId | null>(null)
+  // A row clicked on Watch opens its level here: expanded, scrolled to and flashed once.
+  const focusLevel = useApp((s) => s.focusLevel)
+  const [expanded, setExpanded] = useState<LevelId | null>(focusLevel)
+  const [askedFor, setAskedFor] = useState(focusLevel)
+  if (focusLevel && focusLevel !== askedFor) {
+    setAskedFor(focusLevel)
+    setExpanded(focusLevel)
+  }
+  useEffect(() => {
+    if (!focusLevel) return
+    const frame = window.requestAnimationFrame(() => {
+      flashElement(`level-${focusLevel}`, true)
+      setState({ focusLevel: null })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusLevel])
   const levels = towerLevels(tick, bundle.meta, bundle.proposals)
   const meta = bundle.meta
   const reading = pressureReading(pressureForArbiter(bundle.ticks, tickIndex))
@@ -473,12 +514,15 @@ export function Hierarchy({
   return (
     <main className="hierarchy" aria-label="The hierarchy at this tick">
       <header className="screen-head">
-        <h2>Tick {tick.tick} as a hierarchy: six levels, the slowest at the top</h2>
-        <p>
-          Every level is the same kind of decision: a short menu it cannot leave, a score for each option, one rule that
-          chooses, and a hard bound. The levels at the top change slowly and shape the menus of the fast ones below.
-          Click a level for all of its options and the full explanation.
-        </p>
+        <div>
+          <h2>Tick {tick.tick} as a chain of six levels, the slowest at the top</h2>
+          <p>
+            Every level is the same kind of decision: a short menu it cannot leave, a score for each option, one rule
+            that chooses, and a hard bound. The levels at the top change slowly and shape the menus of the fast ones
+            below. Click a level for all of its options and the full explanation.
+          </p>
+        </div>
+        <HeadTools tour />
       </header>
       <div className="tower-grid">
         <ol className="tower">
@@ -510,6 +554,7 @@ export function Hierarchy({
           ))}
         </ol>
         <aside className="side-inputs" aria-label="Side inputs: not levels, but evidence the levels read">
+          <SawCard bundle={bundle} tick={tick} tickIndex={tickIndex} />
           {SOURCES.map((source) => {
             const off =
               (source.id === 'networks' && !meta.brains.learned_networks) ||

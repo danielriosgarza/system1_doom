@@ -162,7 +162,22 @@ export async function loadEpisode(
   }
 }
 
+/**
+ * The recording a fresh visit opens: the first in the index that cleared its level, else the first. The
+ * index lists recordings in the order they were exported, so the first is not always the one worth watching.
+ */
+export function defaultEpisode(index: Pick<EpisodeIndex, 'episodes'> | null): string | null {
+  const episodes = index?.episodes ?? []
+  return (episodes.find((e) => e.cleared) ?? episodes[0])?.name ?? null
+}
+
 /** URL of the screen the controller saw when it decided `tick`. */
 export function frameUrl(bundle: Pick<EpisodeBundle, 'base' | 'meta'>, tick: number): string {
   return `${bundle.base}/${bundle.meta.frames.dir ?? 'frames'}/${String(tick).padStart(5, '0')}.jpg`
+}
+
+/** URL of the screen after the last action, or null when the bundle has none (a live episode still playing). */
+export function endFrameUrl(bundle: Pick<EpisodeBundle, 'base' | 'meta'>): string | null {
+  const end = bundle.meta.frames.end_frame
+  return end ? `${bundle.base}/${end}` : null
 }

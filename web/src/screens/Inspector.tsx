@@ -1,4 +1,5 @@
 import { ArbiterPanel } from '../components/ArbiterPanel'
+import { HeadTools } from '../components/DepthToggle'
 import { GameView } from '../components/GameView'
 import { LegalActions } from '../components/LegalActions'
 import { ModuleMatrix } from '../components/ModuleMatrix'
@@ -18,27 +19,30 @@ import { useApp } from '../store'
 function InspectorHeader() {
   return (
     <section className="inspector-head" aria-label="How to read this screen">
-      <ol className="beats" aria-label="The six steps of one tick">
-        {BEATS.map((beat, i) => (
-          <li key={beat.n} style={{ display: 'contents' }}>
-            <a
-              href={`#panel-${beat.panel}`}
-              onClick={(e) => {
-                e.preventDefault()
-                flashPanel(beat.panel)
-              }}
-            >
-              <span className="beat-num">{beat.n}</span>
-              {beat.name}
-            </a>
-            {i < BEATS.length - 1 && (
-              <span className="arrow" aria-hidden>
-                →
-              </span>
-            )}
-          </li>
-        ))}
-      </ol>
+      <div className="inspector-top">
+        <ol className="beats" aria-label="The six steps of one tick">
+          {BEATS.map((beat, i) => (
+            <li key={beat.n} style={{ display: 'contents' }}>
+              <a
+                href={`#panel-${beat.panel}`}
+                onClick={(e) => {
+                  e.preventDefault()
+                  flashPanel(beat.panel)
+                }}
+              >
+                <span className="beat-num">{beat.n}</span>
+                {beat.name}
+              </a>
+              {i < BEATS.length - 1 && (
+                <span className="arrow" aria-hidden>
+                  →
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+        <HeadTools tour />
+      </div>
       <p className="howto">{STORY.howto}</p>
     </section>
   )

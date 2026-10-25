@@ -1,7 +1,7 @@
 // A tiny external store: one episode, one current tick, the screen, and the viewer's settings.
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { TOUR } from './content/tour'
-import { featuredTickIndex } from './data/derive'
+import { type LevelId, featuredTickIndex } from './data/derive'
 import {
   LIVE_NAME,
   type LiveEvent,
@@ -11,18 +11,24 @@ import {
   mergedEpisodes,
   subscribeLive,
 } from './data/live'
-import { type EpisodeBundle, type EpisodeIndex, loadEpisode, loadIndex } from './data/loader'
+import { type EpisodeBundle, type EpisodeIndex, defaultEpisode, loadEpisode, loadIndex } from './data/loader'
+import { END_HOLD_MS, PACE_MS, type Pace } from './data/playback'
 
 export type Depth = 'plain' | 'formula'
 export type Theme = 'dark' | 'light'
-export type Screen = 'overview' | 'tick' | 'hierarchy' | 'learning' | 'menu'
+export type Screen = 'watch' | 'overview' | 'tick' | 'hierarchy' | 'learning' | 'menu'
 /** The reference drawer's four tabs. */
 export type DrawerSection = 'glossary' | 'principles' | 'recording' | 'keys'
 
+/**
+ * The screens in order of depth, as the tabs and the keys 1 to 6 list them. The ids are the URL's, kept from
+ * before the screens were renamed, so old links open what they opened.
+ */
 export const SCREENS: Array<{ id: Screen; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'tick', label: 'Tick' },
-  { id: 'hierarchy', label: 'Hierarchy' },
+  { id: 'watch', label: 'Watch' },
+  { id: 'hierarchy', label: 'The chain' },
+  { id: 'tick', label: 'The inspector' },
+  { id: 'overview', label: 'The diagram' },
   { id: 'learning', label: 'Learning' },
   { id: 'menu', label: 'Growing the menu' },
 ]
@@ -43,6 +49,23 @@ export interface AppState {
   /** An action the viewer is pointing at; every panel highlights it. */
   hoveredAction: string | null
   playing: boolean
+  /** Real time (one decision every 8 game frames) or slow (one a second). */
+  pace: Pace
+  /** Start playing once the open recording's first frames are decoded: a fresh visit and a recording card ask it. */
+  playWhenReady: boolean
+  /**
+   * The landing's own playback: at the end, hold the end frame and start again. Any interaction ends it: a pause,
+   * a seek, a card, a row, another screen; so does following live play.
+   */
+  loop: boolean
+  /** Playback ran past the last decision; Watch shows the end frame and the result until the cursor moves. */
+  ended: boolean
+  /** Playback has run in this visit; until it has, Watch offers a large Play button on the frame. */
+  played: boolean
+  /** The viewer has dismissed Watch's "How to read this" card. */
+  helpDismissed: boolean
+  /** A level of the chain to expand and flash once the chain is showing. */
+  focusLevel: LevelId | null
   /** The tour's current step, or null when no tour is running. */
   tour: number | null
   /** The viewer has finished or skipped the tour once; only changes the overview's button label. */
@@ -64,7 +87,7 @@ export interface AppState {
   liveOpen: string | null
 }
 
-type Settings = Partial<Pick<AppState, 'depth' | 'theme' | 'tourSeen'>>
+type Settings = Partial<Pick<AppState, 'depth' | 'theme' | 'tourSeen' | 'pace' | 'helpDismissed'>>
 
 const SETTINGS_KEY = 'system1-doom-explainer'
 
@@ -99,11 +122,18 @@ let state: AppState = {
   loading: true,
   error: null,
   tickIndex: 0,
-  screen: 'overview',
+  screen: 'watch',
   depth: saved.depth === 'formula' ? 'formula' : 'plain',
   theme: themePicked ? (saved.theme as Theme) : prefersLight ? 'light' : 'dark',
   hoveredAction: null,
   playing: false,
+  pace: saved.pace === 'slow' ? 'slow' : 'real',
+  playWhenReady: false,
+  loop: false,
+  ended: false,
+  played: false,
+  helpDismissed: saved.helpDismissed === true,
+  focusLevel: null,
   tour: null,
   tourSeen: saved.tourSeen === true,
   focusPanel: null,
@@ -123,8 +153,20 @@ export function getState(): AppState {
 export function setState(patch: Partial<AppState>): void {
   const next = { ...state, ...patch }
   if (next.theme !== state.theme) themePicked = true
-  if (next.depth !== state.depth || next.theme !== state.theme || next.tourSeen !== state.tourSeen) {
-    writeSettings({ depth: next.depth, tourSeen: next.tourSeen, ...(themePicked ? { theme: next.theme } : {}) })
+  if (
+    next.depth !== state.depth ||
+    next.theme !== state.theme ||
+    next.tourSeen !== state.tourSeen ||
+    next.pace !== state.pace ||
+    next.helpDismissed !== state.helpDismissed
+  ) {
+    writeSettings({
+      depth: next.depth,
+      tourSeen: next.tourSeen,
+      pace: next.pace,
+      helpDismissed: next.helpDismissed,
+      ...(themePicked ? { theme: next.theme } : {}),
+    })
   }
   state = next
   listeners.forEach((listener) => listener())
@@ -142,9 +184,20 @@ export function useApp<T>(selector: (s: AppState) => T): T {
 // ---------------------------------------------------------------------------------------------
 // The URL hash: `#<episode name>/<tick>/<screen>`. Without a screen it means the tick inspector,
 // so links written before the other screens existed still open the same tick. `#live/<screen>`
-// follows the live episode, whichever it is; plain `#live` lands on the overview.
+// follows the live episode, whichever it is; plain `#live` lands on Watch. While a recording plays,
+// the hash keeps the tick it started from and is written when playback stops: browsers limit how
+// often a page may rewrite its address, and real time is more than four decisions a second.
 
 const LIVE_HASH = 'live'
+
+/** The viewer asked the system for less motion: nothing plays on its own, and nothing fades. */
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
 
 function readHash(): { episode: string | null; tick: number | null; screen: Screen | null } {
   const parts = decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/')
@@ -175,12 +228,17 @@ function writeHash(push = false): void {
 // ---------------------------------------------------------------------------------------------
 // Actions.
 
-/** Move the cursor; any move the viewer makes stops following the live episode. */
+/** What any interaction does to the landing's own playback: no more looping, and no start still waiting. */
+const INTERACTED: Partial<AppState> = { loop: false, playWhenReady: false }
+
+/** Move the cursor; any move the viewer makes stops following the live episode and the landing's looping. */
 export function setTickIndex(index: number): void {
   const count = state.bundle?.ticks.length ?? 0
   if (count === 0) return
   const clamped = Math.max(0, Math.min(count - 1, index))
-  if (clamped !== state.tickIndex || state.following) setState({ tickIndex: clamped, following: false })
+  if (clamped !== state.tickIndex || state.following || state.ended || state.loop || state.playWhenReady) {
+    setState({ tickIndex: clamped, following: false, ended: false, ...INTERACTED })
+  }
   writeHash()
 }
 
@@ -188,9 +246,16 @@ export function step(delta: number): void {
   setTickIndex(state.tickIndex + delta)
 }
 
+/**
+ * Switch screen. Leaving the landing while it plays on its own pauses it, so the next screen holds still on the
+ * decision that was showing; playback the viewer started carries on.
+ */
 export function setScreen(screen: Screen): void {
   if (screen === state.screen) return
-  setState({ screen, hoveredAction: null })
+  const autoplaying = state.loop || state.playWhenReady
+  // The entry being left keeps the decision that was showing, which playback has not written.
+  writeHash()
+  setState({ screen, hoveredAction: null, ...INTERACTED, ...(autoplaying ? { playing: false } : {}) })
   writeHash(true)
   window.scrollTo({ top: 0 })
 }
@@ -201,9 +266,12 @@ export function openPanel(screen: Screen, panel: string): void {
   setState({ focusPanel: panel })
 }
 
-/** Open the reference drawer on one tab; for the glossary, optionally at one entry. Playback is left alone. */
+/**
+ * Open the reference drawer on one tab; for the glossary, optionally at one entry. Playback goes on, but the
+ * landing stops looping: the viewer has taken over.
+ */
 export function openDrawer(section: DrawerSection, term: string | null = null): void {
-  setState({ drawer: section, term })
+  setState({ drawer: section, term, loop: false })
 }
 
 export function closeDrawer(): void {
@@ -212,6 +280,119 @@ export function closeDrawer(): void {
 
 export function openInInspector(panel: string): void {
   openPanel('tick', panel)
+}
+
+/** Open the chain at the decision showing, with one level expanded and flashed; playback pauses there. */
+export function openLevel(level: LevelId): void {
+  setState({ playing: false, ended: false, ...INTERACTED, focusLevel: level })
+  setScreen('hierarchy')
+  writeHash()
+}
+
+// ---------------------------------------------------------------------------------------------
+// Playback. The timer lives in usePlayback (App), so a recording plays on every screen, with or
+// without the timeline at the bottom.
+
+/** Play or pause. Play at the last decision starts again from the first. */
+export function togglePlay(): void {
+  const { playing, bundle, tickIndex, ended } = state
+  if (playing) {
+    setState({ playing: false, ...INTERACTED })
+    writeHash()
+    return
+  }
+  const last = (bundle?.ticks.length ?? 1) - 1
+  setState({
+    playing: true,
+    played: true,
+    following: false,
+    ended: false,
+    ...INTERACTED,
+    ...(ended || tickIndex >= last ? { tickIndex: 0 } : {}),
+  })
+}
+
+/** A change of pace is the viewer taking over too: the landing stops looping, though a start still waiting stays. */
+export function setPace(pace: Pace): void {
+  if (pace !== state.pace || state.loop) setState({ pace, loop: false })
+}
+
+/** The open recording's first frames are decoded: start the playback a fresh visit or a card asked for. */
+export function playWhenReady(): void {
+  if (!state.playWhenReady || !state.bundle) return
+  setState({ playWhenReady: false, playing: true, played: true, ended: false })
+}
+
+/**
+ * One step of playback: the next decision, or past the last one the end, where the landing's loop holds and
+ * anything else stops. A live episode still being played only ever stops at its newest decision.
+ */
+export function advancePlayback(): void {
+  const { bundle, tickIndex, loop, ended, live } = state
+  const count = bundle?.ticks.length ?? 0
+  if (!bundle || count === 0 || ended) return
+  if (tickIndex < count - 1) {
+    setState({ tickIndex: tickIndex + 1 })
+    return
+  }
+  if (live?.current === bundle.name) {
+    setState({ playing: false, ...INTERACTED })
+    writeHash()
+    return
+  }
+  setState({ ended: true, ...(loop ? {} : { playing: false }) })
+  if (!loop) writeHash()
+}
+
+/** After the end frame has been held, the landing's loop starts the recording again. */
+export function restartLoop(): void {
+  if (!state.loop || !state.playing) return
+  setState({ tickIndex: 0, ended: false })
+}
+
+/** Run the playback timer while playing: one decision per pace interval, and the loop's hold at the end. */
+export function usePlayback(): void {
+  const playing = useApp((s) => s.playing)
+  const pace = useApp((s) => s.pace)
+  const ended = useApp((s) => s.ended)
+  const loop = useApp((s) => s.loop)
+  useEffect(() => {
+    if (!playing) return
+    if (ended) {
+      if (!loop) return
+      const hold = window.setTimeout(restartLoop, END_HOLD_MS)
+      return () => window.clearTimeout(hold)
+    }
+    const timer = window.setInterval(advancePlayback, PACE_MS[pace])
+    return () => window.clearInterval(timer)
+  }, [playing, pace, ended, loop])
+}
+
+/**
+ * Open a recording from Watch's cards: from its first decision, playing once its frames are ready (paused under
+ * reduced motion), with no loop. The recording already open starts again.
+ */
+export async function openRecording(name: string): Promise<void> {
+  const play = !prefersReducedMotion()
+  if (state.bundle?.name === name) {
+    setState({
+      tickIndex: 0,
+      ended: false,
+      following: false,
+      ...INTERACTED,
+      playing: play,
+      played: play || state.played,
+    })
+    writeHash()
+    return
+  }
+  setState({ ...INTERACTED, ended: false })
+  await openEpisode(name, null)
+  if (state.bundle?.name === name && !state.error) setState({ playWhenReady: play })
+}
+
+export function dismissHelp(): void {
+  setState({ helpDismissed: true })
 }
 
 /** Counts calls to openEpisode, so a slow load never replaces a later one. */
@@ -228,7 +409,15 @@ export async function openEpisode(name: string, tick: number | null = null, foll
   const mine = ++opening
   const live = state.live?.current === name
   // Following holds while the files load, so an episode that starts meanwhile is still followed into.
-  setState({ loading: true, error: null, playing: false, hoveredAction: null, following: follow })
+  setState({
+    loading: true,
+    error: null,
+    playing: false,
+    hoveredAction: null,
+    following: follow,
+    ended: false,
+    ...INTERACTED,
+  })
   pending = live ? [] : null
   try {
     let bundle = await loadEpisode(name, 'episodes', undefined, { live })
@@ -258,6 +447,7 @@ export function followLive(): void {
   const { live, bundle, tour } = state
   if (!live?.running && !live?.current) return
   if (tour !== null) endTour()
+  setState({ ...INTERACTED, ended: false })
   if (!live.current) {
     setState({ following: true, playing: false })
     return
@@ -347,8 +537,9 @@ export async function start(): Promise<void> {
     setState({ index, live })
     if (live?.running) await connectLive()
     const wanted = readHash()
-    // A fresh visit lands on the overview; a link without a screen opens the inspector.
-    setState({ screen: wanted.screen ?? (wanted.episode && wanted.episode !== LIVE_HASH ? 'tick' : 'overview') })
+    // A fresh visit lands on Watch; a link without a screen opens the inspector.
+    const screen = wanted.screen ?? (wanted.episode && wanted.episode !== LIVE_HASH ? 'tick' : 'watch')
+    setState({ screen })
     // While serve is playing, a visit without a link, or with #live, follows live play: the episode in
     // progress, or between two episodes the one that just ended, until the next starts.
     const wantsLive = !!state.live?.running && (!wanted.episode || wanted.episode === LIVE_HASH)
@@ -358,8 +549,7 @@ export async function start(): Promise<void> {
       return
     }
     const names = mergedEpisodes(index, state.live).map((e) => e.name)
-    const name =
-      wanted.episode && names.includes(wanted.episode) ? wanted.episode : (index.episodes[0]?.name ?? names[0])
+    const name = wanted.episode && names.includes(wanted.episode) ? wanted.episode : (defaultEpisode(index) ?? names[0])
     if (!name) {
       // Serve is still setting up its first episode and nothing is shipped: it is opened when it starts.
       if (wantsLive) setState({ following: true })
@@ -369,6 +559,11 @@ export async function start(): Promise<void> {
     await openEpisode(name, wanted.tick)
     // Serve has not finished an episode yet: the first one is opened when it starts.
     if (wantsLive) setState({ following: true })
+    // Watch at its first decision plays on its own, and loops, once the first frames are decoded; a link to a
+    // later decision waits for Play, and so does a viewer who asked for reduced motion.
+    else if (screen === 'watch' && state.bundle?.name === name && state.tickIndex === 0 && !prefersReducedMotion()) {
+      setState({ playWhenReady: true, loop: true })
+    }
   } catch (error) {
     setState({ loading: false, error: error instanceof Error ? error.message : String(error) })
   }
@@ -379,20 +574,23 @@ export function onHashChange(): void {
   const { bundle } = state
   if (!wanted.episode) return
   if (wanted.episode === LIVE_HASH) {
-    const screen = wanted.screen ?? 'overview'
-    if (screen !== state.screen) setState({ screen, hoveredAction: null })
+    const screen = wanted.screen ?? 'watch'
+    if (screen !== state.screen) setState({ screen, hoveredAction: null, ...INTERACTED })
     if (!state.following) followLive()
     return
   }
   const screen = wanted.screen ?? 'tick'
-  if (screen !== state.screen) setState({ screen, hoveredAction: null })
+  if (screen !== state.screen) {
+    const autoplaying = state.loop || state.playWhenReady
+    setState({ screen, hoveredAction: null, ...INTERACTED, ...(autoplaying ? { playing: false } : {}) })
+  }
   if (!bundle || bundle.name !== wanted.episode) {
     void openEpisode(wanted.episode, wanted.tick)
     return
   }
   if (wanted.tick !== null) {
     const found = bundle.ticks.findIndex((t) => t.tick === wanted.tick)
-    if (found >= 0 && found !== state.tickIndex) setState({ tickIndex: found })
+    if (found >= 0 && found !== state.tickIndex) setState({ tickIndex: found, ended: false })
   }
 }
 
@@ -402,7 +600,14 @@ export function onHashChange(): void {
 export function startTour(): void {
   const ticks = state.bundle?.ticks ?? []
   if (ticks.length === 0) return
-  setState({ playing: false, following: false, hoveredAction: null, tickIndex: featuredTickIndex(ticks) })
+  setState({
+    playing: false,
+    following: false,
+    hoveredAction: null,
+    ended: false,
+    ...INTERACTED,
+    tickIndex: featuredTickIndex(ticks),
+  })
   setTourStep(0)
 }
 
