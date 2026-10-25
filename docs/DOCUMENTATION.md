@@ -17,9 +17,11 @@
 > (the learning extension). This document describes the code as it is;
 > section references like “Spec §9” point back to `spec.md`.
 
-**Package:** `system1-doom` 0.2.0 · **Python:** ≥ 3.11 · **Source layout:**
+**Package:** `system1-doom` 0.3.0 · **Python:** ≥ 3.11 · **Source layout:**
 `src/system1_doom/` (24 modules, ≈ 7,400 LOC) · **Tests:** `tests/`
-(15 files, 67 tests) · **Web explainer:** `web/` (Vite + React + TypeScript)
+(15 files, 70 tests) · **Web explainer:** `web/` (Vite + React + TypeScript;
+74 Vitest and 29 Playwright tests), online at
+<https://danielriosgarza.github.io/system1_doom/>
 
 ---
 
@@ -1084,7 +1086,51 @@ arbiter adds to the legal actions of its sequence from the next tick.
 On a recording without a request, the strips still show the counters
 and the closest call, with a link to the recording of the same seed that
 asked. A Plain/Formula toggle hides or shows the arithmetic on every
-screen. Two demo bundles ship in `web/public/episodes/`.
+screen.
+
+**The recordings.** Four bundles ship in `web/public/episodes/`, two
+per seed, so the Learning screen's side-by-side pairs each recording
+with the other brain on the same seed: `deadly_corridor-heuristics-9`
+and `deadly_corridor-learned-9` (the 300-episode checkpoint, which
+clears the corridor), and `deadly_corridor-heuristics-11` and
+`deadly_corridor-learned-d1-11`, the same checkpoint with d1-ultra's
+advice. Export normally plays in `async_cached` mode, where d1's answers
+come from a cache that is never awaited, so a recording would show d1
+only on ticks whose situation had been answered before. The d1 recording
+was made with `--d1-sync` instead (§11): `execution_mode` `sync_d1` and a
+tick budget of 5 s. The reduced and critical thresholds are absolute
+(a budget of 12 ms or 4 ms or less), so every tick keeps the full budget
+and waits for d1's batched answers: each module's action and whether it
+should ask for a new one, the arbiter's action, the exploration level,
+and at the gate the admission probability and tactical quality. On
+seed 11 d1 answered at all 44 ticks (134 calls, a median round trip of
+0.46 s, about a minute of wall time); the pick was d1's own first choice
+on 43 of the 44, d1's top action differed from the module's own on 43 of
+220 module answers, and the gate's d1 stage turned away both proposals
+(admission probability 0.38, under 0.40 with tactical quality under
+0.85, and 0.15, under the 0.20 floor). The episode died after 44
+decisions with 4 kills and reward 760, where the heuristics alone died
+after 55 with reward 589.
+
+Where a recording has d1's answers, the app shows them: the overview's
+d1-ultra box carries the arbiter's answer for the tick in a dotted ring;
+each module column names d1's top action, its probability and the
+weight it was mixed in at (0.75, or 0.25 when the module's own two best
+utilities are 0.45 apart), and every bar splits into the module's own
+softmax and d1's share; the arbiter card lists d1's answer and the
+0.3 × p bonus each action got; the exploration gauge shows the
+controller's pressure pulled halfway to d1's level; the admission gate
+shows d1's probability against the 0.40 and 0.20 thresholds; the
+hierarchy's d1-ultra card says the same in words; and the timeline marks
+a macro the gate rejected.
+
+**GitHub Pages.** `.github/workflows/pages.yml` builds `web/` and
+publishes `web/dist` to <https://danielriosgarza.github.io/system1_doom/>
+on every push to main (or by hand from the Actions tab); the build's
+relative base (`./`) makes it work under `/system1_doom/`. The repository
+needs Settings → Pages → Build and deployment → Source: GitHub Actions.
+Live mode is not on Pages: a static site cannot stream, and without
+`live/status.json` the app is the recordings only.
 
 **The reference drawer** opens over any screen from the Glossary button,
 the ⓘ button beside the episode picker, or the keys g, i and ?. Its four
@@ -1250,6 +1296,7 @@ missing, and on checkpoint mismatch (with a `--fresh` remedy).
 | `--name`, `--title` | folder name / generated | How the app lists the episode |
 | `--max-ticks` | 500 | Decision cap per episode |
 | `--d1` | off | Use d1-ultra (needs `LIQUID_API_KEY`) |
+| `--d1-sync` | off | With `--d1`: play in `sync_d1` mode with a 5 s tick budget, so every tick waits for d1-ultra's answer instead of reading a cache (§8.15) |
 | `--codex` | off | Let the slow path call the Codex CLI; otherwise it runs on fallback templates |
 | `--no-slow-path` | — | Switch the slow path off |
 | `--deterministic` | off | Always take the arbiter's top score |
@@ -1257,7 +1304,8 @@ missing, and on checkpoint mismatch (with a `--fresh` remedy).
 | `--index DIR` | — | Write `DIR/index.json` listing its bundles and exit |
 | `--schema OUT.json` | — | Write the bundle JSON Schema and exit |
 
-Recording uses `async_cached` mode with a 40 ms budget, exploration
+Recording uses `async_cached` mode with a 40 ms budget (`sync_d1` with
+5 s under `--d1-sync`; `--d1-sync` without `--d1` is an error), exploration
 floor 0 and `record_experience` off, so a replay only reads the
 networks. To publish a bundle in the app:
 
@@ -1266,13 +1314,17 @@ python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --model la
     --out web/public/episodes/deadly_corridor-learned-9
 python -m system1_doom.export --check web/public/episodes/deadly_corridor-learned-9
 python -m system1_doom.export --index web/public/episodes
+
+# The d1 recording: needs LIQUID_API_KEY, about a minute and 134 calls on seed 11.
+python -m system1_doom.export --scenario deadly_corridor.cfg --seed 11 --model latest --d1 --d1-sync \
+    --out web/public/episodes/deadly_corridor-learned-d1-11
 ```
 
 ### `python -m system1_doom.serve` — play live and stream to the web explainer
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--scenario`, `--seed`, `--model`, `--run-dir`, `--max-ticks`, `--d1`, `--codex`, `--no-slow-path`, `--deterministic` | as `export` | The brain and the play, as for `export`; episode k gets seed `seed + k - 1` |
+| `--scenario`, `--seed`, `--model`, `--run-dir`, `--max-ticks`, `--d1`, `--d1-sync`, `--codex`, `--no-slow-path`, `--deterministic` | as `export` | The brain and the play, as for `export`; episode k gets seed `seed + k - 1` |
 | `--episodes N` | until Ctrl+C | Episodes to play; afterwards the server keeps serving until Ctrl+C |
 | `--pace SEC` | 0.23 | Least wall time per tick (8 game frames at 35 fps); 0 plays flat out |
 | `--rest SEC` | 3 | Pause between episodes |
@@ -1416,7 +1468,8 @@ Two empirical findings worth knowing before tuning:
 ## 16. Testing
 
 ```bash
-python -m pytest            # 67 tests, 15 files, from the repo root
+python -m pytest            # 70 tests, 15 files, from the repo root
+python -m pytest -k "not live"   # the 65 that need no key, as CI runs them
 ```
 
 Tests use real ViZDoom headlessly, so the suite takes longer than a pure
@@ -1439,8 +1492,8 @@ and expect them to fail (by assertion, not skip) without one.
 | `test_controller_e2e.py` | **Acceptance**: plays normally with LLMs disabled, traces every tick, budget degradation; module replacement + discover→admit→retain→reuse a new macro; live ViZDoom in sync + async d1 modes |
 | `test_level_clearance.py` | Heuristic controller clears `basic.cfg`; every executed step follows the selected action's own plan; learning controller records every decision |
 | `test_visualizer.py` | HUD frame render + GIF save; dashboard shows d1/Codex sections |
-| `test_export.py` | A 5-tick `basic.cfg` bundle has every file and a frame per tick; pruned + legal actions partition the vocabulary; each arbiter breakdown adds up to its score; module anatomy and outcome are recorded; the schema dump validates a trace; pre-anatomy traces still parse; `failing_condition` agrees with `is_satisfied`; admission records each stage |
-| `test_serve.py` | Two live `basic.cfg` episodes in-process: the event order (start, ticks from 0 in order, proposals only on change, end), every frame on disk before its tick event, the episode in progress served from memory, each finished episode a valid bundle equal to its `end` event, the next seed, the status and the untouched index; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog; a slow-path answer still in flight at the end logged in its own episode |
+| `test_export.py` | A 5-tick `basic.cfg` bundle has every file and a frame per tick; pruned + legal actions partition the vocabulary; each arbiter breakdown adds up to its score; module anatomy and outcome are recorded; the schema dump validates a trace; pre-anatomy traces still parse; `failing_condition` agrees with `is_satisfied`; admission records each stage; `--d1-sync` waits for d1 at every tick and needs `--d1` |
+| `test_serve.py` | Two live `basic.cfg` episodes in-process: the event order (start, ticks from 0 in order, proposals only on change, end), every frame on disk before its tick event, the episode in progress served from memory, each finished episode a valid bundle equal to its `end` event, the next seed, the status and the untouched index; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog; a slow-path answer still in flight at the end logged in its own episode; `--d1-sync` reaching the status and needing `--d1` |
 
 The web explainer has its own checks, run from `web/`: `npm run build`
 and `npm run lint` (type-check and oxlint), `npm test` (Vitest: the
@@ -1448,9 +1501,25 @@ loader and the trace readings on a five-tick fixture bundle) and
 `npm run e2e` (Playwright: scrubbing to tick 5 shows the traced action
 in every panel; and, against `e2e/live-server.mjs`, a stand-in for serve
 that replays a shipped recording as live episodes, following, Follow,
-the end of an episode and the next one, every screen, and the bar's fit).
-The unit tests also hold the app's glossary to §18 and check the export
-and serve commands the This recording tab shows.
+the end of an episode and the next one, every screen, and the bar's fit;
+and, on the d1 recording, d1's answer in the overview box, a module
+column, the arbiter card and the gate). The unit tests also hold the
+app's glossary to §18, check the export and serve commands the This
+recording tab shows, and read the d1 recording: each module's own
+softmax, recovered from its bar and d1's answer, matches its utilities
+on all 220 d1 module answers, and the arbiter's d1 bonus matches the
+trace.
+
+**Continuous integration.** `.github/workflows/checks.yml` runs on every
+pull request and every push to main, in two jobs of at most ten minutes
+each. `web` (Node 22): `npm ci`, `npm run lint`,
+`npx prettier --check src e2e`, `npm test`, `npm run build`, then
+`npx playwright install --with-deps chromium` and `npm run e2e`, which
+starts its own preview and live stand-in servers. `python` (3.11):
+torch from the CPU wheel index, `pip install -e ".[dev,learn]"`, and
+`python -m pytest -k "not live"`; the five live d1-ultra tests need
+`LIQUID_API_KEY` and are run locally. `.github/workflows/pages.yml`
+deploys the site (§8.15).
 
 ---
 

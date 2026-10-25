@@ -11,6 +11,10 @@ The browser never runs the game. It reads **episode bundles** written by
 §11), so every number on screen is one the controller recorded. In
 live mode (below) the same app follows an episode while it is played.
 
+**Online:** <https://danielriosgarza.github.io/system1_doom/>, the four
+shipped recordings. Live mode is not there: a static site cannot stream,
+so it runs on your machine (below).
+
 ## Run it
 
 ```bash
@@ -61,6 +65,27 @@ example `#deadly_corridor-learned-9/17/hierarchy`; without a screen
 (`#deadly_corridor-learned-9/17`) a link opens the inspector. The drawer is
 not in the hash.
 
+## The recordings
+
+`public/episodes/` holds four recordings of the deadly corridor, two
+per seed, so the Learning screen can set each one beside the other
+brain on the same seed:
+
+| Recording | Brain | Result |
+|---|---|---|
+| `deadly_corridor-heuristics-9` | heuristics only | died after 36 decisions, 1 kill |
+| `deadly_corridor-learned-9` | the networks after 300 training episodes | cleared the corridor in 52 decisions, 6 kills |
+| `deadly_corridor-heuristics-11` | heuristics only | died after 55 decisions, 4 kills |
+| `deadly_corridor-learned-d1-11` | the same networks with d1-ultra's advice | died after 44 decisions, 4 kills |
+
+The d1 recording was made with `--d1 --d1-sync`: every tick waited for
+d1-ultra's answers (134 calls, about a minute), so each tick carries
+them, and the app shows them wherever it has a place: the overview's
+d1-ultra box, the module columns, the arbiter card, the exploration
+gauge, the admission gate's d1 stage, which turned away both of this
+episode's proposals, and the hierarchy. Making it again needs
+`LIQUID_API_KEY`; the other three need no key.
+
 ## Live mode
 
 Watch the controller decide right now instead of replaying a recording.
@@ -106,14 +131,27 @@ finds no `live/status.json` and is exactly the static explainer.
 ```bash
 npm run build        # type-check and production build into dist/
 npm run lint         # oxlint, warnings fail
-npm test             # Vitest: loader, trace readings, tower levels, pressure, trust, gate blend, returns, slow path, glossary, term links, export and serve commands, live events and the picker
-npm run e2e          # Playwright: scrubbing, links, the tour (desktop and phone), hierarchy, overview, learning, growing the menu, the reference drawer, keys, live mode
+npx prettier --check src e2e
+npm test             # Vitest: loader, trace readings, tower levels, pressure, trust, gate blend, returns, slow path, d1-ultra's advice, glossary, term links, export and serve commands, live events and the picker
+npm run e2e          # Playwright: scrubbing, links, the tour (desktop and phone), hierarchy, overview, d1's answers, learning, growing the menu, the reference drawer, keys, live mode
 ```
 
 The live mode tests run against `e2e/live-server.mjs`, a stand-in for
 `serve` with no Python: it replays `deadly_corridor-heuristics-9` as
 `live-1`, `live-2`, … one tick every 80 ms. Playwright starts it beside
 the preview server.
+
+## CI and GitHub Pages
+
+`.github/workflows/checks.yml` runs these checks on every pull request
+and push to main (the `web` job, Node 22, then
+`npx playwright install --with-deps chromium` before `npm run e2e`),
+beside a `python` job that runs `python -m pytest -k "not live"`.
+`.github/workflows/pages.yml` builds this folder on every push to main
+and publishes `dist/` to the site above; the relative base makes it
+work under `/system1_doom/`. It needs one repository setting: Settings →
+Pages → Build and deployment → Source: GitHub Actions. A run can also be
+started by hand from the Actions tab.
 
 ## Add an episode
 
@@ -125,6 +163,9 @@ python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --model la
 python -m system1_doom.export --check web/public/episodes/deadly_corridor-learned-9
 python -m system1_doom.export --index web/public/episodes
 ```
+
+With `--d1 --d1-sync` (and `LIQUID_API_KEY` set) the recording waits for
+d1-ultra at every tick, as `deadly_corridor-learned-d1-11` did.
 
 ## When the trace models change
 
@@ -159,7 +200,7 @@ the loader refuses bundles from another version with a message that says so.
 | `src/components/Reference.tsx` | The reference drawer: the dialog, its focus handling, and the Glossary, Principles and Keyboard tabs |
 | `src/components/Provenance.tsx` | The This recording tab, built from `episode.json` and the index |
 | `src/components/Terms.tsx`, `TermLink.tsx` | `linkTerms`, which links each glossary word once per explanation, and the linked word itself |
-| `public/episodes/` | The demo bundles and their index |
+| `public/episodes/` | The four recordings and their index |
 | `e2e/live-server.mjs` | The stand-in for `serve` the live mode browser tests run against |
 
 The build uses relative URLs (`base: './'`), so `dist/` can be served from
