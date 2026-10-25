@@ -18,18 +18,18 @@
 > what happens when d1-ultra does not answer, and how to extend the system.
 >
 > Design: [`superpowers/specs/2026-10-25-d1-decision-maker-design.md`](superpowers/specs/2026-10-25-d1-decision-maker-design.md)
-> (“the design”; System 1 and System 2 are built, and the web app's
-> rewrite is the third pull request).
+> (“the design”; System 1, System 2 and the web app's rewrite are
+> built).
 > Background: [`spec.md`](spec.md) (the original 21-section spec, whose
 > §21 invariant still holds) and
 > [`superpowers/specs/2026-10-23-learning-controller-design.md`](superpowers/specs/2026-10-23-learning-controller-design.md)
 > (the value networks). This document describes the code as it is.
 
-**Package:** `system1-doom` 0.3.0 · **Python:** ≥ 3.11 · **Source layout:**
+**Package:** `system1-doom` 0.4.0 · **Python:** ≥ 3.11 · **Source layout:**
 `src/system1_doom/` (32 modules, ≈ 11,500 LOC) · **Tests:** `tests/`
-(25 files, 234 tests, 4 of them live) · **Web explainer:** `web/` (Vite +
-React + TypeScript; still on trace schema 1 until the third pull request
-of the design), online at <https://danielriosgarza.github.io/system1_doom/>
+(25 files, 238 tests, 4 of them live) · **Web explainer:** `web/` (Vite +
+React + TypeScript, on trace schema 2; 69 Vitest and 30 Playwright
+tests), online at <https://danielriosgarza.github.io/system1_doom/>
 
 ---
 
@@ -211,8 +211,8 @@ python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --networks
     --out bundles/deadly_corridor-best-9
 python -m system1_doom.export --check bundles/deadly_corridor-best-9
 
-# 6) Play live and stream each tick to a local server (the web app renders
-#    schema-2 ticks from the design's third pull request on).
+# 6) Play live and watch each decision in the web app as it is made
+#    (http://127.0.0.1:8765/#live/watch).
 python -m system1_doom.serve --scenario deadly_corridor.cfg --networks best
 ```
 
@@ -1099,172 +1099,134 @@ never shippable (`export` exits 1 after writing it). `--index DIR` writes
 OUT.json` dumps one JSON Schema whose `$defs` hold `EpisodeMeta`,
 `TickTrace`, `ProposalTrace`, `TickRecord`, `RelevanceLedger`,
 `ReflectionTrace`, `TrialVerdictTrace`, `System2Note`,
-`BundleIndexEntry` and the run-file models; the app's generated types
-(`web/scripts/gen-types.mjs` → `web/src/schema/bundle.ts`) are
-regenerated from it in the design's third pull request, together with
-the app's `SUPPORTED_SCHEMA_VERSION`.
+`BundleIndexEntry` and the run-file models; the app's types
+(`web/src/schema/bundle.ts`) are generated from it, by `npm run schema`
+and then `npm run types` (`web/scripts/gen-types.mjs`) in `web/`.
 
-**The app is on schema version 1 until then.** Everything below
-describes the app and its four shipped recordings as they are: recorded
-by the architecture this design removed (five modules, an arbiter, an
-exploration controller, a learned gate), and read by an app that rejects
-any bundle whose schema version is not 1. The third pull request
-replaces the recordings with episodes d1-ultra plays and rewrites the
-screens around the instances (the design, §10).
+**The app reads schema version 2.** `SUPPORTED_SCHEMA_VERSION` in
+`web/src/data/loader.ts` is 2. A schema-1 recording is refused with a
+message saying it comes from the old architecture, where an arbiter
+weighed five modules, and that it must be recorded again with `python -m
+system1_doom.export`; any other version is refused with the version it
+found. Every word and number on a screen is read from the bundle:
+`web/src/data/readings.ts` (System 1's ticks), `system2.ts` (System 2's
+records) and `learning.ts` (the ledgers and the tried counts) only
+rearrange what was recorded, and nothing in the app ranks, scores or
+decides.
 
 The app (`web/`, see `web/README.md`) has six screens, picked from tabs
-in the top bar (keys 1 to 6): Watch, The chain, The inspector, The
-diagram, Learning and Growing the menu. The URL hash is
-`#<episode>/<tick>/<screen>`, with the screen ids `watch`, `hierarchy`,
-`tick`, `overview`, `learning` and `menu`; a link without a screen opens
-the inspector, and a fresh visit lands on Watch with the first recording
-that cleared the corridor (`#deadly_corridor-learned-9/0/watch`). Every
-screen but Watch shares the timeline at the bottom, with the tick counter
-and the pace.
+in the top bar (keys 1 to 6): Watch, The instances, The slow system,
+Learning, Growing the menu and Reference. The URL hash is
+`#<episode>/<tick>/<screen>`, with the screen ids `watch`, `instances`,
+`slow`, `learning`, `menu` and `reference`; a link without a screen opens
+The instances, a fresh visit lands on Watch with the first recording that
+cleared the corridor (`#corridor-9/0/watch`), and `#live/<screen>`
+follows live play. Every screen but Watch shares the timeline at the
+bottom: the counter, the pace, and marks for damage, a kill, a death, a
+miss, a drawn pick, a configuration change and each System 2 cycle.
+Every panel has an explanation behind the toggle in its heading, which
+links its glossary words once each and names the code that renders what
+it shows. Only three give a formula: the n-step return behind “paid off”
+(the ledger, and relevance over episodes) and the history test's metrics.
 
-**Watch** plays the recording at the controller's own pace, one decision
+**Watch** plays the recording at the agent's own pace, one decision
 every 8 game frames (8 ÷ 35 s, about 0.23 s; Slow is one a second), with
-its frames fetched and decoded ahead and a 100 ms crossfade from one to
-the next. Beside the game, the decision chain reads the tower below as
-six rows in plain words, slowest at the top: growing the menu (nothing
-proposed, a module asked, a macro added or turned away), steering
-(continue, switch, explore a variation, ask for a new playbook, with the
-chosen option's probability), the menu (legal of known actions), the five
-opinions (how many modules named the pick first), the decision (the
-action and the pick rule in words) and act (the keys held over the four
-steps). A row pulses when its words change from the decision before; on
-the cleared recording the top row never changes and the bottom one
-changes on 40 of the 51 decisions after the first. A click on a row pauses and opens The
-chain at that decision with that level expanded. Under the game are
-Play/Pause, the pace, the counter (decision N of M and the game time) and
-a progress bar with the health line that seeks; below, a card per
-recording (who played it and how it ended), each playing from its first
-decision. Watch plays on its own only on a fresh visit or a link to its
+its frames fetched and decoded ahead and a crossfade from one to the
+next. Beside the game is the strip, one row per instance at this
+decision: the five senses, each spoke (its speak strength as a bar, the
+action it named and its reason), silent, or missed (with the reason);
+the central's row (its pick, the probability, whether the pick was its
+top answer, drawn under explore, or a miss, and how many messages it
+heard); the Act row (the primitives held over the 8 frames); and a thin
+configuration line (the version in force, the last change and what
+became of it, and the trial in flight with its count of decisions). A
+click on a row opens that instance on The instances at that decision.
+Under the game are Play/Pause, the pace, the counter (decision N of M and
+the game time) and a progress bar that seeks; below, a card per
+recording, each playing from its first decision, with a link to how it
+was made. Watch plays on its own only on a fresh visit or a link to its
 first decision, never under reduced motion, and then loops, holding the
 result 2.5 s at the end; anything the viewer does ends the loop, and a
 link to a later decision waits for Play. A line under the game says it
-is a recording replayed at the agent's pace and opens This recording at
-the serve command that plays the same game live.
+is a recording replayed at the agent's pace and links to the `serve`
+command that plays the same game live.
 
-**The diagram** (`overview`) is the whole controller on one diagram: the six-beat fast
-path down the middle (freeze the world, shorten the menu, five opinions,
-one decision, act, see and remember), the slow path on the right (a
-module asks, the slow worker writes, the admission gate, the macro joins
-the menu), learning on the left (five rewards, the replay buffer, the
-learned networks with their trust λ and gate share g), the bounded
-simulator, the strategy archive and d1-ultra. Every box shows the current
-tick's number and opens its explanation; the slow-path boxes light while
-a request is in flight or a proposal arrives; dashed arrows are learned,
-dotted ones d1-ultra. During playback a pulse runs down the fast path
-once per tick (not under reduced motion). The **tour** walks the six
-beats on the inspector over a featured tick (the first kill with an
-enemy in view, else the first tick with one), one coach mark per beat
-naming the invariant it shows, then ends on The chain; it starts from the
-headers of The chain and The inspector, or the key t.
+**The instances** shows one instance at a time, picked from a tab per
+instance that says whether it spoke, stayed silent or missed (the
+central's tab names its pick): its scope as chips, the channels it was
+shown and those it was not (the survival sense's `pickups` chip is hidden
+until System 2 widens its scope); the screen it was sent when `frame` is
+in its scope, or a line saying it was sent none; its evidence verbatim,
+the exact text of the trace with each `[channel]` header marked, which a
+browser test compares character for character with `ticks.jsonl`; and its
+answers as bars: the speak probability against yes_at 0.5 and the action
+and reason distributions for a sense, and for the central its choice
+distribution over the legal menu with the pick marked. A miss shows its
+reason and the raw answer as returned.
 
-**The inspector** (`tick`) shows, for the tick under the timeline cursor:
-the frame with enemy/pickup boxes, the ±12° aim band and
-wall-distance arcs drawn from the trace; the world state and its five
-context buckets; the menu (legal, pruned with the failed precondition,
-and macros admitted during the episode); the simulator's projections and
-the selected action's rollout; the five modules' probabilities, split
-into heuristic (solid) and learned (hatched, by trust λ) shares; the
-arbiter's score for each action stacked from its parts, the table and
-gate module-weight rings, and the pick rule in words; the motor's steps
-in words, with reflexes marked; and the outcome, its five module rewards
-and where it is filed.
+**The slow system** reads `reflections.jsonl`, `relevance.json` and the
+configuration at the episode's start and end. First, a timeline of
+configuration versions: each version's change in words, the reflector
+that proposed it, System 2's central's probability for it, and what
+became of it (kept, reverted, in trial, queued for the next episode).
+Then the episode's cycles, each with its outcome; for the cycle picked,
+every reflector in call order (not called, with the bound that left it
+nothing to propose; silent; or proposing, with its change and reason
+distributions) and, opened, the evidence it was sent, verbatim; and
+System 2's central, with the proposals it heard, its choice distribution
+and its evidence. The history test is a table: each sampled tick with
+its stratum (bad, good or rest) and the old and new answers (`spoke ·
+weave fire (0.90)`, `silent (0.15)`), then each metric under the old and
+the new scope with the composite, the gain against the 0.05 margin, the
+worst drop against 0.10, the noise re-asks, the calls and the verdict; a
+sampled tick from this episode opens The instances there. The trial
+shows its before and during table as the judge was shown it, the
+judge's keep or revert with its distribution and evidence, and what a
+revert restored. The relevance ledger is listed per sense and situation
+(spoke, followed, paid off, overruled, overruled and paid off, mean
+strength, and what this episode added), with the current decision's
+situation marked and the central's `[relevance]` channel beside it,
+verbatim. Last come each instance's scope, the admitted macros, the
+strategy and the exploration level at the episode's start and end.
 
-**The chain** (`hierarchy`) draws the same tick as a tower of six levels, slowest at
-the top, each as the same decision card (its menu, a score per option,
-the rule that chose, its bounds, what it reads and writes): growing the
-menu (the admission gate's five stages, or the macros admitted so far),
-steering (the archive's four-way choice, decided after the action with
-that tick's pressure, and the 12 archive slots), the menu (legal and
-pruned), the five opinions, the arbiter's decision, and the motor's
-steps. Side cards feed the levels with drawn connectors: what it saw
-(the frame at that decision, with its overlays), exploration
-pressure (its four terms, the dampers and the clamp, recomputed from
-`exploration_state` — the arbiter of tick t uses the state left by tick
-t − 1), d1-ultra, the learned networks and the simulator. Opened from a
-row on Watch, it expands that level's card and flashes it.
+**Learning** draws the paid-off rate of each sense's followed messages
+over episodes, one line per sense, from this episode's ledger before and
+after and the other recordings' ledgers (a legend, a crosshair with a
+tooltip, and the numbers in a table). Then the value networks as
+evidence: the `values` channel's numbers for each legal action in this
+situation, how many times each action was tried there in training
+(`trust.json`, shown as n ÷ (n + 25)), the checkpoint, the network share
+and the situations trained most.
 
-**Learning** answers how the networks earned their say and what they
-do with it at this tick. Across episodes: the evaluation table (each
-brain on the same seeded episodes) and the two recordings of the same
-seed side by side on one tick axis; then the training run from
-`metrics.jsonl` as small multiples (reward, decisions, kills, health,
-cleared and survived rates, network share, the exploration floor, which
-falls linearly from 0.6 to 0.05 over the first 100 episodes, and the
-losses), with the checkpoint and this recording marked. At this tick:
-the trust map from `trust.json` (situations × the actions tried in
-training, λ = n ÷ (n + 25), this tick's situation pinned) beside this
-tick's row with each module's heuristic, learned and blended utility;
-the gate view (the hand-written module weights, the gate's proposal and
-the normalised blend by g the arbiter used, marking the modules whose
-own top pick was taken, which are the only ones the gate learns from);
-and the reward anatomy (the five module rewards and the raw 8-step
-return, γ = 0.9, each becomes). Without networks, the trust map and gate
-view say so and link to the recording that has them.
+**Growing the menu** follows the one path that adds to the menu: the
+menu at this decision (each action as a primitive, a built-in macro or an
+admitted one, legal now or not, and how often it was executed), the menu
+reflector's answer at each cycle, each slow-path proposal (the request
+verbatim, the text as returned, and each stage of the admission pipeline
+it passed or failed) and the admit instance's probability against yes_at
+with its evidence. A recording without a proposal says that System 2 did
+not ask the slow path for a macro.
 
-**Growing the menu** follows the one path that adds to a menu, from a
-module's complaint to a new chip. Over the whole episode, one strip per
-module: the counter its expansion rule watches against its threshold
-(survival: damage on 4 ticks in a row, or health under 35 with 15+
-recent damage; combat: 3 failures, or 4 damage ticks against 2+ enemies;
-navigation: 4 stalls; resource: ammo ≤ 2 and health ≤ 35 with a pickup
-in view; goal's plateau counter is never advanced, so goal never asks),
-the ticks where the other condition held, each request, the span the
-worker was busy (one proposal in flight, 20 s), and the arrival at the
-gate. Then, for the proposal that arrived at this tick or the last one
-before it: the sentence that asked, the text as returned and the parsed
-macro; the gate card from the hierarchy with each stage's reason and the
-sandbox rollout (it fails only a predicted death from a state above 25
-health, read at the request); the vocabulary on the tick before and the
-tick it arrived, with the new macro's 12-number encoding beside a
-built-in one; and the follow-up: ticks legal, picks, the reward each
-time it ran, and when steering adopted its strategy, whose +0.15 the
-arbiter adds to the legal actions of its sequence from the next tick.
-On a recording without a request, the strips still show the counters
-and the closest call, with a link to the recording of the same seed that
-asked. A Plain/Formula toggle, in the header of The chain, The
-inspector, Learning and Growing the menu, hides or shows the arithmetic
-on every screen.
+**Reference** states the one rule (every decision here is made by
+d1-ultra) and the principles under it, with one line naming what the
+design removed; a drawing of the two systems (System 1: evidence, the
+five senses, messages, the central, the pick and Act; System 2: the
+history channels, nine reflectors, its central, the history test or the
+slow path and the admit instance, the configuration, the trial and the
+judge), with every d1-ultra instance marked; the glossary of §18 (a
+linked word anywhere in the app opens its entry, and each entry links to
+the panels that show it and names its code); how this recording was made
+(scenario, seed, networks, configuration versions, slow path, call
+budget, calls and misses, the result, the `export` command that records
+one like it and the `serve` command that plays live); and the keys.
 
-**The recordings.** Four bundles ship in `web/public/episodes/`, two
-per seed, so the Learning screen's side-by-side pairs each recording
-with the other brain on the same seed: `deadly_corridor-heuristics-9`
-and `deadly_corridor-learned-9` (the 300-episode checkpoint, which
-clears the corridor), and `deadly_corridor-heuristics-11` and
-`deadly_corridor-learned-d1-11`, the same checkpoint with d1-ultra's
-advice. The export of that architecture normally played in `async_cached` mode, where d1's answers
-came from a cache that is never awaited, so a recording would show d1
-only on ticks whose situation had been answered before. The d1 recording
-was made with its `--d1-sync` flag instead (since removed): `execution_mode` `sync_d1` and a
-tick budget of 5 s. The reduced and critical thresholds are absolute
-(a budget of 12 ms or 4 ms or less), so every tick keeps the full budget
-and waits for d1's batched answers: each module's action and whether it
-should ask for a new one, the arbiter's action, the exploration level,
-and at the gate the admission probability and tactical quality. On
-seed 11 d1 answered at all 44 ticks (134 calls, a median round trip of
-0.46 s, about a minute of wall time); the pick was d1's own first choice
-on 43 of the 44, d1's top action differed from the module's first choice
-after the mix on 43 of 220 module answers, and the gate's d1 stage turned away both proposals
-(admission probability 0.38, under 0.40 with tactical quality under
-0.85, and 0.15, under the 0.20 floor). The episode died after 44
-decisions with 4 kills and reward 760, where the heuristics alone died
-after 55 with reward 589.
-
-Where a recording has d1's answers, the app shows them: the overview's
-d1-ultra box carries the arbiter's answer for the tick in a dotted ring;
-each module column names d1's top action, its probability and the
-weight it was mixed in at (0.75, or 0.25 when the module's own two best
-utilities are 0.45 apart), and every bar splits into the module's own
-softmax and d1's share; the arbiter card lists d1's answer and the
-0.3 × p bonus each action got; the exploration gauge shows the
-controller's pressure pulled halfway to d1's level; the admission gate
-shows d1's probability against the 0.40 and 0.20 thresholds; the
-hierarchy's d1-ultra card says the same in words; and the timeline marks
-a macro the gate rejected.
+**The recordings.** Three bundles ship in `web/public/episodes/`, every
+decision in them made by d1-ultra on `deadly_corridor.cfg` with the best
+networks as evidence: `corridor-9` and `corridor-11` start from the
+design's version 1 (`--fresh-configuration`), and `corridor-9-v2` replays
+seed 9 from version 2, the configuration System 2 reached and its judge
+kept on the same run folder. Their numbers, and what System 2 did in
+each, are in §15.
 
 **GitHub Pages.** `.github/workflows/pages.yml` builds `web/` and
 publishes `web/dist` to <https://danielriosgarza.github.io/system1_doom/>
@@ -1273,20 +1235,6 @@ relative base (`./`) makes it work under `/system1_doom/`. The repository
 needs Settings → Pages → Build and deployment → Source: GitHub Actions.
 Live mode is not on Pages: a static site cannot stream, and without
 `live/status.json` the app is the recordings only.
-
-**The reference drawer** opens over any screen from the Reference button
-in the top bar, or the keys g, i and ?. Its four
-tabs are the glossary (the terms of §18 and the words the app's own copy
-leans on, each with its meaning, this tick's value where there is one,
-links to the panels that show it, and its place in the code; every
-explanation links its glossary words, once each), the seven principles
-of the recorded architecture with where the app shows each, this recording (from `episode.json`
-and the index: which brains were on, how it was played, the checkpoint,
-the result, the files, the `python -m system1_doom.export` command
-that made it, and the `python -m system1_doom.serve` command that
-played the same game live, both in that architecture's flags), and the keyboard (1 to 6 switch screens, t
-starts the tour, f toggles the depth). It is a modal dialog: focus stays inside
-until Esc or a click outside closes it, and it is not in the URL hash.
 
 **Live mode.** `python -m system1_doom.serve` plays episodes with the
 same bridge, controller and configuration as `export` (`record_bundle`
@@ -1310,10 +1258,16 @@ as it is written; `end` with the final meta and its index line;
 viewer, a viewer whose queue fills is dropped, and the pacing (`--pace`,
 0.23 s per tick by default, eight game frames) is a wait after a tick,
 never inside one; a tick itself takes as long as its d1-ultra calls (about
-0.8 s measured, §15). The current app asks for `live/status.json` at
-start but reads schema version 1 only, so it does not render these
-ticks until the third pull request; the stream, the status and the
-bundles are already version 2. A slow-path proposal still in flight when
+0.8 s measured, §15). The app asks for `live/status.json` at start; when
+`serve` answers, the picker lists the live episodes, the top bar shows
+LIVE, and `#live/<screen>` follows the episode in progress: each `tick`
+event adds a decision to every screen, and each `reflection` event adds
+System 2's record (a cycle, a verdict or a note) to The slow system as it
+is written. Moving away stops following; the Follow button or the key l
+goes back to it. Until a live episode ends, its `relevance.json` is the
+ledger at the episode's start, so the app reads it as the before
+(`ledgerAt` in the loader) and adds the episode's own ticks for the
+after. A slow-path proposal still in flight when
 an episode ends is waited for (at most the Codex timeout), so it is
 logged in the episode that asked; System 2's work at an episode's end is
 waited for too (at most 120 s), so its records land in that episode's
@@ -1941,6 +1895,70 @@ the end of episode 1 and ran as episode 2 began.
   sampled ticks of episode 1 went without theirs; in play the ring keeps
   them.)
 
+**The shipped recordings** (2026-10-25, `export --scenario
+deadly_corridor.cfg --networks best`: the run folder's `best.pt` after 7
+training episodes, network share 0.43; the default 5 s budget; the slow
+path on, with templates; System 2 on). Three bundles, 30.2 MB in all,
+which is over the 25 MB a static site should carry: 11.2 MB of
+`ticks.jsonl` (the six instances' verbatim evidence and answers, about
+23 KB a decision), 12.0 MB of `history.jsonl` (the same decisions as
+System 2's history store keeps them, which the app does not read) and
+5.6 MB of frames. The text files are served compressed (a 4.5 MB
+`ticks.jsonl` is 0.5 MB gzipped), so the size weighs on the repository
+more than on a visit.
+
+| Recording | Configuration | Decisions | Result | Mean tick | Calls (System 1 + System 2) | Cost (System 1 + System 2) | Misses | Size |
+|---|---|---:|---|---:|---:|---:|---:|---:|
+| `corridor-9` | 1 → 1 | 59 | cleared, 6 kills (reward 2,280) | 818 ms | 354 + 86 | $0.0139 + $0.0038 | 0 | 4.3 MB |
+| `corridor-11` | 1 → 1 | 179 | cleared, 7 kills (reward 2,277) | 796 ms | 1,074 + 139 | $0.0375 + $0.0053 | 0 | 11.7 MB |
+| `corridor-9-v2` | 2 → 4 | 233 | died, 8 kills (reward 820) | 764 ms | 1,398 + 86 | $0.0448 + $0.0035 | 0 | 14.2 MB |
+
+`episode.json`'s `cost` counts System 1's six instances and the System 2
+calls made while the episode played, but not the cycle at the episode's
+end; the table splits the calls by system instead (System 2's from its
+`system2` counts). A tick is about 0.8 s: the five senses in parallel
+take 0.49–0.56 s on average and the central 0.25–0.27 s. Every pick was
+the central's top answer (exploit), no instance missed, and the slow path
+was never asked for a macro. On the two cleared episodes d1-ultra mostly
+chose `weave_fire` and `approach_pickup`; the resource, navigation and
+goal senses spoke on almost every tick, the combat sense on a third to
+a half and the survival sense rarely (4 of 59 and 29 of 179).
+
+* **`corridor-9`** (3 cycles, 86 calls). At decision 20 System 2's
+  central chose the combat auditor's `widen:combat:incoming`; the history
+  test waited, with 20 stored ticks under the current scope, fewer than
+  24. At decision 40 and at the episode's end it chose the same change
+  and the test ran on 24 ticks: it failed at composite −0.04 (good
+  agreement fell from 0.875 to 0.75, a drop of 0.12 over the 0.10 limit),
+  then at +0.04, short of the 0.05 margin. The configuration stayed at
+  version 1.
+* **`corridor-11`** (9 cycles, 139 calls). Seven cycles had no proposal;
+  at decisions 100 and 160 `widen:combat:incoming` was tested and failed
+  at composite +0.00 both times, the combat sense answering alike with
+  `incoming` in view. Version 1 throughout.
+* **How version 2 was reached.** After `corridor-11`, two `cli` episodes
+  on the same run folder (seeds 21 and 22, System 2 on, 314 decisions,
+  about 4 minutes, $0.0478 and $0.0212 with both systems' calls). In the
+  first, which did not clear the corridor (222 decisions, reward −116),
+  System 2's central chose the strategy reflector's
+  `strategy:strat_evasive_survival` (0.69) at the episode's end. It took
+  effect at the second episode's first tick as version 2, and its trial
+  compared 60 decisions with the 60 before: reward per decision −0.71 →
+  16.13, kills 0 → 6, the paid-off rate 0.40 → 1.00. The judge kept it,
+  and that episode cleared the corridor in 92 decisions.
+* **`corridor-9-v2`** (10 cycles, 86 calls; System 2 restored at 493
+  decisions). At decision 533 `widen:combat:incoming` failed its test
+  again (composite −0.04, good agreement down 0.12). At decision 573
+  System 2's central chose the strategy reflector's
+  `strategy:strat_tactical_combat` (0.56); it took effect as version 3,
+  and after 60 decisions the judge compared reward per decision 12.03
+  before with 0.61 during (kills 3 → 1, paid-off rate 0.72 → 0.70) and
+  reverted: version 4 restores version 2. Four cycles made no call,
+  System 2 resting after a trial (one after the kept one, three after
+  this revert). At the episode's end the same change was chosen again (0.37)
+  and queued, to take effect at the next episode's first tick, so the
+  recording ends at version 4. The episode died after 233 decisions.
+
 **The value networks** were measured under the old architecture
 (`docs/superpowers/specs/2026-10-23-learning-controller-design.md`,
 `--evaluate 30`, identical seeds): on `deadly_corridor` after 300
@@ -1956,8 +1974,8 @@ with `train --evaluate` (no, latest and best networks on the same seeds).
 ## 16. Testing
 
 ```bash
-python -m pytest                 # 234 tests, 25 files, from the repo root
-python -m pytest -k "not live"   # the 230 that need no key, as CI runs them
+python -m pytest                 # 238 tests, 25 files, from the repo root
+python -m pytest -k "not live"   # the 234 that need no key, as CI runs them
 ```
 
 Every behaviour is exercised without a key through `tests/fake_d1.py`:
@@ -2004,16 +2022,34 @@ and about 45 seconds with them.
 | `test_learning.py` | n-step returns; per-network rewards; running stats; replay round-trip; each value net learns its own signal; episode credit assignment; checkpoint round-trip, overrides and mismatch; a checkpoint with gate weights loads (synthetic, and the shipped one when present) |
 | `test_training.py` | The motor executes an action's own plan; `train` writes the full run folder (with the ledger and history) and resumes; training and evaluation start from the saved configuration (evaluation with System 2 off, saving nothing) and `--fresh` forgets it; admitted macros persist and are re-validated; no exploration schedule; fail fast without the key; the idle burst |
 | `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy |
-| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick |
+| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra and is listed in the index |
 | `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration` |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
-The web explainer has its own checks, run from `web/`: `npm run build`
-and `npm run lint` (type-check and oxlint), `npm test` (Vitest: the
-loader and the trace readings on a five-tick schema-1 fixture bundle, and
-the glossary against §18 and the code it names) and `npm run e2e`
-(Playwright, against the shipped schema-1 recordings and a live
-stand-in that replays one of them).
+The web explainer has its own checks, run from `web/`: `npm run lint`
+(oxlint), `npx prettier --check src e2e`, `npm test` (Vitest, 69 tests in
+6 files), `npm run build` (type-check and bundle) and `npm run e2e`
+(Playwright, 30 tests in 5 files, about 30 s with the build). Both read
+`web/e2e/fixtures/episodes/fixture-corridor`, a 40-tick schema-2 bundle
+the fake d1-ultra plays on the corridor (`web/scripts/record_fixture.py`
+records it, without the real API), whose System 2 admits a macro
+(version 2, kept) and widens the survival sense's scope to `pickups`
+after a passed history test (version 3, kept); a navigation sense that
+fails on its 4th call and a central that answers off the menu on its 6th
+give the app a miss of each kind to show.
+
+| File | Covers |
+|---|---|
+| `src/data/loader.test.ts` | The index with its configuration versions; a bundle's meta, every tick in order with its six instances, the proposals, System 2's records, the ledger and the tried counts; a schema-1 index or bundle refused with a message naming the old architecture and how to record again, and any version but 2 refused; a tick count that disagrees with the meta, unless live; frame and image references; an unlisted or missing extra file; the recording a fresh visit opens; JSONL lines |
+| `src/data/readings.test.ts` | On the fixture: the strip's five sense rows and the central row (spoke, silent, missed; pick, probability, top), the Act keys, the configuration line; each instance's evidence split back into its `[channel]` sections, the survival text without `[pickups]` until version 3 and the combat text never with `[messages]`; the frame only with `frame` in scope; the answer bars; a miss's raw answer; the configuration versions placed on the ticks; System 2's cycles and their outcomes; the timeline marks; n-step returns; the ledger before and after; the values channel |
+| `src/data/system2.test.ts` | A cycle's nine reflectors in call order with who proposed what, and those not called with why; the cycle a screen opens on; a cycle's trial verdict; outcomes and changes in words; the history test's ticks (bad, good, rest) with old and new answers and each metric; the configuration at start and end; the relevance points over episodes; the tried counts of this tick's situation |
+| `src/data/live.test.ts`, `src/data/playback.test.ts` | Live events applied to the open episode: newer ticks only, each of System 2's records once and in order, the proposals and the catalog, the final meta; the picker's list with the live episodes; an episode in progress with no tick yet, read with the ledger it started from; the live status, and none without `serve` or from a `serve` of the old schema; the pace (8 game frames a decision, or one a second), the end's hold and the start once eight frames are ready |
+| `src/content/glossary.test.ts` | Every term of §18 is in the app's glossary (as a term or alias) and every app term is in §18, at least 16; the design's words are there and the removed architecture's are not; every link names a screen and panel that exist; every `code` names a real `.py` under `src/system1_doom/` and a symbol defined in it; unique ids and aliases, none one letter or a bare “gate”; only the n-step return and the history test explain with a formula; linked words are whole words, longest first, once each |
+| `e2e/watch.spec.ts` | On the fixture: a fresh visit lands on Watch and plays within 1.5 s; pausing holds the decision in the address; no sideways scroll at 390 px |
+| `e2e/instances.spec.ts` | The strip shows five senses and the central, with spoke, silent or missed and the pick; a central miss; the configuration line moving to version 2; a click on a row opens that instance; the survival evidence is verbatim with no `[pickups]` and the combat evidence has no `[messages]`, both equal to `ticks.jsonl`; the frame; the miss's reason and raw answer; the answers as bars |
+| `e2e/screens.spec.ts` | The slow system's version timeline, the history test's table (12 ticks, the metrics, the verdict), the trial and the judge's evidence, a sampled tick opening The instances, a cycle's reflectors and their evidence, the ledger; Learning's chart and tables; Growing the menu's proposal, stages and admit instance; Reference's rule, drawing, glossary and provenance; a linked word opening its entry; no sideways scroll at 390 px on any screen; the top bar on one row at 1280 px |
+| `e2e/live.spec.ts` | Against the live stand-in: Watch follows schema-2 ticks as they arrive; The slow system fills in from `reflection` events (cycles, versions 2 and 3, the history test); The instances follows the newest tick |
+| `e2e/recordings.spec.ts` | Against the built site with the shipped recordings: the landing plays the first cleared one; every recording opens on every screen without an error and with no sideways scroll at 390 px; the top bar on one row at 1280 px |
 
 **Continuous integration.** `.github/workflows/checks.yml` runs on every
 pull request and every push to main, in two jobs of at most ten minutes
@@ -2088,36 +2124,49 @@ play; call `ctrl.wait_system2(timeout)` before reading its records.
 
 ## 18. Glossary
 
-The web app's glossary (`web/src/content/glossary.ts`) carries every term
-below in its own words, and a test reads this table, so a term added here
-fails the app's tests until the glossary has it. The app still explains
-the schema-1 recordings, so several terms below name parts this design
-removed; their entries say what replaced them. The design's own words —
-**instance**, **sense**, **central**, **channel**, **scope**, **message**,
-**strength**, **relevance**, **configuration**, **miss** — are defined in
-§8.4–§8.8, and System 2's — **reflector**, **history test**, **trial** —
-in §8.16; they join this table with the app's rewrite in the third pull
-request.
+The web app's glossary (`web/src/content/glossary.ts`, on its Reference
+screen) carries every term below in its own words, with where to see it
+and the code that keeps it, and a test reads this table: a term added
+here fails the app's tests until the glossary has it. The words of the
+architecture this design replaced (the arbiter, the modules, the gate
+network, budget modes, committed picks, exploration pressure) are gone
+from both; the Reference screen names them in one line of history.
 
 | Term | Meaning |
 |---|---|
+| **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions with distributions. Every decision is one of its answers: the five senses, the central and the admit instance are each one call (§8.6, §8.10), and so are System 2's reflectors, its central and the trial judge (§8.16). |
+| **System 1** | The fast system that decides every action, once per tick: five senses, then the central, then Act (`system1.py`, §7, §8.7). It never waits for System 2. |
+| **System 2** | The slow system, on its own thread: it reads the history and changes the configuration one change at a time — reflectors propose, its central chooses one change or none, a scope change must pass the history test, and every change is a trial the judge keeps or reverts (§8.16). |
+| **Instance** | One d1-ultra call with its own scope and its own finite questions (`InstanceSpec`, `run_instance`). Its instructions name its concern and say it sees only the evidence given; they never say how to weigh anything (§8.6). |
+| **Sense** | One of the five System 1 instances — survival, combat, navigation, resource, goal. Each sees only its scope and answers `speak` (noul), `action` (a choice over the legal menu) and `reason` (a choice over its reasons) (§8.6). |
+| **Central** | The instance that chooses the executed action: one choice over the legal menu, after the messages, each sense's relevance record and the exploration level (§8.7). System 2 has a central of its own, which chooses one configuration change or none. |
+| **Channel** | One named piece of evidence rendered as plain text under a `[name]` header; eighteen in all, in a fixed order. `messages`, `relevance` and `exploration` are for the central only (§8.5). |
+| **Scope** | The channels an instance is shown: at most 7, always with `menu`. Whatever a scope leaves out never reaches the instance; System 2 widens or narrows a scope one channel at a time (§8.4, §8.16). |
+| **Message** | What a sense that spoke sends the central: action, reason, strength — one line of the central's `messages` channel. A silent or missed sense sends nothing (§8.6). |
+| **Strength** | A message's strength: the sense's `speak` probability, unscaled. A sense speaks at `yes_at` (0.5), d1's own yes, not a tuned threshold (§8.6). |
+| **Relevance / relevance ledger** | Each sense's track record per context signature: spoke, followed and paid off, overruled and whether the chosen action paid off, mean strength either way. Shown to the central as counts; nothing in it is multiplied into a decision (`relevance.py`, §8.8). |
+| **Paid off / n-step return** | A decision paid off when its n-step return (n = 8, γ = 0.9, over the per-decision game reward, truncated at the episode's end; `features.n_step_returns`) was positive. The ledger, the history test's strata and the trials all read it (§8.8). |
+| **Configuration** | Everything System 2 may change, as versioned data: scopes, the exploration level, the active strategy, the admitted macros, and the bounds. Version 1 is the design's; each change makes the next version and takes effect only at a tick boundary (§8.4). |
+| **Miss** | An answer that did not come or could not be read: timeout, error, HTTP 429 past the budget, off the menu, malformed. Nothing stands in for it: a missed sense is silent, a missed central holds no keys (§8.6, §14). |
+| **Pick** | How the central's answer becomes the action: `top` under `exploit`, `drawn` from d1's own distribution under `explore` (seeded), or `missed` (`system1.pick_action`, §8.7). |
+| **Exploration level** | Configuration: `exploit` or `explore`, stated to the central in its `exploration` channel. There is no temperature and no bonus (§8.7). |
+| **Reflector** | One of System 2's nine instances — five sense auditors, a central auditor, the menu, strategy and exploration reflectors — each reading history channels over three windows and proposing at most one change from a menu the bounds have filtered (`reflectors.py`, §8.16). |
+| **Cycle** | One round of System 2: every 20 new decisions or at an episode's end, only while no trial is in flight. Its record (`ReflectionTrace`) keeps every reflector's and its central's evidence and answers (§8.16). |
+| **History test** | What stands between a scope change and play: the instance asked again under the new scope on stored ticks it already answered, stratified into bad, good and rest by the n-step return; it passes when the composite gains at least 0.05 and no metric falls by more than 0.10 (`history_test.py`, §8.16). |
+| **Trial** | Every change that takes effect, one at a time: observed for 60 decisions against the 60 before it, then kept or reverted; a revert restores the previous configuration with the version bumped (§8.16). |
+| **Judge / trial judge** | The instance that ends a trial: shown the before-and-during table, it answers `keep` or `revert`. A missed judge extends the trial; the safety bound may revert first without asking it (§8.16). |
+| **Cooling** | The rest after a verdict: the changed instance is offered no change for 60 decisions; after a menu, strategy or level change, System 2 as a whole rests (§8.16). |
+| **Admit instance** | The instance that decides whether a proposed macro enters the menu, after parse, legality and the sandbox: one noul, yes at 0.5 (`instance.run_admit`, §8.12). |
 | **Action / `ActionSpec`** | The only executable unit: a bounded tuple of primitives with preconditions, a duration cap and a termination condition. Primitives are 1-step actions; macros are named multi-step ones. The legal menu of a tick is the set of actions whose preconditions hold. |
-| **Arbiter** | Removed. The hand-written `FinalArbiter` that scored module votes, projections and bonuses into one pick is gone; the central instance, one d1-ultra choice over the legal menu, decides the action (§8.7). |
-| **Budget mode** | Removed. There are no `full`/`reduced`/`critical` tiers: every tick waits for d1-ultra inside a per-call budget (5 s, `--call-budget`), and a call that misses it is recorded as a miss (§14). |
-| **Committed pick** | Removed with the arbiter. The central's answer becomes the action as `top` (exploit), `drawn` (explore) or `missed` (§8.7). |
+| **Macro** | Multi-primitive `ActionSpec` (`is_macro=True`); built-in, or proposed by the slow path when System 2 asks and admitted by the admit instance into the configuration. |
 | **Context signature** | Coarse bucketed state key (`hp:…\|ammo:…\|enemies:…`) that keys the relevance ledger, the novelty counts, the simulator's empirical cache and the value networks' tried counts (§6.1). |
-| **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions. It makes every decision: the five senses, the central and the admit instance are each one d1-ultra call (§8.6, §8.10), and so are System 2's reflectors, its central and the trial judge (§8.16). |
-| **Exploration floor** | Removed with the training schedule. Exploration is the configuration's level: under `explore` the central's action is drawn from d1's own distribution with a seeded generator (§8.7). |
-| **Exploration pressure / temperature** | Removed. There is no pressure formula and no temperature; the exploration level (`exploit` or `explore`) is configuration, stated to the central in its `exploration` channel. |
-| **Gate network** | Removed. The relevance ledger replaced it: each sense's track record per context, shown to the central as counts (§8.8). Old checkpoints' gate weights are ignored on load. |
-| **Live episode** | An episode being played right now by `python -m system1_doom.serve` and streamed tick by tick; when it ends it is a bundle like any recording (§8.15). |
-| **Macro** | Multi-primitive `ActionSpec` (`is_macro=True`); built-in, or proposed by the slow path and admitted by the admit instance into the configuration. |
-| **Module** | Removed. The five hand-written deciders became five senses: d1-ultra instances with their own scopes that decide whether to send the central a message (§8.6). The five value networks keep the names. |
-| **Network share** | Experience-weighted mean of `n/(n+25)` over the tries seen in training: how familiar play has become to the value networks. A report only; it weighs nothing. |
 | **Projection** | A bounded analytic rollout (`ProjectedOutcome`) of one legal action: expected value, damage, resources, survival. Shown to instances as the `projections` channel, labelled as a rough projection. |
-| **Slow path** | The async proposal worker (Codex or templates) and the admission bounds and admit instance that can grow the menu, asked by System 2's menu reflector; never blocks a tick, and changes the configuration only at a tick boundary (§9). |
-| **Trust λ** | `n/(n+25)` for an action tried `n` times in a context in training. No longer a blend weight: the tries themselves are shown in the `values` channel. |
+| **Value network** | One of five small networks trained between episodes on the agent's own play, one per sense's reward. Their predicted returns are evidence in the `values` channel, with how often each action was tried there in training; they decide nothing (`learning.py`, §8.9). |
+| **Network share** | Experience-weighted mean of `n/(n+25)` over the tries seen in training: how familiar play has become to the value networks. A report only; it weighs nothing. |
 | **Tick** | One decision: state → evidence → five senses → central → the action's primitives over ≈ 8 game tics, not one ViZDoom game tic. |
+| **Bundle** | One recorded episode as the web app reads it: `episode.json`, `ticks.jsonl`, `reflections.jsonl`, `proposals.jsonl`, the relevance ledger, the training counts and the frames, written and checked by `python -m system1_doom.export` (§8.15). |
+| **Live episode** | An episode being played right now by `python -m system1_doom.serve` and streamed tick by tick, with System 2's records as they happen; when it ends it is a bundle like any recording (§8.15). |
+| **Slow path** | The async proposal worker (Codex or templates) and the admission bounds and admit instance that can grow the menu, asked by System 2's menu reflector; never blocks a tick, and changes the configuration only at a tick boundary (§9). |
 
 ---
 

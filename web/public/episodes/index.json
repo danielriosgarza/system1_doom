@@ -1,49 +1,47 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "episodes": [
     {
-      "name": "deadly_corridor-heuristics-9",
-      "title": "Deadly corridor, heuristics only, seed 9",
+      "name": "corridor-9",
+      "title": "deadly corridor, seed 9, from configuration version 1",
       "scenario": "deadly_corridor.cfg",
-      "model": "heuristics",
-      "seed": 9,
-      "cleared": false,
-      "died": true,
-      "reward": 89.33,
-      "ticks": 36
-    },
-    {
-      "name": "deadly_corridor-heuristics-11",
-      "title": "Deadly corridor, heuristics only, seed 11",
-      "scenario": "deadly_corridor.cfg",
-      "model": "heuristics",
-      "seed": 11,
-      "cleared": false,
-      "died": true,
-      "reward": 589.4,
-      "ticks": 55
-    },
-    {
-      "name": "deadly_corridor-learned-9",
-      "title": "Deadly corridor, learned networks after 300 training episodes, seed 9",
-      "scenario": "deadly_corridor.cfg",
-      "model": "latest",
+      "value_networks": "best",
       "seed": 9,
       "cleared": true,
       "died": false,
-      "reward": 2280.76,
-      "ticks": 52
+      "reward": 2280.44,
+      "ticks": 59,
+      "kills": 6.0,
+      "configuration_start": 1,
+      "configuration_end": 1
     },
     {
-      "name": "deadly_corridor-learned-d1-11",
-      "title": "Deadly corridor, learned networks with d1-ultra advice, seed 11",
+      "name": "corridor-9-v2",
+      "title": "deadly corridor, seed 9, from configuration version 2",
       "scenario": "deadly_corridor.cfg",
-      "model": "latest",
-      "seed": 11,
+      "value_networks": "best",
+      "seed": 9,
       "cleared": false,
       "died": true,
-      "reward": 759.56,
-      "ticks": 44
+      "reward": 819.53,
+      "ticks": 233,
+      "kills": 8.0,
+      "configuration_start": 2,
+      "configuration_end": 4
+    },
+    {
+      "name": "corridor-11",
+      "title": "deadly corridor, seed 11, from configuration version 1",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "best",
+      "seed": 11,
+      "cleared": true,
+      "died": false,
+      "reward": 2277.22,
+      "ticks": 179,
+      "kills": 7.0,
+      "configuration_start": 1,
+      "configuration_end": 1
     }
   ]
 }

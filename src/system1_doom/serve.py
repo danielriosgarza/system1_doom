@@ -6,9 +6,9 @@
 
 Live play needs LIQUID_API_KEY: d1-ultra makes every decision.
 
-Schema version 2: the ticks this server streams are version 2 traces (six d1-ultra instances per tick).
-The web app in this repository still reads version 1 and will not render them until it is rewritten
-for version 2, together with the new recordings; the shipped recordings it serves are unchanged.
+Schema version 2: the ticks this server streams are version 2 traces (six d1-ultra instances per tick),
+as the web app in this repository reads them: its strip and instance panels follow each tick as it is
+decided, and its slow-system screen each of System 2's records as it is written.
 
 The episodes are played exactly as `export` plays them (the same bridge, controller and
 configuration) and written as the same bundles, one folder per episode under `live/`:
@@ -21,7 +21,8 @@ On one origin:
     /                         the built app (--app)
     /episodes/index.json      the shipped recordings (--recordings), as they are
     /episodes/<name>/...      a shipped recording
-    /episodes/live-<k>/...    a live episode: the one in progress from memory, finished ones from disk
+    /episodes/live-<k>/...    a live episode: the one in progress from memory (its relevance.json, the
+                              ledger as it started, from disk), finished ones from disk
     /live/status.json         what is playing and what has been played (404 means no live mode)
     /live/events              server-sent events: hello, start, tick, proposals, reflection, end, stopped
 
@@ -59,6 +60,7 @@ from system1_doom.configuration import ExplorationLevel
 from system1_doom.controller import NO_KEY_MESSAGE
 from system1_doom.d1_client import TransportFn, load_api_key
 from system1_doom.export import (
+    RELEVANCE_FILE,
     BundleIndexEntry,
     EpisodeMeta,
     Networks,
@@ -75,6 +77,7 @@ from system1_doom.export import (
 )
 from system1_doom.logger import TRACE_SCHEMA_VERSION, ProposalTrace, TickTrace
 from system1_doom.reflection import REFLECTIONS_FILE
+from system1_doom.relevance import save_ledger
 from system1_doom.system2 import Record
 from system1_doom.train import ConfigurationFileError, RunStore, add_configuration_flags, default_run_dir
 
@@ -440,6 +443,9 @@ def play_live_episode(player: Player, config: ServeConfig, hub: LiveHub, stop: t
     player.env.reset_tick_count()
     player.keeper.last = None
     files, checkpoint = copy_run_files(player, out)
+    # The ledger as the episode starts (the one every tick's relevance channel reads); finishing the
+    # bundle replaces it with the ledger after the episode.
+    save_ledger(player.ctrl.ledger, out / RELEVANCE_FILE)
     title = f"{default_title(config.scenario, config.networks, seed)}, live"
     opening = episode_meta(player, name, title, seed, ZERO_RESULT, [], files, checkpoint)
     (out / "episode.json").write_text(opening.model_dump_json(indent=2), encoding="utf-8")

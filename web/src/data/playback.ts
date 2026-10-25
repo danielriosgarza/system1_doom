@@ -1,11 +1,21 @@
 // Playback: how fast a recording plays, and how the landing's own playback starts, ends and starts again.
-import { DOOM_FPS, FRAMES_PER_STEP, STEPS_PER_DECISION } from './derive'
 
-/** Real time is the agent's own pace; slow is one decision a second, to read the chain as it changes. */
+/** Doom runs at 35 game frames a second. */
+export const DOOM_FPS = 35
+
+/** One decision lasts 8 game frames (the `decision_frames` bound): Act holds the action's primitives that long. */
+export const DECISION_FRAMES = 8
+
+/** Seconds of game time before decision `tick` was made. */
+export function gameSeconds(tick: number): number {
+  return (tick * DECISION_FRAMES) / DOOM_FPS
+}
+
+/** Real time is the agent's own pace; slow is one decision a second, to read the instances as they change. */
 export type Pace = 'real' | 'slow'
 
-/** One decision covers 4 motor steps of 2 game frames each: 8 frames at 35 frames per second, about 0.229 s. */
-export const DECISION_MS = (1000 * STEPS_PER_DECISION * FRAMES_PER_STEP) / DOOM_FPS
+/** One decision covers 8 frames at 35 frames per second, about 0.229 s. */
+export const DECISION_MS = (1000 * DECISION_FRAMES) / DOOM_FPS
 
 /** Milliseconds between two decisions on screen at each pace. */
 export const PACE_MS: Record<Pace, number> = { real: DECISION_MS, slow: 1000 }

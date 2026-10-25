@@ -4,7 +4,6 @@ import { type EpisodeBundle, endFrameUrl, frameUrl } from '../data/loader'
 import { READY_FRAMES, READY_TIMEOUT_MS } from '../data/playback'
 import type { TickTrace } from '../schema/bundle'
 import { playWhenReady, togglePlay, useApp } from '../store'
-import { FrameOverlay } from './GameView'
 import { usePreloadedFrames } from './useFrames'
 
 type Layer = 'a' | 'b'
@@ -25,7 +24,7 @@ function useLayers(src: string): { a: string; b: string; top: Layer } {
   return layers
 }
 
-/** The game as large as the page allows: the frame the agent saw at this decision, with the trace's overlays. */
+/** The game as large as the page allows: the frame the instances saw at this decision. */
 export function Stage({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick: TickTrace; tickIndex: number }) {
   const ended = useApp((s) => s.ended)
   const playing = useApp((s) => s.playing)
@@ -74,7 +73,6 @@ export function Stage({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
             decoding="async"
           />
         ))}
-        {!atEnd && <FrameOverlay bundle={bundle} tick={tick} />}
         {atEnd && (
           <div className="watch-end" data-testid="watch-end">
             <p>{endLine(bundle.meta)}</p>

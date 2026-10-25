@@ -1,107 +1,107 @@
 import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { BundleIndexEntry } from '../schema/bundle'
+import type { BundleIndexEntry, ProposalTrace } from '../schema/bundle'
+import { FIXTURE, FIXTURES, diskFetcher } from '../test/fixture'
 import {
   BundleError,
-  type Fetcher,
+  SUPPORTED_SCHEMA_VERSION,
+  bundleFileUrl,
+  checkSchemaVersion,
   defaultEpisode,
   endFrameUrl,
   frameUrl,
+  latestProposals,
   loadEpisode,
   loadIndex,
   parseJsonl,
 } from './loader'
 
-const FIXTURES = fileURLToPath(new URL('./__fixtures__/', import.meta.url))
-
-/** Serves files under the fixture folder the way the dev server serves public/. */
-function diskFetcher(overrides: Record<string, string | null> = {}): Fetcher {
-  return async (url) => {
-    if (url in overrides) {
-      const body = overrides[url]
-      return body === null ? new Response('missing', { status: 404 }) : new Response(body)
-    }
-    try {
-      return new Response(await readFile(FIXTURES + url, 'utf8'))
-    } catch {
-      return new Response('missing', { status: 404 })
-    }
-  }
-}
+const metaPath = `${FIXTURES}episodes/${FIXTURE}/episode.json`
 
 describe('loadIndex', () => {
-  it('lists the fixture episode', async () => {
+  it('lists the fixture recording, with its configuration versions', async () => {
     const index = await loadIndex('episodes', diskFetcher())
-    expect(index.episodes.map((e) => e.name)).toEqual(['mini'])
+    expect(index.schema_version).toBe(SUPPORTED_SCHEMA_VERSION)
+    expect(index.episodes.map((e) => [e.name, e.configuration_start, e.configuration_end])).toEqual([[FIXTURE, 1, 3]])
   })
 
-  it('rejects an index written for another schema version', async () => {
-    const fetcher = diskFetcher({ 'episodes/index.json': JSON.stringify({ schema_version: 2, episodes: [] }) })
-    await expect(loadIndex('episodes', fetcher)).rejects.toThrow(/schema version 2.*reads version 1/)
+  it('refuses a schema 1 index, saying it is the old architecture and how to record again', async () => {
+    const fetcher = diskFetcher({ 'episodes/index.json': JSON.stringify({ schema_version: 1, episodes: [] }) })
+    const error = await loadIndex('episodes', fetcher).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(BundleError)
+    expect(String(error)).toMatch(/schema 1 recording, from the old architecture/)
+    expect(String(error)).toMatch(/reads schema 2, where every decision is made by d1-ultra/)
+    expect(String(error)).toMatch(/python -m system1_doom\.export/)
   })
 })
 
 describe('loadEpisode', () => {
-  it('reads the meta, every tick in order, and the proposals', async () => {
-    const bundle = await loadEpisode('mini', 'episodes', diskFetcher())
-    expect(bundle.meta.schema_version).toBe(1)
-    expect(bundle.ticks.map((t) => t.tick)).toEqual([0, 2, 4, 17, 18, 22])
-    expect(bundle.proposals).toHaveLength(2)
-    expect(bundle.proposals.every((p) => p.admission_decision && p.source === 'template')).toBe(true)
-    const tick = bundle.ticks[2]
-    expect(tick?.arbiter?.pick_rule).toBe('committed')
-    expect(tick?.state?.screen_width).toBe(320)
+  it('reads the meta, every tick in order with its six instances, the proposals and System 2’s records', async () => {
+    const bundle = await loadEpisode(FIXTURE, 'episodes', diskFetcher())
+    expect(bundle.meta.schema_version).toBe(2)
+    expect(bundle.meta.decider).toBe('d1-ultra')
+    expect(bundle.ticks.map((t) => t.tick)).toEqual([...Array(40).keys()])
+    for (const tick of bundle.ticks) {
+      expect(Object.keys(tick.instances)).toEqual(['survival', 'combat', 'navigation', 'resource', 'goal', 'central'])
+    }
+    expect(bundle.proposals.length).toBeGreaterThan(0)
+    expect(bundle.proposals.every((p) => p.admit_instance?.kind === 'admit')).toBe(true)
+    const kinds = bundle.records.map((r) => r.record)
+    expect(kinds).toContain('cycle')
+    expect(kinds).toContain('verdict')
+    expect(kinds).toContain('note')
   })
 
-  it('reads the training run files that episode.json lists, and gives null for the rest', async () => {
-    const bundle = await loadEpisode('mini', 'episodes', diskFetcher())
-    expect(bundle.metrics?.map((r) => r.episode)).toEqual([1, 2, 3])
-    expect(bundle.evaluation?.heuristics.reward).toBe(547.98)
-    expect(bundle.evaluation?.latest?.cleared).toBe(0.3)
-    expect(bundle.trust?.trust_count).toBe(25)
-    expect(Object.keys(bundle.trust?.context_counts ?? {})).toHaveLength(2)
-    // macros.json is not listed, so it is not fetched.
-    expect(bundle.macros).toBeNull()
+  it('reads the relevance ledger and the training counts that episode.json lists', async () => {
+    const bundle = await loadEpisode(FIXTURE, 'episodes', diskFetcher())
+    expect(bundle.relevance?.episodes).toBe(3)
+    expect(Object.keys(bundle.relevance?.entries ?? {}).length).toBeGreaterThan(0)
+    expect(bundle.trust?.episodes).toBe(2)
   })
 
-  it('treats a listed run file that is missing, or an unlisted one, as absent', async () => {
-    const missing = await loadEpisode('mini', 'episodes', diskFetcher({ 'episodes/mini/trust.json': null }))
-    expect(missing.trust).toBeNull()
-    expect(missing.metrics).not.toBeNull()
-    const meta = JSON.parse(await readFile(`${FIXTURES}episodes/mini/episode.json`, 'utf8'))
+  it('treats an unlisted or missing extra file as absent', async () => {
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'))
+    const files = meta.files.filter((f: string) => f !== 'trust.json')
     const bare = await loadEpisode(
-      'mini',
+      FIXTURE,
       'episodes',
-      diskFetcher({ 'episodes/mini/episode.json': JSON.stringify({ ...meta, files: meta.files.slice(0, 3) }) }),
+      diskFetcher({
+        [`episodes/${FIXTURE}/episode.json`]: JSON.stringify({ ...meta, files }),
+        [`episodes/${FIXTURE}/reflections.jsonl`]: null,
+      }),
     )
-    expect([bare.metrics, bare.evaluation, bare.trust, bare.macros]).toEqual([null, null, null, null])
+    expect(bare.trust).toBeNull()
+    expect(bare.records).toEqual([])
+    expect(bare.relevance).not.toBeNull()
   })
 
-  it('names the frame of a tick by its number, and the screen after the last action', async () => {
-    const bundle = await loadEpisode('mini', 'episodes', diskFetcher())
-    expect(frameUrl(bundle, 17)).toBe('episodes/mini/frames/00017.jpg')
-    expect(endFrameUrl(bundle)).toBe('episodes/mini/frames/end.jpg')
-    expect(
-      endFrameUrl({ ...bundle, meta: { ...bundle.meta, frames: { ...bundle.meta.frames, end_frame: null } } }),
-    ).toBe(null)
+  it('refuses a schema 1 bundle with a clear message', async () => {
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'))
+    const fetcher = diskFetcher({
+      [`episodes/${FIXTURE}/episode.json`]: JSON.stringify({ ...meta, schema_version: 1 }),
+    })
+    await expect(loadEpisode(FIXTURE, 'episodes', fetcher)).rejects.toThrow(
+      new RegExp(`${FIXTURE}/episode.json is a schema 1 recording`),
+    )
   })
 
-  it('treats a missing proposals file as no proposals', async () => {
-    const bundle = await loadEpisode('mini', 'episodes', diskFetcher({ 'episodes/mini/proposals.jsonl': null }))
-    expect(bundle.proposals).toEqual([])
+  it('refuses a bundle whose tick count disagrees with its meta, unless it is live', async () => {
+    const ticks = await readFile(`${FIXTURES}episodes/${FIXTURE}/ticks.jsonl`, 'utf8')
+    const two = ticks.split('\n').slice(0, 2).join('\n')
+    const fetcher = diskFetcher({ [`episodes/${FIXTURE}/ticks.jsonl`]: two })
+    await expect(loadEpisode(FIXTURE, 'episodes', fetcher)).rejects.toThrow(/has 2 ticks, but episode.json says 40/)
+    const live = await loadEpisode(FIXTURE, 'episodes', fetcher, { live: true })
+    expect(live.ticks).toHaveLength(2)
+    expect(live.meta.tick_count).toBe(2)
   })
 
-  it('refuses a bundle from another schema version', async () => {
-    const meta = JSON.parse(await readFile(`${FIXTURES}episodes/mini/episode.json`, 'utf8'))
-    const fetcher = diskFetcher({ 'episodes/mini/episode.json': JSON.stringify({ ...meta, schema_version: 0 }) })
-    await expect(loadEpisode('mini', 'episodes', fetcher)).rejects.toBeInstanceOf(BundleError)
-  })
-
-  it('refuses a bundle whose tick count disagrees with its meta', async () => {
-    const ticks = await readFile(`${FIXTURES}episodes/mini/ticks.jsonl`, 'utf8')
-    const fetcher = diskFetcher({ 'episodes/mini/ticks.jsonl': ticks.split('\n').slice(0, 2).join('\n') })
-    await expect(loadEpisode('mini', 'episodes', fetcher)).rejects.toThrow(/has 2 ticks, but episode.json says 6/)
+  it('names frames by tick and resolves an instance’s image reference inside the bundle', async () => {
+    const bundle = await loadEpisode(FIXTURE, 'episodes', diskFetcher())
+    expect(frameUrl(bundle, 17)).toBe(`episodes/${FIXTURE}/frames/00017.jpg`)
+    expect(endFrameUrl(bundle)).toBe(`episodes/${FIXTURE}/frames/end.jpg`)
+    const combat = bundle.ticks[3]?.instances.combat
+    expect(combat?.image_ref).toBe('frames/00003.jpg')
+    expect(bundleFileUrl(bundle, combat?.image_ref ?? '')).toBe(`episodes/${FIXTURE}/frames/00003.jpg`)
   })
 
   it('reports a missing bundle by URL', async () => {
@@ -111,12 +111,32 @@ describe('loadEpisode', () => {
   })
 })
 
+describe('checkSchemaVersion', () => {
+  it('accepts version 2 and refuses anything else', () => {
+    expect(() => checkSchemaVersion(2, 'x')).not.toThrow()
+    expect(() => checkSchemaVersion(3, 'x')).toThrow(/schema version 3, but this app reads version 2/)
+    expect(() => checkSchemaVersion(undefined, 'x')).toThrow(/version none/)
+  })
+})
+
+describe('latestProposals', () => {
+  it('keeps the newest line of each proposal, in the order proposals first came', () => {
+    const p = (timestamp: string, raw: string, performance: number[]) =>
+      ({ timestamp, raw_proposal: raw, subsequent_performance: performance }) as ProposalTrace
+    const kept = latestProposals([p('t1', 'a', []), p('t2', 'b', []), p('t1', 'a', [1, 2])])
+    expect(kept.map((x) => [x.raw_proposal, x.subsequent_performance])).toEqual([
+      ['a', [1, 2]],
+      ['b', []],
+    ])
+  })
+})
+
 describe('defaultEpisode', () => {
   const entry = (name: string, cleared: boolean): BundleIndexEntry => ({
     name,
     title: name,
     scenario: 'deadly_corridor.cfg',
-    model: 'heuristics',
+    value_networks: 'best',
     seed: 9,
     cleared,
     died: !cleared,
@@ -133,12 +153,6 @@ describe('defaultEpisode', () => {
     expect(defaultEpisode({ episodes: [entry('a', false), entry('b', false)] })).toBe('a')
     expect(defaultEpisode({ episodes: [] })).toBeNull()
     expect(defaultEpisode(null)).toBeNull()
-  })
-
-  it('picks the cleared corridor among the shipped recordings', async () => {
-    const shipped = JSON.parse(await readFile(new URL('../../public/episodes/index.json', import.meta.url), 'utf8'))
-    expect(shipped.episodes[0].name).toBe('deadly_corridor-heuristics-9')
-    expect(defaultEpisode(shipped)).toBe('deadly_corridor-learned-9')
   })
 })
 

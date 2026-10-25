@@ -1,32 +1,23 @@
-import { useEffect, useMemo } from 'react'
-import { Reference } from './components/Reference'
+import { useEffect } from 'react'
 import { Scrubber } from './components/Scrubber'
 import { TopBar } from './components/TopBar'
-import { Tour } from './components/Tour'
-import type { ExplainerContext } from './content/explainers'
 import { LIVE_COPY } from './content/live'
-import { admissions } from './data/derive'
 import { PACE_MS } from './data/playback'
-import { Hierarchy } from './screens/Hierarchy'
-import { Inspector } from './screens/Inspector'
+import { Instances } from './screens/Instances'
 import { Learning } from './screens/Learning'
 import { Menu } from './screens/Menu'
-import { Overview } from './screens/Overview'
+import { Reference } from './screens/Reference'
+import { SlowSystem } from './screens/SlowSystem'
 import { Watch } from './screens/Watch'
 import {
   SCREENS,
-  closeDrawer,
-  endTour,
   followLive,
   getState,
   onHashChange,
-  openDrawer,
   setScreen,
   setState,
   setTickIndex,
-  setTourStep,
   start,
-  startTour,
   step,
   togglePlay,
   useApp,
@@ -46,11 +37,9 @@ export default function App() {
   const loading = useApp((s) => s.loading)
   const error = useApp((s) => s.error)
   const theme = useApp((s) => s.theme)
-  const hovered = useApp((s) => s.hoveredAction)
-  const screen = useApp((s) => s.screen)
-  const tour = useApp((s) => s.tour)
   const pace = useApp((s) => s.pace)
-  // The playback timer runs here, so a recording plays on every screen, Watch included, which has no timeline.
+  const screen = useApp((s) => s.screen)
+  // The playback timer runs here, so a recording plays on every screen.
   usePlayback()
 
   useEffect(() => {
@@ -68,36 +57,27 @@ export default function App() {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
+  // A "see it" link names a panel: once its screen shows, scroll to it, let it flash, then forget it.
+  const focusPanel = useApp((s) => s.focusPanel)
+  useEffect(() => {
+    if (!focusPanel) return
+    const frame = window.requestAnimationFrame(() =>
+      document.getElementById(`panel-${focusPanel}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+    )
+    const timer = window.setTimeout(() => setState({ focusPanel: null }), 1600)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+    }
+  }, [focusPanel, screen])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { tour: tourStep, bundle: current, drawer } = getState()
-      // While the reference drawer is open, only Esc (here) and Tab (inside the dialog) reach the app.
-      if (drawer !== null) {
-        if (e.key === 'Escape') {
-          closeDrawer()
-          e.preventDefault()
-        }
-        return
-      }
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
-      if (tourStep !== null) {
-        // During the tour the arrows walk the tour, not the episode.
-        if (e.key === 'ArrowRight') setTourStep(tourStep + 1)
-        else if (e.key === 'ArrowLeft') setTourStep(tourStep - 1)
-        else if (e.key === 'Escape') endTour()
-        else return
-        e.preventDefault()
-        return
-      }
-      const count = current?.ticks.length ?? 0
+      const count = getState().bundle?.ticks.length ?? 0
       const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
-      const screen = /^[1-9]$/.test(key) ? SCREENS[Number(key) - 1] : undefined
-      if (screen) setScreen(screen.id)
-      else if (key === 't') startTour()
-      else if (key === 'f') setState({ depth: getState().depth === 'plain' ? 'formula' : 'plain' })
-      else if (key === 'g') openDrawer('glossary')
-      else if (key === 'i') openDrawer('recording')
-      else if (key === '?') openDrawer('keys')
+      const target = /^[1-9]$/.test(key) ? SCREENS[Number(key) - 1] : undefined
+      if (target) setScreen(target.id)
       else if (key === 'l') followLive()
       else if (e.key === 'ArrowRight') step(e.shiftKey ? 10 : 1)
       else if (e.key === 'ArrowLeft') step(e.shiftKey ? -10 : -1)
@@ -111,23 +91,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const admitted = useMemo(() => admissions(bundle?.proposals ?? []), [bundle])
   const tick = bundle?.ticks[tickIndex]
-  const ctx: ExplainerContext | null =
-    bundle && tick
-      ? {
-          tick,
-          meta: bundle.meta,
-          focus: hovered && tick.available_actions.includes(hovered) ? hovered : tick.selected_action,
-          prev: bundle.ticks[tickIndex - 1] ?? null,
-          proposals: bundle.proposals,
-          ticks: bundle.ticks,
-          index: tickIndex,
-          metrics: bundle.metrics,
-          trust: bundle.trust,
-        }
-      : null
-
   return (
     // One decision's span on screen, for animations that run once per decision.
     <div className="app" style={{ ['--decision-ms' as string]: `${Math.round(PACE_MS[pace])}ms` }}>
@@ -139,17 +103,15 @@ export default function App() {
       )}
       {!error && loading && !bundle && <p className="status">Loading the episode…</p>}
       {!error && bundle && !tick && <p className="status">{LIVE_COPY.waiting}</p>}
-      {bundle && tick && ctx && (
+      {bundle && tick && (
         <>
           {screen === 'watch' && <Watch bundle={bundle} tick={tick} tickIndex={tickIndex} />}
-          {screen === 'overview' && <Overview bundle={bundle} tick={tick} ctx={ctx} />}
-          {screen === 'tick' && <Inspector bundle={bundle} tick={tick} admitted={admitted} ctx={ctx} />}
-          {screen === 'hierarchy' && <Hierarchy bundle={bundle} tick={tick} tickIndex={tickIndex} ctx={ctx} />}
-          {screen === 'learning' && <Learning bundle={bundle} tick={tick} ctx={ctx} />}
-          {screen === 'menu' && <Menu bundle={bundle} tick={tick} ctx={ctx} />}
-          {screen !== 'watch' && <Scrubber ticks={bundle.ticks} admitted={admitted} ctx={ctx} />}
-          {tour !== null && <Tour step={tour} bundle={bundle} tick={tick} />}
-          <Reference bundle={bundle} ctx={ctx} />
+          {screen === 'instances' && <Instances bundle={bundle} tick={tick} tickIndex={tickIndex} />}
+          {screen === 'slow' && <SlowSystem bundle={bundle} tick={tick} tickIndex={tickIndex} />}
+          {screen === 'learning' && <Learning bundle={bundle} tick={tick} />}
+          {screen === 'menu' && <Menu bundle={bundle} tick={tick} />}
+          {screen === 'reference' && <Reference bundle={bundle} />}
+          {screen !== 'watch' && <Scrubber bundle={bundle} />}
         </>
       )}
     </div>

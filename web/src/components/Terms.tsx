@@ -4,17 +4,18 @@ import { TermLink } from './TermLink'
 
 const escape = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** Every term and alias, longest first, so “trust λ” wins over “trust” and “legal actions” over “legal”. */
+/** Every term and alias, longest first, so “history test” wins over “history” and “trial judge” over “trial”. */
 const WORDS = GLOSSARY.flatMap((e) =>
   [e.term, ...e.aliases].map((word) => ({ word: word.toLowerCase(), id: e.id })),
 ).sort((a, b) => b.word.length - a.word.length)
 const OWNER = new Map(WORDS.map((w) => [w.word, w.id]))
 /**
- * Whole words only: no letter, digit or underscore either side. Unicode-aware, since λ is not a \w to \b.
- * The character before is matched as a group rather than a lookbehind, which Safari only has from 16.4.
+ * Whole words only: no letter, digit, underscore or hyphen either side, so “d1-ultra” is one word and
+ * “paid-off” is not “paid off”. The character before is matched as a group rather than a lookbehind, which
+ * Safari only has from 16.4.
  */
 const PATTERN = new RegExp(
-  `(^|[^\\p{L}\\p{N}_])(${WORDS.map((w) => escape(w.word)).join('|')})(?![\\p{L}\\p{N}_])`,
+  `(^|[^\\p{L}\\p{N}_-])(${WORDS.map((w) => escape(w.word)).join('|')})(?![\\p{L}\\p{N}_-])`,
   'giu',
 )
 

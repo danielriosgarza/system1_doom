@@ -16,4 +16,4 @@ _vizdoom.ini
 bundles/
 live/
 !web/public/episodes/**/*.jsonl
-!web/src/data/__fixtures__/**/*.jsonl
+!web/e2e/fixtures/**/*.jsonl

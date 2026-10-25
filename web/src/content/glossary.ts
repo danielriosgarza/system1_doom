@@ -1,29 +1,15 @@
-// The glossary: every word the explanations lean on, with where the screens show it and where the code
-// keeps it. The first sixteen are the documentation's glossary (docs/DOCUMENTATION.md, section 18), and a
-// test keeps the two in step.
-import {
-  contextWords,
-  d1Words,
-  explainPick,
-  fmt,
-  gameSeconds,
-  learning,
-  pct,
-  PICK_RULES,
-  pressureForArbiter,
-  pressureReading,
-  prettyId,
-  requestSpans,
-  trustLambda,
-} from '../data/derive'
-import type { DrawerSection, Screen } from '../store'
-import type { ExplainerContext, PanelId } from './explainers'
+// The glossary: every word the screens lean on, with where to see it and where the code keeps it. It carries
+// exactly the terms of the documentation's glossary (docs/DOCUMENTATION.md, section 18), and a test keeps the
+// two in step.
+import type { Screen } from '../store'
+import type { PanelId } from './explainers'
 
-/**
- * A “where to see it” link: a screen, optionally one of its panels to flash, or another tab of the drawer
- * (for the glossary, optionally at one entry). Without a label, it is named after the screen and panel.
- */
-export type SeeLink = { label?: string } & ({ screen: Screen; panel?: PanelId } | { tab: DrawerSection; term?: string })
+/** Where to see a term: a screen, and the panel on it to flash. */
+export interface SeeLink {
+  screen: Screen
+  panel?: PanelId
+  label: string
+}
 
 export interface GlossaryEntry {
   id: string
@@ -32,480 +18,330 @@ export interface GlossaryEntry {
   aliases: string[]
   meaning: string
   see: SeeLink[]
-  /** `file.py · Name`, as an explainer's code line. */
+  /** `file.py · Name`: where in the package it lives. */
   code: string
-  /** This tick's value, when there is one to read. */
-  now?: (ctx: ExplainerContext) => string
 }
 
-const thousands = (n: number) => n.toLocaleString('en-US')
-
 export const GLOSSARY: GlossaryEntry[] = [
-  // The documentation's glossary.
-  {
-    id: 'action',
-    term: 'action',
-    aliases: ['actions', 'ActionSpec'],
-    meaning:
-      'The only thing the controller can execute: a named plan of one or more primitives, with preconditions, at most 16 steps and a termination condition. Primitives are one step long; macros are longer.',
-    see: [{ screen: 'tick', panel: 'legal' }],
-    code: 'actions.py · ActionSpec',
-    now: ({ tick, meta }) =>
-      `${tick.available_actions.length} of the ${Object.keys(meta.actions).length} actions in this recording are legal.`,
-  },
-  {
-    id: 'arbiter',
-    term: 'arbiter',
-    aliases: ['arbiters'],
-    meaning:
-      'The one decider per tick. It turns the five opinions, the projections, exploration, the archive’s strategy and d1-ultra’s advice into one pick, with every term of the score written down.',
-    see: [{ screen: 'tick', panel: 'arbiter' }, { screen: 'hierarchy' }],
-    code: 'system1.py · System1.tick',
-    now: ({ tick }) => explainPick(tick).headline,
-  },
-  {
-    id: 'budget-mode',
-    term: 'budget mode',
-    aliases: ['budget modes'],
-    meaning:
-      'How much time the tick’s budget allows: 40 ms by default, 5 s in a recording that waits for d1-ultra. Full runs everything, reduced drops the projections, and critical repeats the cached action with stand-in module outputs.',
-    see: [{ screen: 'tick', panel: 'arbiter', label: 'The inspector → One decision (the “out of time” rule)' }],
-    code: 'configuration.py · Bounds.call_budget_sec',
-    now: ({ tick }) => `This tick ran in ${tick.budget_mode} mode.`,
-  },
-  {
-    id: 'committed-pick',
-    term: 'committed pick',
-    aliases: ['committed', 'commits the arbiter'],
-    meaning:
-      'The arbiter’s shortcut: when one module is nearly certain (probability at least 0.9, utility at least 5, a lead of at least 4), its choice stands without the full comparison.',
-    see: [{ screen: 'tick', panel: 'arbiter' }],
-    code: 'system1.py · pick_action',
-    now: ({ tick }) =>
-      tick.arbiter?.pick_rule === 'committed'
-        ? `Committed this tick, by the ${tick.arbiter.committed_by} module.`
-        : `Not this tick: the pick was ${tick.arbiter?.pick_rule === 'critical_cached' ? 'out of time' : (tick.arbiter?.pick_rule ?? 'greedy')}.`,
-  },
-  {
-    id: 'context-signature',
-    term: 'context signature',
-    aliases: ['context', 'contexts', 'situation', 'situations', 'context buckets', 'buckets'],
-    meaning:
-      'A coarse key for the situation: health, ammo, enemies in view, recent damage and pickups, each put in one of a few buckets. Trust, novelty, the d1 cache and the archive all look things up by it.',
-    see: [{ screen: 'tick', panel: 'world' }],
-    code: 'state.py · WorldState.context_signature',
-    now: ({ tick }) => contextWords(tick.context_signature),
-  },
   {
     id: 'd1-ultra',
     term: 'd1-ultra',
-    aliases: ['d1'],
+    aliases: [],
     meaning:
-      'Liquid AI’s decision model, asked small multiple-choice questions by the modules, the arbiter, exploration and the admission gate. Advisory everywhere it appears, and switched on recording by recording.',
-    see: [
-      { screen: 'tick', panel: 'modules', label: 'The inspector → Five opinions (the dotted share)' },
-      { screen: 'tick', panel: 'arbiter' },
-      { screen: 'hierarchy', label: 'The chain (its side card)' },
-      { screen: 'overview' },
-    ],
+      'Liquid AI’s decision model. It answers typed questions with distributions: a probability (noul) or a choice over a finite list. Every decision here is one of its answers: the senses, the central, the admit instance, System 2’s reflectors and central, and the trial judge are each one call.',
+    see: [{ screen: 'instances', panel: 'answers', label: 'its answers at this decision' }],
     code: 'd1_client.py · D1UltraClient',
-    now: ({ tick, meta }) =>
-      meta.brains.d1_ultra ? `On in this recording. ${d1Words(tick, meta)}` : 'Off in this recording.',
   },
   {
-    id: 'exploration-floor',
-    term: 'exploration floor',
-    aliases: ['floor'],
+    id: 'system-1',
+    term: 'System 1',
+    aliases: [],
     meaning:
-      'A flat chance, used only in training, that the arbiter takes a random legal action instead of its pick: 0.6 at the first episode, falling in a straight line to 0.05 by episode 100, then flat. Zero in a recording.',
-    see: [{ screen: 'learning', panel: 'curves' }],
-    code: 'configuration.py · Configuration.exploration_level',
-    now: ({ meta }) =>
-      meta.config.exploration_floor > 0
-        ? `${fmt(meta.config.exploration_floor, 2)} in this recording.`
-        : '0 in this recording: the arbiter never draws at random.',
+      'The fast system that decides every action: five senses, then the central, then Act, once per tick. It never waits for System 2.',
+    see: [{ screen: 'watch', panel: 'strip', label: 'the strip on Watch' }],
+    code: 'system1.py · System1',
   },
   {
-    id: 'exploration-pressure',
-    term: 'exploration pressure',
-    aliases: ['pressure'],
+    id: 'system-2',
+    term: 'System 2',
+    aliases: ['slow system'],
     meaning:
-      'How inclined the arbiter is to try something other than its best guess: four readings of the situation, each worth up to 0.25, damped after success and clamped between 0.02 and 1. Temperature = 0.10 + pressure sets how flat its draw is. The arbiter of a tick uses the pressure left by the tick before.',
-    see: [{ screen: 'hierarchy', label: 'The chain (the gauge)' }],
-    code: 'configuration.py · Configuration.exploration_level',
-    now: ({ ticks, index }) => {
-      const reading = pressureReading(pressureForArbiter(ticks, index))
-      return `This tick’s arbiter read pressure ${fmt(reading.recorded, 2)}, so temperature ${fmt(reading.temperature, 2)}.`
-    },
+      'The slow system, on its own thread: it reads the history and changes the configuration one change at a time. Its reflectors propose, its central chooses one change or none, a scope change must pass the history test, and every change is a trial that the judge keeps or reverts.',
+    see: [{ screen: 'slow', panel: 'versions', label: 'the slow system' }],
+    code: 'system2.py · System2',
   },
   {
-    id: 'gate-network',
-    term: 'gate network',
-    aliases: ['gate share', 'gate net', 'learned gate', 'learned gate network'],
+    id: 'instance',
+    term: 'instance',
+    aliases: ['instances'],
     meaning:
-      'A small network (hidden 32) that estimates from the state how much following each module pays off. The arbiter blends its proposal with the hand-written module weights: used = normalise((1 − g) · table + g · gate), where g is the gate share.',
-    see: [{ screen: 'learning', panel: 'gateview' }],
-    code: 'learning.py · LEGACY_GATE_KEYS, Learner.load',
-    now: ({ tick, meta }) =>
-      meta.brains.learned_networks
-        ? `g = ${fmt(tick.arbiter?.gate_share ?? 0, 2)} this tick: the gate’s weights have ${pct(tick.arbiter?.gate_share ?? 0)} of the say.`
-        : 'No networks in this recording, so the table alone sets the weights.',
+      'One d1-ultra call with its own scope and its own finite questions. Its instructions name its concern and say it sees only the evidence given; they never say how to weigh anything.',
+    see: [{ screen: 'instances', panel: 'evidence', label: 'The instances' }],
+    code: 'instance.py · run_instance',
+  },
+  {
+    id: 'sense',
+    term: 'sense',
+    aliases: ['senses'],
+    meaning:
+      'One of the five System 1 instances (survival, combat, navigation, resource, goal). Each sees only its scope and answers three questions: speak (a probability), action (over the legal menu) and reason (over its own reasons).',
+    see: [{ screen: 'watch', panel: 'strip', label: 'the five sense rows' }],
+    code: 'senses.py · run_senses',
+  },
+  {
+    id: 'central',
+    term: 'central',
+    aliases: ['central instance'],
+    meaning:
+      'The instance that chooses the action the agent executes: one choice over the legal menu, after hearing the messages, each sense’s relevance record and the exploration level. System 2 has a central of its own, which chooses one configuration change or none.',
+    see: [{ screen: 'instances', panel: 'answers', label: 'its choice distribution' }],
+    code: 'system1.py · System1.tick',
+  },
+  {
+    id: 'channel',
+    term: 'channel',
+    aliases: ['channels', 'evidence channel'],
+    meaning:
+      'One named piece of evidence rendered as plain text under a [name] header: vitals, threats, pickups, projections, values and so on, eighteen in all. Messages, relevance and exploration are for the central only.',
+    see: [{ screen: 'instances', panel: 'evidence', label: 'the state text, verbatim' }],
+    code: 'evidence.py · render_scope',
+  },
+  {
+    id: 'scope',
+    term: 'scope',
+    aliases: ['scopes'],
+    meaning:
+      'The channels an instance is shown, at most seven, always with the menu. Whatever a scope leaves out never reaches the instance. System 2 widens or narrows a scope one channel at a time.',
+    see: [
+      { screen: 'instances', panel: 'evidence', label: 'the scope chips' },
+      { screen: 'slow', panel: 'configuration-changes', label: 'scopes at start and end' },
+    ],
+    code: 'configuration.py · SenseConfig',
+  },
+  {
+    id: 'message',
+    term: 'message',
+    aliases: ['messages'],
+    meaning:
+      'What a sense that spoke sends the central: its action, its reason and its strength, one line in the central’s messages channel. A silent or missed sense sends nothing.',
+    see: [{ screen: 'instances', panel: 'answers', label: 'the messages the central heard' }],
+    code: 'evidence.py · Message',
+  },
+  {
+    id: 'strength',
+    term: 'strength',
+    aliases: [],
+    meaning:
+      'A message’s strength: the sense’s speak probability, unscaled. A sense speaks when it is 0.5 or more, d1-ultra’s own yes, not a tuned threshold.',
+    see: [{ screen: 'watch', panel: 'strip', label: 'the strength bars' }],
+    code: 'senses.py · message_of',
+  },
+  {
+    id: 'relevance',
+    term: 'relevance',
+    aliases: ['relevance ledger', 'ledger', 'relevance record'],
+    meaning:
+      'Each sense’s track record per situation: how often it spoke, was followed and paid off, was overruled and whether the chosen action paid off, and its mean strength either way. The central is shown it as counts; nothing in it is multiplied into a decision.',
+    see: [
+      { screen: 'slow', panel: 'ledger', label: 'the ledger per sense and situation' },
+      { screen: 'learning', panel: 'relevance-episodes', label: 'over episodes' },
+    ],
+    code: 'relevance.py · update_ledger',
+  },
+  {
+    id: 'paid-off',
+    term: 'paid off',
+    aliases: ['n-step return', 'paid-off', 'pays off'],
+    meaning:
+      'A decision paid off when its n-step return was positive: the game reward of it and the next seven decisions, discounted by 0.9 a step, cut at the episode’s end. The ledger, the history test and the trials all use it.',
+    see: [{ screen: 'slow', panel: 'ledger', label: 'the ledger’s formula' }],
+    code: 'features.py · n_step_returns',
+  },
+  {
+    id: 'configuration',
+    term: 'configuration',
+    aliases: ['configurations', 'configuration version'],
+    meaning:
+      'Everything System 2 may change, as versioned data: each instance’s scope, the exploration level, the active strategy and the admitted macros. Version 1 is the design’s; each change makes the next version, taking effect only at a tick boundary.',
+    see: [
+      { screen: 'watch', panel: 'config-line', label: 'the configuration line' },
+      { screen: 'slow', panel: 'versions', label: 'every version' },
+    ],
+    code: 'configuration.py · Configuration',
+  },
+  {
+    id: 'miss',
+    term: 'miss',
+    aliases: ['missed', 'misses'],
+    meaning:
+      'An answer that did not come or could not be read: a timeout, a failed call, rate limits outlasting the budget, an option off the menu, or malformed probabilities. Nothing stands in for it: a missed sense is silent, a missed central holds no keys.',
+    see: [{ screen: 'instances', panel: 'answers', label: 'a miss and its raw answer' }],
+    code: 'instance.py · run_instance',
+  },
+  {
+    id: 'pick',
+    term: 'pick',
+    aliases: ['picks'],
+    meaning:
+      'How the central’s answer becomes the action: top under the exploit level (its highest probability, a tie to the first in menu order), drawn under explore (from its own distribution, with a seeded generator), or missed (no keys).',
+    see: [{ screen: 'watch', panel: 'strip', label: 'the central row' }],
+    code: 'system1.py · pick_action',
+  },
+  {
+    id: 'exploration-level',
+    term: 'exploration level',
+    aliases: ['exploit level', 'explore level'],
+    meaning:
+      'Part of the configuration: exploit or explore. The central is told the level in its exploration channel; under explore its action is drawn from its own distribution. There is no temperature and no bonus.',
+    see: [{ screen: 'watch', panel: 'strip', label: 'the central row' }],
+    code: 'configuration.py · Configuration',
+  },
+  {
+    id: 'reflector',
+    term: 'reflector',
+    aliases: ['reflectors'],
+    meaning:
+      'One of System 2’s nine instances: five sense auditors, a central auditor, the menu, strategy and exploration reflectors. Each reads history channels over three windows and may propose one change from a finite menu the bounds have filtered.',
+    see: [{ screen: 'slow', panel: 'reflectors', label: 'each reflector’s evidence and answers' }],
+    code: 'reflectors.py · ReflectorSpec',
+  },
+  {
+    id: 'cycle',
+    term: 'cycle',
+    aliases: ['cycles'],
+    meaning:
+      'One round of System 2: every few decisions, or at an episode’s end, and only while no trial is in flight. Its reflectors are asked, its central chooses, and the cycle’s record keeps everything each of them saw and answered.',
+    see: [{ screen: 'slow', panel: 'cycles', label: 'every cycle' }],
+    code: 'reflection.py · ReflectionTrace',
+  },
+  {
+    id: 'history-test',
+    term: 'history test',
+    aliases: ['history tests'],
+    meaning:
+      'What stands between a scope change and play: the instance is asked again, under the new scope, on stored ticks it already answered, drawn by outcome (bad, good, rest). The change passes when its composite is 0.05 above the old and no metric falls by more than 0.10.',
+    see: [{ screen: 'slow', panel: 'history-test', label: 'the test’s whole table' }],
+    code: 'history_test.py · run_history_test',
+  },
+  {
+    id: 'trial',
+    term: 'trial',
+    aliases: ['trials'],
+    meaning:
+      'Every change that takes effect is a trial, one at a time: observed for a set number of decisions against the same number before it, then kept or reverted. A revert restores the previous configuration with the version bumped.',
+    see: [
+      { screen: 'slow', panel: 'trial', label: 'the before-and-during table' },
+      { screen: 'watch', panel: 'config-line', label: 'the trial in flight' },
+    ],
+    code: 'system2.py · trial_table',
+  },
+  {
+    id: 'judge',
+    term: 'judge',
+    aliases: ['trial judge'],
+    meaning:
+      'The instance that ends a trial: shown the before-and-during table, it answers keep or revert. A missed judge extends the trial; the safety bound may revert first without asking it.',
+    see: [{ screen: 'slow', panel: 'trial', label: 'its answer' }],
+    code: 'reflection.py · TrialRecord',
+  },
+  {
+    id: 'cooling',
+    term: 'cooling',
+    aliases: [],
+    meaning:
+      'The rest after a verdict: no change to the changed instance is offered for a set number of decisions; after a menu, strategy or level change, System 2 as a whole rests.',
+    see: [{ screen: 'slow', panel: 'reflectors', label: 'skipped and blocked reflectors' }],
+    code: 'reflectors.py · BoundsState',
+  },
+  {
+    id: 'admit-instance',
+    term: 'admit instance',
+    aliases: ['admit'],
+    meaning:
+      'The instance that decides whether a proposed macro enters the menu, after it has parsed, used only legal primitives and survived the sandbox: one probability, yes at 0.5 or more.',
+    see: [{ screen: 'menu', panel: 'admit', label: 'its evidence and answer' }],
+    code: 'instance.py · run_admit',
+  },
+  {
+    id: 'action',
+    term: 'action',
+    aliases: ['actions', 'ActionSpec', 'legal menu'],
+    meaning:
+      'The only thing that can be executed: a named, bounded plan of primitives with preconditions and a duration cap. The legal menu of a tick is the actions whose preconditions hold; every choice among actions is over exactly that menu.',
+    see: [{ screen: 'menu', panel: 'menu-now', label: 'the menu' }],
+    code: 'actions.py · ActionSpec',
   },
   {
     id: 'macro',
     term: 'macro',
-    aliases: ['macros'],
+    aliases: ['macros', 'macro-action'],
     meaning:
-      'An action made of several primitives and run as one plan: built in (weave fire, peek and fire, circle strafe, retreat to cover, approach pickup) or proposed by the slow path and admitted (evasive burst 1 and 2 in the heuristics recording).',
-    see: [
-      { screen: 'menu', panel: 'encoding' },
-      { screen: 'tick', panel: 'legal' },
-    ],
-    code: 'actions.py · ActionSpec.is_macro',
-    now: ({ tick, meta }) => {
-      const n = tick.available_actions.filter((a) => meta.actions[a]?.is_macro).length
-      return `${n} ${n === 1 ? 'macro is' : 'macros are'} legal this tick.`
-    },
+      'An action of several primitives. Some are built in; the slow path can propose new ones when System 2 asks, and the admit instance decides whether each enters the configuration.',
+    see: [{ screen: 'menu', panel: 'proposals', label: 'proposals' }],
+    code: 'actions.py · ActionSpec',
   },
   {
-    id: 'module',
-    term: 'module',
-    aliases: ['modules', 'decider', 'deciders'],
+    id: 'context-signature',
+    term: 'context signature',
+    aliases: ['context signatures', 'situation'],
     meaning:
-      'One of five small deciders, survival, combat, navigation, resource and goal, each answering its own question over the same menu, with its own memory and its own reward.',
-    see: [{ screen: 'tick', panel: 'modules' }],
-    code: 'senses.py · sense_specs, run_senses',
+      'A coarse key for the situation, like hp:healthy|ammo:stocked|enemies:2:mid|dmg:clear|pickup:pickup_visible. It keys the relevance ledger, the novelty counts and the value networks’ tried counts.',
+    see: [{ screen: 'slow', panel: 'ledger', label: 'the ledger by situation' }],
+    code: 'state.py · WorldState.context_signature',
+  },
+  {
+    id: 'projection',
+    term: 'projection',
+    aliases: ['projections'],
+    meaning:
+      'A rough rollout of one legal action by a hand-written simulator: expected value, damage in and out, survival, progress. Shown in the projections channel and labelled as a projection, not the game.',
+    see: [{ screen: 'instances', panel: 'evidence', label: 'the projections channel' }],
+    code: 'simulator.py · ProjectedOutcome',
+  },
+  {
+    id: 'value-network',
+    term: 'value network',
+    aliases: ['value networks'],
+    meaning:
+      'Five small networks trained between episodes on the agent’s own play, one per sense’s reward. Their predicted returns are evidence in the values channel, with how often each action was tried in that situation; they decide nothing.',
+    see: [{ screen: 'learning', panel: 'values', label: 'the values at this decision' }],
+    code: 'learning.py · Learner',
   },
   {
     id: 'network-share',
     term: 'network share',
     aliases: [],
     meaning:
-      'How much of play the learned networks steer: the experience-weighted mean of trust λ over the actions tried, Σ n · λ(n) ÷ Σ n. 0.89 for this checkpoint after 300 episodes.',
-    see: [{ screen: 'learning', panel: 'curves' }],
+      'How familiar play has become to the value networks: the mean of n / (n + 25) over the tries seen in training. A report only; it weighs nothing.',
+    see: [{ screen: 'learning', panel: 'trust', label: 'the tries behind the values' }],
     code: 'learning.py · Learner.network_share',
-    now: ({ tick, meta }) =>
-      meta.brains.learned_networks
-        ? `On the action picked this tick, the networks had ${pct(learning(tick).network_share ?? 0)} of the say.`
-        : 'No networks in this recording: the heuristics have all of the say.',
-  },
-  {
-    id: 'projection',
-    term: 'projection',
-    aliases: ['projections', 'rollout', 'rollouts'],
-    meaning:
-      'A bounded analytic rollout of one candidate action in the simulator: expected value, damage taken and dealt, resources, progress and survival. At most 16 candidates, depth 4, branching 2, 15 ms each.',
-    see: [{ screen: 'tick', panel: 'projection' }],
-    code: 'simulator.py · ProjectedOutcome',
-    now: ({ tick }) => {
-      const n = Object.keys(tick.projection_results_used).length
-      return n > 0
-        ? `${n} candidates were projected this tick.`
-        : `None this tick: the budget mode was ${tick.budget_mode}.`
-    },
-  },
-  {
-    id: 'slow-path',
-    term: 'slow path',
-    aliases: [],
-    meaning:
-      'The only part that can add to the menu: a module asks, a slow worker writes a macro (Codex, or a template when Codex is off), the admission gate checks it, and it joins the menu. One request in flight, a 20 s timeout, and a tick never waits for it.',
-    see: [{ screen: 'menu', panel: 'requests' }],
-    code: 'llm_worker.py · SlowLLMWorker',
-    now: ({ tick, ticks, proposals }) => {
-      const spans = requestSpans(ticks, proposals)
-      const arrived = spans.find((s) => s.arrived === tick.tick)
-      if (arrived) return `A proposal from the ${arrived.module} module reached the gate this tick.`
-      const busy = spans.find((s) => s.asked <= tick.tick && (s.arrived === null || s.arrived > tick.tick))
-      if (busy) return `Busy since tick ${busy.asked}, writing for the ${busy.module} module.`
-      return 'Idle this tick: no request is in flight.'
-    },
-  },
-  {
-    id: 'trust-lambda',
-    term: 'trust λ',
-    aliases: ['trust', 'lambda'],
-    meaning:
-      'The weight a learned network’s opinion gets for an action tried n times in this situation: λ = n ÷ (n + 25). Tried 25 times means half the say; never tried means the heuristic alone.',
-    see: [{ screen: 'learning', panel: 'trustmap' }],
-    code: 'learning.py · Learner.action_trust',
-    now: ({ tick, meta, trust }) => {
-      if (!meta.brains.learned_networks || !trust) return 'No networks in this recording, so no trust.'
-      const lambdas = tick.available_actions.map((a) =>
-        trustLambda(trust.action_counts[`${tick.context_signature}|${a}`] ?? 0),
-      )
-      const mean = lambdas.reduce((s, l) => s + l, 0) / Math.max(1, lambdas.length)
-      return `Mean λ over this tick’s ${lambdas.length} legal actions: ${fmt(mean, 2)}.`
-    },
   },
   {
     id: 'tick',
     term: 'tick',
     aliases: ['ticks'],
     meaning:
-      'One decision: freeze the state, choose, press the plan for 8 game frames, about 0.23 s at 35 frames per second. Not one game frame.',
-    see: [{ screen: 'tick', panel: 'scrubber', label: 'The timeline at the bottom' }],
+      'One decision: the state, the evidence, five senses, the central, and the action’s primitives over 8 game frames. Not one ViZDoom game tic.',
+    see: [{ screen: 'watch', label: 'Watch' }],
     code: 'controller.py · DoomDecisionController.step',
-    now: ({ tick, meta }) =>
-      `Tick ${tick.tick} of ${meta.last_tick}, ${fmt(gameSeconds(tick.tick), 1)} s into the game.`,
-  },
-
-  // The app's own words.
-  {
-    id: 'admission-gate',
-    term: 'admission gate',
-    aliases: ['admission', 'admitted', 'admit', 'admits', 'stages'],
-    meaning:
-      'The five stages between a proposal and the menu: parse, legality, sandbox, d1 when it is on, admit. Any failure leaves the menu unchanged and is written to proposals.jsonl.',
-    see: [{ screen: 'menu', panel: 'gate' }, { screen: 'hierarchy' }],
-    code: 'admission.py · ProposalAdmissionPipeline.evaluate_and_admit',
   },
   {
-    id: 'checkpoint',
-    term: 'checkpoint',
-    aliases: ['checkpoints'],
+    id: 'bundle',
+    term: 'bundle',
+    aliases: ['bundles', 'recording', 'recordings'],
     meaning:
-      'The learner’s saved state: the five value networks, the gate network, the running statistics and the trust counts. The learned recording loaded checkpoint.pt after 300 episodes and 25,204 transitions; its best evaluation score was 1,842.',
-    see: [
-      { screen: 'learning', panel: 'headtohead' },
-      { tab: 'recording', label: 'This recording' },
-    ],
-    code: 'learning.py · Learner.save, Learner.load',
-    now: ({ meta }) =>
-      meta.checkpoint
-        ? `${meta.checkpoint.file}, after ${thousands(meta.checkpoint.episodes)} episodes and ${thousands(meta.checkpoint.transitions_seen)} transitions.`
-        : 'None: the heuristics played alone.',
-  },
-  {
-    id: 'codex',
-    term: 'Codex',
-    aliases: [],
-    meaning:
-      'The command-line LLM the slow worker can call when recording with --codex; it writes the proposal text. Off in both recordings, so templates answered.',
-    see: [{ screen: 'menu', panel: 'proposal' }],
-    code: 'llm_worker.py · SlowLLMWorker',
-  },
-  {
-    id: 'encoding',
-    term: 'encoding',
-    aliases: ['12-number encoding', 'encoded', 'encodings'],
-    meaning:
-      'How the networks see an action: twelve numbers, the share of the plan in each of eight primitives, the share of weapon switches, length ÷ 16, 1 for a macro and 1 when it targets a pickup. So an admitted macro can be scored at once.',
-    see: [{ screen: 'menu', panel: 'encoding' }],
-    code: 'features.py · encode_action',
-  },
-  {
-    id: 'evaluation',
-    term: 'evaluation',
-    aliases: ['evaluate', 'evaluated', 'held-out'],
-    meaning:
-      'The fair comparison: each brain plays the same 30 held-out seeded episodes greedily, with no learning and no exploration. Heuristics 548 reward and 13% cleared; the latest checkpoint 997 and 30%; the best 987 and 30%.',
-    see: [{ screen: 'learning', panel: 'headtohead' }],
-    code: 'train.py · evaluate',
-  },
-  {
-    id: 'frame',
-    term: 'frame',
-    aliases: ['frames', 'game frame', 'game frames'],
-    meaning:
-      'One picture of the game: Doom runs at 35 frames per second, and a tick lasts 8 of them. The recording keeps one 320 × 240 frame per tick, the screen the controller saw when it decided, captured at the moment the state was read so the overlays line up.',
-    see: [{ screen: 'tick', panel: 'game' }],
-    code: 'export.py · RecordingBridge',
-  },
-  {
-    id: 'gate-mask',
-    term: 'gate mask',
-    aliases: ['trains the gate'],
-    meaning:
-      'The gate network learns only from the modules whose own top pick was the action actually executed; the other modules’ rows are masked out of its loss.',
-    see: [{ screen: 'learning', panel: 'gateview' }],
-    code: 'learning.py · Learner.record_step, Learner.train',
-  },
-  {
-    id: 'heuristics',
-    term: 'heuristics',
-    aliases: ['heuristic', 'hand-written'],
-    meaning:
-      'The rules each module and the arbiter use with no training: the module weight table, the utilities, the preconditions. The heuristics-only recording is these alone.',
-    see: [{ screen: 'learning', panel: 'headtohead' }],
-    code: 'actions.py · PreconditionSpec, simulator.py · ProjectedOutcome',
-  },
-  {
-    id: 'learned-networks',
-    term: 'learned networks',
-    aliases: ['networks', 'value network', 'value networks'],
-    meaning:
-      'Five value networks, one per module (hidden 64), plus the gate network (hidden 32), trained between episodes on the replay buffer with learning rate 0.001. They re-weigh the options by trust λ and g; they never add an option or skip a level.',
-    see: [{ screen: 'learning', panel: 'trustmap' }, { screen: 'overview' }],
-    code: 'learning.py · Learner',
-  },
-  {
-    id: 'legality',
-    term: 'legality',
-    aliases: ['legality check'],
-    meaning:
-      'What a parsed proposal must satisfy: an id of 2 to 63 lowercase letters, digits and underscores, starting with a letter and not a primitive’s name; only known primitives; at most 16 steps; a maximum duration no longer than the cap.',
-    see: [{ screen: 'menu', panel: 'gate' }],
-    code: 'admission.py · ProposalAdmissionPipeline.evaluate_and_admit',
+      'One recorded episode as this site reads it: episode.json, every tick in ticks.jsonl, System 2’s records in reflections.jsonl, the proposals, the relevance ledger, the frames.',
+    see: [{ screen: 'reference', panel: 'provenance', label: 'how this recording was made' }],
+    code: 'export.py · record_bundle',
   },
   {
     id: 'live-episode',
     term: 'live episode',
-    aliases: ['live episodes', 'live mode'],
+    aliases: ['live mode'],
     meaning:
-      'An episode being played right now by python -m system1_doom.serve: the same deciders, the same records as a recording, arriving one tick at a time; when it ends it becomes a recording.',
-    see: [
-      { tab: 'recording', label: 'This recording' },
-      { tab: 'keys', label: 'the l key' },
-    ],
-    code: 'serve.py · play_live_episode',
+      'An episode played right now by python -m system1_doom.serve and streamed tick by tick, with System 2’s records as they happen; when it ends it is a bundle like any recording.',
+    see: [{ screen: 'watch', label: 'Watch, following live play' }],
+    code: 'serve.py · LiveHub',
   },
   {
-    id: 'menu',
-    term: 'menu',
-    aliases: ['legal actions', 'legal', 'pruned', 'precondition', 'preconditions'],
-    meaning:
-      'The actions available this tick. An action is legal when every precondition in its spec holds (an enemy in view, enough ammo, a pickup in view); otherwise it is pruned and the failed condition is named. The arbiter only sees legal actions.',
-    see: [{ screen: 'tick', panel: 'legal' }],
-    code: 'actions.py · ActionVocabulary.available_actions, PreconditionSpec.failing_condition',
-    now: ({ tick }) =>
-      `${tick.available_actions.length} legal, ${Object.keys(tick.pruned_actions ?? {}).length} pruned this tick.`,
-  },
-  {
-    id: 'motor',
-    term: 'motor',
+    id: 'slow-path',
+    term: 'slow path',
     aliases: [],
     meaning:
-      'Presses the chosen plan’s primitives, eight game frames in total, each primitive held for its share, with reflexes filling in the aiming.',
-    see: [{ screen: 'tick', panel: 'motor' }],
-    code: 'motor.py · TacticalMotor.burst',
-  },
-  {
-    id: 'n-step-return',
-    term: 'n-step return',
-    aliases: ['8-step return', 'standardised return', 'n-step returns'],
-    meaning:
-      'What a module’s network learns to predict: its own rewards over the next 8 ticks, each discounted by 0.9 per step, then standardised with running statistics kept in the checkpoint.',
-    see: [{ screen: 'learning', panel: 'anatomy' }],
-    code: 'learning.py · n_step_returns, RunningStats',
-  },
-  {
-    id: 'pick-rule',
-    term: 'pick rule',
-    aliases: ['greedy', 'sampled', 'explored'],
-    meaning:
-      'How the arbiter settled: greedy (the top score wins), sampled (the top two within 0.08 and pressure at least 0.45, so it drew from the softmax at the temperature), committed, explored (the floor), or out of time (the cached action repeated).',
-    see: [{ screen: 'tick', panel: 'arbiter' }],
-    code: 'system1.py · pick_action',
-    now: ({ tick }) => {
-      const rule = tick.arbiter?.pick_rule
-      return rule ? `This tick the rule was ${PICK_RULES[rule] ?? rule}.` : 'This trace has no pick rule.'
-    },
-  },
-  {
-    id: 'primitive',
-    term: 'primitive',
-    aliases: ['primitives'],
-    meaning:
-      'A one-step action the motor can press directly: the moves, turns, shoot, use, the weapon switches and the two strafe-and-shoot combinations, thirteen in all. Every macro is a sequence of them, and the 12-number encoding counts them.',
-    see: [
-      { screen: 'tick', panel: 'motor' },
-      { screen: 'menu', panel: 'encoding' },
-    ],
-    code: 'actions.py · PRIMITIVE_ACTION_IDS',
-  },
-  {
-    id: 'proposal',
-    term: 'proposal',
-    aliases: ['proposals', 'proposed'],
-    meaning:
-      'What the slow worker returns: a JSON macro with id, description, primitives, preconditions, maximum duration and termination condition. It is text until it parses and passes the admission gate.',
-    see: [{ screen: 'menu', panel: 'proposal' }],
-    code: 'admission.py · MacroActionProposal',
-  },
-  {
-    id: 'recording',
-    term: 'recording',
-    aliases: ['recordings', 'bundle', 'episode bundle'],
-    meaning:
-      'One folder per episode that the app reads: episode.json, ticks.jsonl, proposals.jsonl, the frames, and the training run’s metrics, evaluation, macros and trust when present. Written by python -m system1_doom.export.',
-    see: [{ tab: 'recording', label: 'This recording' }],
-    code: 'export.py · record_bundle',
-  },
-  {
-    id: 'reflex',
-    term: 'reflex',
-    aliases: ['reflexes'],
-    meaning:
-      'A fixed aiming correction the motor adds while pressing a plan: turning to centre the target before firing, tracking it while strafing, steering onto a pickup. Reflexes never change the plan.',
-    see: [{ screen: 'tick', panel: 'motor' }],
-    code: 'motor.py · TacticalMotor.burst',
-  },
-  {
-    id: 'replay-buffer',
-    term: 'replay buffer',
-    aliases: ['replay', 'transitions', 'transition'],
-    meaning:
-      'Where every tick’s transition is filed for the learner, up to 100,000. Training draws batches of 256 between episodes, 200 gradient steps each time.',
-    see: [{ screen: 'learning', panel: 'curves' }, { screen: 'overview' }],
-    code: 'learning.py · ReplayBuffer',
-  },
-  {
-    id: 'reward',
-    term: 'reward',
-    aliases: ['rewards', 'module reward', 'module rewards'],
-    meaning:
-      'The game’s score for a tick (the episode reward sums them) and, for learning, each module’s own reward by the formula the Five rewards explanation states: five module rewards, never one shared.',
-    see: [
-      { screen: 'tick', panel: 'outcome' },
-      { screen: 'learning', panel: 'anatomy' },
-    ],
-    code: 'features.py · module_rewards',
-  },
-  {
-    id: 'sandbox',
-    term: 'sandbox',
-    aliases: ['sandbox rollout'],
-    meaning:
-      'The admission gate’s bounded rollout of the proposed macro from the state at the request. It fails only a predicted death (survival probability 0) from a state above 25 health.',
-    see: [{ screen: 'menu', panel: 'gate' }],
-    code: 'admission.py · ProposalAdmissionPipeline.evaluate_and_admit',
-  },
-  {
-    id: 'scenario-and-seed',
-    term: 'scenario and seed',
-    aliases: ['scenario', 'seed', 'seeded', 'seeds'],
-    meaning:
-      'The scenario is the ViZDoom level, deadly corridor in both recordings; the seed fixes its randomness, so two brains with the same seed face the same episode.',
-    see: [
-      { tab: 'recording', label: 'This recording' },
-      { screen: 'learning', panel: 'headtohead' },
-    ],
-    code: 'vizdoom_env.py · ViZDoomBridge.restart_episode',
-    now: ({ meta }) => `${prettyId(meta.scenario.replace('.cfg', ''))}, seed ${meta.seed}.`,
-  },
-  {
-    id: 'strategy-archive',
-    term: 'strategy archive',
-    aliases: ['archive', 'strategy', 'strategies', 'steering'],
-    meaning:
-      'Twelve slots of remembered action sequences, each with a running reward (α 0.3) and a success count; when it is full, the slot with the lowest reward + 5 × successes among those not active is evicted. After each tick, steering chooses among its four options with that tick’s pressure, and from the next tick the legal actions of the active strategy’s sequence get +0.15 in the arbiter’s score.',
-    see: [
-      { screen: 'hierarchy', label: 'The chain (the steering level)' },
-      { screen: 'tick', panel: 'outcome' },
-    ],
-    code: 'archive.py · StrategyArchive',
-  },
-  {
-    id: 'template',
-    term: 'template',
-    aliases: ['templates', 'fallback template'],
-    meaning:
-      'The slow worker’s fallback when Codex is off or times out: a deterministic macro written from the request. Both recordings used templates.',
-    see: [{ screen: 'menu', panel: 'proposal' }],
-    code: 'llm_worker.py · SlowLLMWorker._fallback_template_proposal',
+      'The worker that writes a new macro when System 2 asks (from templates, or Codex), and the bounds and admit instance it must pass. It never blocks a tick, and a macro joins the menu only at a tick boundary.',
+    see: [{ screen: 'menu', panel: 'proposals', label: 'proposals and their stages' }],
+    code: 'llm_worker.py · SlowLLMWorker',
   },
 ]
 
-/** Entries by id. */
 export const GLOSSARY_BY_ID: Record<string, GlossaryEntry> = Object.fromEntries(GLOSSARY.map((e) => [e.id, e]))
+
+/** The words the old architecture used, which no screen shows any more: one line on the Reference screen. */
+export const REMOVED_TERMS = [
+  'arbiter',
+  'module',
+  'gate network',
+  'budget mode',
+  'committed pick',
+  'exploration pressure',
+]

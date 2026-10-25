@@ -118,7 +118,7 @@
       "type": "object"
     },
     "AdmissionStageResult": {
-      "description": "Outcome of one admission stage (parse, legality, sandbox, d1, admit), for traces.",
+      "description": "Outcome of one admission stage, for traces: parse, legality, sandbox (bounds), d1 (the admit\ninstance's yes or no), admit (the macro handed to the configuration).",
       "properties": {
         "stage": {
           "enum": [
@@ -153,98 +153,15 @@
       "title": "AdmissionStageResult",
       "type": "object"
     },
-    "ArbiterTrace": {
-      "description": "The arbiter's arithmetic: one score per action, the weights behind it, and how the pick was made.",
+    "Answer": {
+      "description": "One answer of the instance at one tick, as the metrics read it.",
       "properties": {
-        "action_scores": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Action Scores",
-          "type": "object"
-        },
-        "component_breakdown": {
-          "additionalProperties": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "type": "object"
-          },
-          "title": "Component Breakdown",
-          "type": "object"
-        },
-        "module_weights": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Module Weights",
-          "type": "object"
-        },
-        "module_weights_heuristic": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Module Weights Heuristic",
-          "type": "object"
-        },
-        "module_weights_gate": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "type": "number"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Module Weights Gate"
-        },
-        "gate_share": {
-          "default": 0.0,
-          "title": "Gate Share",
-          "type": "number"
-        },
-        "temperature": {
-          "default": 0.0,
-          "title": "Temperature",
-          "type": "number"
-        },
-        "exploration_pressure": {
-          "default": 0.0,
-          "title": "Exploration Pressure",
-          "type": "number"
-        },
-        "exploration_floor": {
-          "default": 0.0,
-          "title": "Exploration Floor",
-          "type": "number"
-        },
-        "deterministic": {
-          "default": false,
-          "title": "Deterministic",
+        "spoke": {
+          "description": "A sense spoke; for the central, it answered",
+          "title": "Spoke",
           "type": "boolean"
         },
-        "pick_rule": {
-          "default": "greedy",
-          "enum": [
-            "committed",
-            "explored",
-            "greedy",
-            "sampled",
-            "critical_cached"
-          ],
-          "title": "Pick Rule",
-          "type": "string"
-        },
-        "score_margin": {
-          "default": 0.0,
-          "title": "Score Margin",
-          "type": "number"
-        },
-        "committed_by": {
+        "action": {
           "anyOf": [
             {
               "type": "string"
@@ -254,52 +171,386 @@
             }
           ],
           "default": null,
-          "title": "Committed By"
+          "title": "Action"
         },
-        "confidence": {
-          "default": 0.0,
-          "title": "Confidence",
-          "type": "number"
-        }
-      },
-      "title": "ArbiterTrace",
-      "type": "object"
-    },
-    "BrainsInfo": {
-      "description": "Which deciders were switched on for this episode.",
-      "properties": {
-        "heuristics": {
-          "default": true,
-          "title": "Heuristics",
-          "type": "boolean"
-        },
-        "learned_networks": {
-          "title": "Learned Networks",
-          "type": "boolean"
-        },
-        "d1_ultra": {
-          "title": "D1 Ultra",
-          "type": "boolean"
-        },
-        "slow_path": {
-          "enum": [
-            "off",
-            "templates",
-            "codex"
+        "speak": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "title": "Slow Path",
-          "type": "string"
+          "default": null,
+          "title": "Speak"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "missed": {
+          "default": false,
+          "title": "Missed",
+          "type": "boolean"
+        },
+        "miss_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Miss Reason"
+        },
+        "evidence_chars": {
+          "default": 0,
+          "title": "Evidence Chars",
+          "type": "integer"
+        },
+        "latency_ms": {
+          "default": 0.0,
+          "title": "Latency Ms",
+          "type": "number"
+        },
+        "image": {
+          "default": false,
+          "description": "The screen was attached",
+          "title": "Image",
+          "type": "boolean"
         }
       },
       "required": [
-        "learned_networks",
-        "d1_ultra",
-        "slow_path"
+        "spoke"
       ],
-      "title": "BrainsInfo",
+      "title": "Answer",
+      "type": "object"
+    },
+    "AppliedChange": {
+      "description": "The change a cycle set in motion.",
+      "properties": {
+        "change": {
+          "title": "Change",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "scope",
+            "macro",
+            "retire",
+            "strategy",
+            "level"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "instance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instance"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "diff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigDiff"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None for a macro request: the admit instance decides later"
+        },
+        "queued": {
+          "default": false,
+          "description": "Queued through request_configuration, for the next tick boundary",
+          "title": "Queued",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "change",
+        "kind"
+      ],
+      "title": "AppliedChange",
+      "type": "object"
+    },
+    "Bounds": {
+      "description": "The hand-written limits every instance works inside. Bounds, never weights.",
+      "properties": {
+        "call_budget_sec": {
+          "default": 5.0,
+          "description": "Per-call budget for one d1-ultra call",
+          "exclusiveMinimum": 0.0,
+          "maximum": 60.0,
+          "title": "Call Budget Sec",
+          "type": "number"
+        },
+        "yes_at": {
+          "default": 0.5,
+          "description": "d1's own yes: a sense speaks, and the admit instance admits, at this probability or more",
+          "title": "Yes At",
+          "type": "number"
+        },
+        "max_scope_channels": {
+          "default": 7,
+          "maximum": 18,
+          "minimum": 1,
+          "title": "Max Scope Channels",
+          "type": "integer"
+        },
+        "max_enemies": {
+          "default": 6,
+          "description": "Enemies rendered in the threats channel",
+          "minimum": 1,
+          "title": "Max Enemies",
+          "type": "integer"
+        },
+        "max_pickups": {
+          "default": 6,
+          "description": "Pickups rendered in the pickups channel",
+          "minimum": 1,
+          "title": "Max Pickups",
+          "type": "integer"
+        },
+        "max_history_steps": {
+          "default": 6,
+          "description": "Primitives rendered in the history channel",
+          "minimum": 1,
+          "title": "Max History Steps",
+          "type": "integer"
+        },
+        "max_summaries": {
+          "default": 3,
+          "description": "Decision summaries rendered in the history channel",
+          "minimum": 1,
+          "title": "Max Summaries",
+          "type": "integer"
+        },
+        "system1_pool": {
+          "default": 6,
+          "description": "Calls in flight for System 1: five senses and the central",
+          "minimum": 1,
+          "title": "System1 Pool",
+          "type": "integer"
+        },
+        "system2_pool": {
+          "default": 2,
+          "description": "Calls in flight for System 2, on its own pool",
+          "minimum": 1,
+          "title": "System2 Pool",
+          "type": "integer"
+        },
+        "trials_in_flight": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Trials In Flight",
+          "type": "integer"
+        },
+        "cooling_decisions": {
+          "default": 60,
+          "description": "Decisions an instance rests after a change to it",
+          "minimum": 0,
+          "title": "Cooling Decisions",
+          "type": "integer"
+        },
+        "history_ring": {
+          "default": 2000,
+          "description": "Ticks kept in memory; every tick is persisted",
+          "minimum": 1,
+          "title": "History Ring",
+          "type": "integer"
+        },
+        "history_test_sample": {
+          "default": 24,
+          "minimum": 1,
+          "title": "History Test Sample",
+          "type": "integer"
+        },
+        "system2_calls_per_cycle": {
+          "default": 40,
+          "minimum": 1,
+          "title": "System2 Calls Per Cycle",
+          "type": "integer"
+        },
+        "central_miss_limit": {
+          "default": 3,
+          "description": "Consecutive central misses that end the episode",
+          "minimum": 1,
+          "title": "Central Miss Limit",
+          "type": "integer"
+        },
+        "decision_frames": {
+          "default": 8,
+          "description": "Game frames one decision lasts, and a missed tick idles",
+          "minimum": 1,
+          "title": "Decision Frames",
+          "type": "integer"
+        },
+        "return_steps": {
+          "default": 8,
+          "description": "n of the n-step return a decision is judged by",
+          "minimum": 1,
+          "title": "Return Steps",
+          "type": "integer"
+        },
+        "return_gamma": {
+          "default": 0.9,
+          "description": "Discount of that return",
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Return Gamma",
+          "type": "number"
+        },
+        "probability_tolerance": {
+          "default": 0.02,
+          "description": "A distribution summing further than this from 1 is malformed",
+          "minimum": 0.0,
+          "title": "Probability Tolerance",
+          "type": "number"
+        },
+        "thin_record": {
+          "default": 5,
+          "description": "Below this many ticks a relevance mean is shown with its count",
+          "minimum": 1,
+          "title": "Thin Record",
+          "type": "integer"
+        },
+        "stall_units": {
+          "default": 4.0,
+          "description": "A decision that moved less than this is a stall",
+          "minimum": 0.0,
+          "title": "Stall Units",
+          "type": "number"
+        },
+        "system2_cadence": {
+          "default": 20,
+          "description": "New decisions since the last System 2 cycle that start the next",
+          "minimum": 1,
+          "title": "System2 Cadence",
+          "type": "integer"
+        },
+        "window_recent": {
+          "default": 20,
+          "description": "Decisions in System 2's short window",
+          "minimum": 1,
+          "title": "Window Recent",
+          "type": "integer"
+        },
+        "window_long": {
+          "default": 100,
+          "description": "Decisions in System 2's long window",
+          "minimum": 1,
+          "title": "Window Long",
+          "type": "integer"
+        },
+        "window_episodes": {
+          "default": 3,
+          "description": "Episodes in System 2's episode window, and the history test's",
+          "minimum": 1,
+          "title": "Window Episodes",
+          "type": "integer"
+        },
+        "trial_decisions": {
+          "default": 60,
+          "description": "Decisions a change is observed for before the trial judge",
+          "minimum": 1,
+          "title": "Trial Decisions",
+          "type": "integer"
+        },
+        "judge_extension": {
+          "default": 20,
+          "description": "Decisions a trial is extended by when the judge misses",
+          "minimum": 1,
+          "title": "Judge Extension",
+          "type": "integer"
+        },
+        "judge_extensions_max": {
+          "default": 3,
+          "description": "Judge misses that end a trial as revert, with no verdict (each miss before extends it)",
+          "minimum": 1,
+          "title": "Judge Extensions Max",
+          "type": "integer"
+        },
+        "history_test_noise": {
+          "default": 4,
+          "description": "Sampled ticks the old scope is re-asked on, as a noise estimate",
+          "minimum": 0,
+          "title": "History Test Noise",
+          "type": "integer"
+        },
+        "history_test_margin": {
+          "default": 0.05,
+          "description": "How far the new composite must be above the old",
+          "minimum": 0.0,
+          "title": "History Test Margin",
+          "type": "number"
+        },
+        "history_test_worst_drop": {
+          "default": 0.1,
+          "description": "No quality metric may be worse than the old by more",
+          "minimum": 0.0,
+          "title": "History Test Worst Drop",
+          "type": "number"
+        },
+        "history_test_context_cap": {
+          "default": 4,
+          "description": "Sampled ticks from any one context signature",
+          "minimum": 1,
+          "title": "History Test Context Cap",
+          "type": "integer"
+        },
+        "history_test_quantile": {
+          "default": 0.25,
+          "description": "The bottom and top share of the window's returns: bad and good ticks",
+          "exclusiveMaximum": 0.5,
+          "exclusiveMinimum": 0.0,
+          "title": "History Test Quantile",
+          "type": "number"
+        },
+        "safety_drop": {
+          "default": 0.15,
+          "description": "A paid-off rate fall that reverts a trial without asking",
+          "minimum": 0.0,
+          "title": "Safety Drop",
+          "type": "number"
+        },
+        "safety_followed": {
+          "default": 10,
+          "description": "Followed messages the safety revert needs during the trial",
+          "minimum": 1,
+          "title": "Safety Followed",
+          "type": "integer"
+        }
+      },
+      "title": "Bounds",
       "type": "object"
     },
     "BundleIndexEntry": {
+      "description": "One line of `index.json`: what the app's picker and recording cards say before the bundle is opened.",
       "properties": {
         "name": {
           "title": "Name",
@@ -313,13 +564,13 @@
           "title": "Scenario",
           "type": "string"
         },
-        "model": {
+        "value_networks": {
           "enum": [
-            "heuristics",
+            "none",
             "best",
             "latest"
           ],
-          "title": "Model",
+          "title": "Value Networks",
           "type": "string"
         },
         "seed": {
@@ -341,13 +592,30 @@
         "ticks": {
           "title": "Ticks",
           "type": "integer"
+        },
+        "kills": {
+          "default": 0.0,
+          "title": "Kills",
+          "type": "number"
+        },
+        "configuration_start": {
+          "default": 1,
+          "description": "The configuration version the episode started from",
+          "title": "Configuration Start",
+          "type": "integer"
+        },
+        "configuration_end": {
+          "default": 1,
+          "description": "The configuration version it ended at",
+          "title": "Configuration End",
+          "type": "integer"
         }
       },
       "required": [
         "name",
         "title",
         "scenario",
-        "model",
+        "value_networks",
         "seed",
         "cleared",
         "died",
@@ -355,6 +623,62 @@
         "ticks"
       ],
       "title": "BundleIndexEntry",
+      "type": "object"
+    },
+    "CentralConfig": {
+      "description": "The central instance: its scope and the concern its instructions name.",
+      "properties": {
+        "scope": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Scope",
+          "type": "array"
+        },
+        "concern": {
+          "maxLength": 200,
+          "minLength": 3,
+          "title": "Concern",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "concern"
+      ],
+      "title": "CentralConfig",
+      "type": "object"
+    },
+    "ChannelCaps": {
+      "description": "How much a channel may list, copied from the bounds so a stored tick re-renders on its own.",
+      "properties": {
+        "enemies": {
+          "default": 6,
+          "title": "Enemies",
+          "type": "integer"
+        },
+        "pickups": {
+          "default": 6,
+          "title": "Pickups",
+          "type": "integer"
+        },
+        "history_steps": {
+          "default": 6,
+          "title": "History Steps",
+          "type": "integer"
+        },
+        "summaries": {
+          "default": 3,
+          "title": "Summaries",
+          "type": "integer"
+        },
+        "thin_record": {
+          "default": 5,
+          "title": "Thin Record",
+          "type": "integer"
+        }
+      },
+      "title": "ChannelCaps",
       "type": "object"
     },
     "CheckpointInfo": {
@@ -397,6 +721,85 @@
       "title": "CheckpointInfo",
       "type": "object"
     },
+    "ConfigDiff": {
+      "description": "What changed between two configurations, in words, with the versions.",
+      "properties": {
+        "old_version": {
+          "title": "Old Version",
+          "type": "integer"
+        },
+        "new_version": {
+          "title": "New Version",
+          "type": "integer"
+        },
+        "changes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Changes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "old_version",
+        "new_version"
+      ],
+      "title": "ConfigDiff",
+      "type": "object"
+    },
+    "Configuration": {
+      "description": "Everything System 2 can change, versioned. Version 1 is the design's initial configuration.",
+      "properties": {
+        "version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "senses": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SenseConfig"
+          },
+          "title": "Senses",
+          "type": "object"
+        },
+        "central": {
+          "$ref": "#/$defs/CentralConfig"
+        },
+        "exploration_level": {
+          "default": "exploit",
+          "enum": [
+            "exploit",
+            "explore"
+          ],
+          "title": "Exploration Level",
+          "type": "string"
+        },
+        "active_strategy": {
+          "default": "strat_tactical_combat",
+          "title": "Active Strategy",
+          "type": "string"
+        },
+        "admitted_macros": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ActionSpec"
+          },
+          "title": "Admitted Macros",
+          "type": "array"
+        },
+        "bounds": {
+          "$ref": "#/$defs/Bounds"
+        }
+      },
+      "required": [
+        "senses",
+        "central"
+      ],
+      "title": "Configuration",
+      "type": "object"
+    },
     "EnemyTrace": {
       "properties": {
         "id": {
@@ -430,6 +833,11 @@
         "height": {
           "title": "Height",
           "type": "integer"
+        },
+        "is_attacking": {
+          "default": false,
+          "title": "Is Attacking",
+          "type": "boolean"
         }
       },
       "required": [
@@ -445,11 +853,38 @@
       "title": "EnemyTrace",
       "type": "object"
     },
+    "EpisodeCost": {
+      "description": "What an episode's d1-ultra calls cost, as the responses' usage blocks report it.",
+      "properties": {
+        "calls": {
+          "default": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "input_tokens": {
+          "default": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "usd": {
+          "default": 0.0,
+          "title": "Usd",
+          "type": "number"
+        }
+      },
+      "title": "EpisodeCost",
+      "type": "object"
+    },
     "EpisodeMeta": {
       "description": "`episode.json`: what a bundle contains and how it was recorded.",
       "properties": {
         "schema_version": {
-          "default": 1,
+          "default": 2,
           "title": "Schema Version",
           "type": "integer"
         },
@@ -469,13 +904,21 @@
           "title": "Seed",
           "type": "integer"
         },
-        "model": {
+        "decider": {
+          "const": "d1-ultra",
+          "default": "d1-ultra",
+          "description": "Every decision is made by d1-ultra instances",
+          "title": "Decider",
+          "type": "string"
+        },
+        "value_networks": {
+          "description": "Which value networks served the values evidence channel",
           "enum": [
-            "heuristics",
+            "none",
             "best",
             "latest"
           ],
-          "title": "Model",
+          "title": "Value Networks",
           "type": "string"
         },
         "checkpoint": {
@@ -489,14 +932,52 @@
           ],
           "default": null
         },
-        "brains": {
-          "$ref": "#/$defs/BrainsInfo"
+        "slow_path": {
+          "enum": [
+            "off",
+            "templates",
+            "codex"
+          ],
+          "title": "Slow Path",
+          "type": "string"
         },
         "config": {
           "$ref": "#/$defs/PlayConfigInfo"
         },
+        "configuration_start": {
+          "$ref": "#/$defs/Configuration"
+        },
+        "configuration_end": {
+          "$ref": "#/$defs/Configuration"
+        },
         "result": {
           "$ref": "#/$defs/EpisodeResult"
+        },
+        "cost": {
+          "$ref": "#/$defs/EpisodeCost"
+        },
+        "misses": {
+          "$ref": "#/$defs/EpisodeMisses"
+        },
+        "instances": {
+          "additionalProperties": {
+            "$ref": "#/$defs/InstanceCounters"
+          },
+          "description": "Call counters per instance over the episode",
+          "title": "Instances",
+          "type": "object"
+        },
+        "system2": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/System2EpisodeSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What System 2 did while the episode was played, counted from reflections.jsonl; None in older bundles"
         },
         "first_tick": {
           "title": "First Tick",
@@ -527,13 +1008,6 @@
           "title": "Actions",
           "type": "object"
         },
-        "modules": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "title": "Modules",
-          "type": "object"
-        },
         "files": {
           "items": {
             "type": "string"
@@ -555,21 +1029,51 @@
         "title",
         "scenario",
         "seed",
-        "model",
-        "brains",
+        "value_networks",
+        "slow_path",
         "config",
+        "configuration_start",
+        "configuration_end",
         "result",
+        "cost",
+        "misses",
         "first_tick",
         "last_tick",
         "tick_count",
         "buttons",
         "frames",
         "actions",
-        "modules",
         "files",
         "recorded_at"
       ],
       "title": "EpisodeMeta",
+      "type": "object"
+    },
+    "EpisodeMisses": {
+      "description": "An episode's misses: in total, the ticks whose central missed, and per instance and reason.",
+      "properties": {
+        "total": {
+          "default": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "missed_ticks": {
+          "default": 0,
+          "title": "Missed Ticks",
+          "type": "integer"
+        },
+        "by_instance": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "title": "By Instance",
+          "type": "object"
+        }
+      },
+      "title": "EpisodeMisses",
       "type": "object"
     },
     "EpisodeResult": {
@@ -607,22 +1111,32 @@
           "title": "Died",
           "type": "boolean"
         },
+        "finished_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "episode_end",
+                "max_ticks",
+                "stopped",
+                "connection_lost"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "episode_end, max_ticks, stopped, or connection_lost (not shippable); None while in progress",
+          "title": "Finished Reason"
+        },
         "transitions": {
           "default": 0,
           "title": "Transitions",
           "type": "integer"
         },
-        "explored_steps": {
-          "default": 0,
-          "title": "Explored Steps",
-          "type": "integer"
-        },
-        "network_share": {
-          "default": 0.0,
-          "title": "Network Share",
-          "type": "number"
-        },
         "actions": {
+          "description": "The executed action per tick; 'missed' where the central missed",
           "items": {
             "type": "string"
           },
@@ -683,7 +1197,7 @@
       "type": "object"
     },
     "EvaluationSummary": {
-      "description": "`evaluation.json`: `train.evaluate`, the same seeded episodes played greedily by each brain.",
+      "description": "`evaluation.json`: `train.evaluate`, the same seeded episodes played by d1-ultra with no, the latest\nand the best value networks as evidence (`heuristics` is a file written before d1-ultra decided).",
       "properties": {
         "scenario": {
           "title": "Scenario",
@@ -698,8 +1212,27 @@
           "title": "Trained Episodes",
           "type": "integer"
         },
+        "none": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluationScores"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "heuristics": {
-          "$ref": "#/$defs/EvaluationScores"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluationScores"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "latest": {
           "anyOf": [
@@ -726,10 +1259,169 @@
       },
       "required": [
         "scenario",
-        "episodes",
-        "heuristics"
+        "episodes"
       ],
       "title": "EvaluationSummary",
+      "type": "object"
+    },
+    "EvidenceCounters": {
+      "description": "Counters the controller keeps across decisions, shown in incoming, position and progress.",
+      "properties": {
+        "decisions": {
+          "default": 0,
+          "title": "Decisions",
+          "type": "integer"
+        },
+        "under_fire_streak": {
+          "default": 0,
+          "title": "Under Fire Streak",
+          "type": "integer"
+        },
+        "stall_streak": {
+          "default": 0,
+          "title": "Stall Streak",
+          "type": "integer"
+        },
+        "sectors_discovered": {
+          "default": 0,
+          "title": "Sectors Discovered",
+          "type": "integer"
+        }
+      },
+      "title": "EvidenceCounters",
+      "type": "object"
+    },
+    "EvidenceInputs": {
+      "description": "Everything any channel renders from, for one tick. Stored whole in the history.",
+      "properties": {
+        "tick": {
+          "title": "Tick",
+          "type": "integer"
+        },
+        "context": {
+          "title": "Context",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/StateTrace"
+        },
+        "counters": {
+          "$ref": "#/$defs/EvidenceCounters"
+        },
+        "recent_primitives": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Recent Primitives",
+          "type": "array"
+        },
+        "recent_summaries": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Recent Summaries",
+          "type": "array"
+        },
+        "frame_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The screen this decision was made on, when there is one",
+          "title": "Frame Ref"
+        },
+        "menu": {
+          "items": {
+            "$ref": "#/$defs/MenuItem"
+          },
+          "title": "Menu",
+          "type": "array"
+        },
+        "projections": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProjectionLine"
+          },
+          "title": "Projections",
+          "type": "object"
+        },
+        "values": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/ValueLine"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None when no value networks are loaded",
+          "title": "Values"
+        },
+        "novelty": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Novelty",
+          "type": "object"
+        },
+        "archive": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/StrategyLine"
+          },
+          "title": "Archive",
+          "type": "array"
+        },
+        "active_strategy": {
+          "default": "",
+          "title": "Active Strategy",
+          "type": "string"
+        },
+        "exploration_level": {
+          "default": "exploit",
+          "enum": [
+            "exploit",
+            "explore"
+          ],
+          "title": "Exploration Level",
+          "type": "string"
+        },
+        "relevance": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RelevanceCounts"
+          },
+          "title": "Relevance",
+          "type": "object"
+        },
+        "messages": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "caps": {
+          "$ref": "#/$defs/ChannelCaps"
+        }
+      },
+      "required": [
+        "tick",
+        "context",
+        "state",
+        "menu"
+      ],
+      "title": "EvidenceInputs",
       "type": "object"
     },
     "FramesInfo": {
@@ -768,6 +1460,611 @@
         }
       },
       "title": "FramesInfo",
+      "type": "object"
+    },
+    "HistoryTestResult": {
+      "description": "The whole table of one history test, as the `ReflectionTrace` keeps it.",
+      "properties": {
+        "instance": {
+          "title": "Instance",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "sense",
+            "central"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "change": {
+          "title": "Change",
+          "type": "string"
+        },
+        "old_scope": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Old Scope",
+          "type": "array"
+        },
+        "new_scope": {
+          "items": {
+            "type": "string"
+          },
+          "title": "New Scope",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "waiting"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "episode_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Episode Ids",
+          "type": "array"
+        },
+        "window_ticks": {
+          "default": 0,
+          "description": "Ticks the history held in the window",
+          "title": "Window Ticks",
+          "type": "integer"
+        },
+        "candidates": {
+          "default": 0,
+          "description": "Window ticks answered under the old scope with an executed action",
+          "title": "Candidates",
+          "type": "integer"
+        },
+        "targets": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Targets",
+          "type": "object"
+        },
+        "pool_sizes": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Pool Sizes",
+          "type": "object"
+        },
+        "ticks": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TestTick"
+          },
+          "title": "Ticks",
+          "type": "array"
+        },
+        "old": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Metrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "new": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Metrics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "composite_gain": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Composite Gain"
+        },
+        "worst_drop": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The largest fall of a quality metric, old minus new",
+          "title": "Worst Drop"
+        },
+        "margin": {
+          "default": 0.05,
+          "title": "Margin",
+          "type": "number"
+        },
+        "worst_allowed": {
+          "default": 0.1,
+          "title": "Worst Allowed",
+          "type": "number"
+        },
+        "noise_agreement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Noise Agreement"
+        },
+        "noise_ticks": {
+          "default": 0,
+          "title": "Noise Ticks",
+          "type": "integer"
+        },
+        "calls": {
+          "default": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "new_missed": {
+          "default": 0,
+          "title": "New Missed",
+          "type": "integer"
+        },
+        "noise_missed": {
+          "default": 0,
+          "title": "Noise Missed",
+          "type": "integer"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "notes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "limits": {
+          "default": "Hindsight labels come from what the agent did; a tick's alternative actions were never played, so the test measures agreement with good outcomes and alarms before bad ones, not counterfactual value. d1's answers are not deterministic, so the old scope is re-asked on a few ticks and the agreement with the stored answers is reported as a noise estimate.",
+          "title": "Limits",
+          "type": "string"
+        }
+      },
+      "required": [
+        "instance",
+        "kind",
+        "change",
+        "old_scope",
+        "new_scope",
+        "status",
+        "seed"
+      ],
+      "title": "HistoryTestResult",
+      "type": "object"
+    },
+    "InstanceCounters": {
+      "description": "What the client has seen of one instance name: calls, misses by reason, retries, latency, usage.",
+      "properties": {
+        "calls": {
+          "default": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "answered": {
+          "default": 0,
+          "title": "Answered",
+          "type": "integer"
+        },
+        "misses": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Misses",
+          "type": "object"
+        },
+        "retries": {
+          "default": 0,
+          "title": "Retries",
+          "type": "integer"
+        },
+        "latency_ms_total": {
+          "default": 0.0,
+          "title": "Latency Ms Total",
+          "type": "number"
+        },
+        "input_tokens": {
+          "default": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "cost": {
+          "default": 0.0,
+          "title": "Cost",
+          "type": "number"
+        }
+      },
+      "title": "InstanceCounters",
+      "type": "object"
+    },
+    "InstanceResult": {
+      "description": "Everything one instance call produced, as the trace and the history keep it.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "sense",
+            "central",
+            "admit",
+            "reflector",
+            "system2_central",
+            "judge"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "scope": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Scope",
+          "type": "array"
+        },
+        "evidence": {
+          "description": "The state text exactly as sent",
+          "title": "Evidence",
+          "type": "string"
+        },
+        "image_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The screen sent as the call's image, when frame was in scope",
+          "title": "Image Ref"
+        },
+        "answers": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "description": "Every answer in full, as returned",
+          "title": "Answers",
+          "type": "object"
+        },
+        "speak": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A sense's speak probability",
+          "title": "Speak"
+        },
+        "spoke": {
+          "default": false,
+          "title": "Spoke",
+          "type": "boolean"
+        },
+        "strength": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A sense's strength: its speak probability, unscaled",
+          "title": "Strength"
+        },
+        "action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The action d1 gave the highest probability (first in menu order on a tie)",
+          "title": "Action"
+        },
+        "action_probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Action Probabilities",
+          "type": "object"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "reason_probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Reason Probabilities",
+          "type": "object"
+        },
+        "admit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The admit instance's probability",
+          "title": "Admit"
+        },
+        "change": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A reflector's or System 2's central's top change (first in criteria order on a tie)",
+          "title": "Change"
+        },
+        "change_probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Change Probabilities",
+          "type": "object"
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The trial judge's top answer: keep or revert",
+          "title": "Verdict"
+        },
+        "verdict_probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Verdict Probabilities",
+          "type": "object"
+        },
+        "missed": {
+          "default": false,
+          "title": "Missed",
+          "type": "boolean"
+        },
+        "miss_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "timeout",
+                "error",
+                "http_429_exhausted",
+                "off_menu",
+                "malformed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Miss Reason"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "raw_answer": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The answer as returned, when it was malformed or off the menu",
+          "title": "Raw Answer"
+        },
+        "latency_ms": {
+          "default": 0.0,
+          "title": "Latency Ms",
+          "type": "number"
+        },
+        "retries": {
+          "default": 0,
+          "title": "Retries",
+          "type": "integer"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "evidence"
+      ],
+      "title": "InstanceResult",
+      "type": "object"
+    },
+    "MenuItem": {
+      "description": "One legal action as the menu shows it.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ],
+      "title": "MenuItem",
+      "type": "object"
+    },
+    "Message": {
+      "description": "What a sense that spoke sends the central instance.",
+      "properties": {
+        "sense": {
+          "title": "Sense",
+          "type": "string"
+        },
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "strength": {
+          "title": "Strength",
+          "type": "number"
+        }
+      },
+      "required": [
+        "sense",
+        "action",
+        "reason",
+        "strength"
+      ],
+      "title": "Message",
+      "type": "object"
+    },
+    "Metrics": {
+      "properties": {
+        "quality": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "Each quality metric; None when its stratum is empty",
+          "title": "Quality",
+          "type": "object"
+        },
+        "composite": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Composite"
+        },
+        "mean_evidence_chars": {
+          "default": 0.0,
+          "title": "Mean Evidence Chars",
+          "type": "number"
+        },
+        "mean_latency_ms": {
+          "default": 0.0,
+          "title": "Mean Latency Ms",
+          "type": "number"
+        },
+        "missed": {
+          "default": 0,
+          "title": "Missed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "quality"
+      ],
+      "title": "Metrics",
       "type": "object"
     },
     "MetricsRow": {
@@ -822,17 +2119,57 @@
           "type": "integer"
         },
         "network_share": {
+          "default": 0.0,
           "title": "Network Share",
           "type": "number"
         },
         "exploration_floor": {
-          "title": "Exploration Floor",
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rows written before d1-ultra decided",
+          "title": "Exploration Floor"
         },
         "explored_steps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rows written before d1-ultra decided",
+          "title": "Explored Steps"
+        },
+        "finished_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finished Reason"
+        },
+        "missed_ticks": {
           "default": 0,
-          "title": "Explored Steps",
+          "title": "Missed Ticks",
           "type": "integer"
+        },
+        "cost_usd": {
+          "default": 0.0,
+          "title": "Cost Usd",
+          "type": "number"
         },
         "losses": {
           "additionalProperties": {
@@ -880,128 +2217,13 @@
         "finished",
         "died",
         "transitions",
-        "replay_size",
-        "network_share",
-        "exploration_floor"
+        "replay_size"
       ],
       "title": "MetricsRow",
       "type": "object"
     },
-    "ModuleTrace": {
-      "description": "One module's entry in `TickTrace.module_outputs`. Plain dict at runtime; typed for the schema.",
-      "properties": {
-        "top_action": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Top Action"
-        },
-        "confidence": {
-          "title": "Confidence",
-          "type": "number"
-        },
-        "uncertainty": {
-          "title": "Uncertainty",
-          "type": "number"
-        },
-        "request_action_expansion": {
-          "title": "Request Action Expansion",
-          "type": "boolean"
-        },
-        "expansion_problem": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Expansion Problem"
-        },
-        "used_d1_ultra": {
-          "title": "Used D1 Ultra",
-          "type": "boolean"
-        },
-        "probabilities": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Probabilities",
-          "type": "object"
-        },
-        "d1_top_action": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "D1 Top Action"
-        },
-        "d1_probabilities": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "D1 Probabilities",
-          "type": "object"
-        },
-        "utility_heuristic": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Utility Heuristic",
-          "type": "object"
-        },
-        "utility_learned": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Utility Learned",
-          "type": "object"
-        },
-        "trust": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Trust",
-          "type": "object"
-        },
-        "utility_blended": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Utility Blended",
-          "type": "object"
-        },
-        "d1_weight": {
-          "title": "D1 Weight",
-          "type": "number"
-        },
-        "request_additional_simulation": {
-          "title": "Request Additional Simulation",
-          "type": "boolean"
-        },
-        "memory": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "title": "Memory",
-          "type": "object"
-        }
-      },
-      "title": "ModuleTrace",
-      "type": "object"
-    },
     "OutcomeTrace": {
-      "description": "What the executed action changed in the game, and the per-module rewards it becomes.",
+      "description": "What the executed action (or the idle of a missed tick) changed, and the per-network rewards it becomes.",
       "properties": {
         "reward": {
           "default": 0.0,
@@ -1079,6 +2301,79 @@
       "title": "OutcomeTrace",
       "type": "object"
     },
+    "Pick": {
+      "description": "How the central's answer became the executed action.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "top",
+            "drawn",
+            "missed"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The action to execute; None when the central missed",
+          "title": "Action"
+        },
+        "probability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "d1's probability of that action",
+          "title": "Probability"
+        },
+        "draw": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The uniform number in [0, 1) drawn under explore",
+          "title": "Draw"
+        },
+        "tie": {
+          "default": false,
+          "description": "The top probability was shared; the first in menu order was taken",
+          "title": "Tie",
+          "type": "boolean"
+        },
+        "tied": {
+          "default": [],
+          "description": "The actions sharing the top probability, in menu order",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tied",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Pick",
+      "type": "object"
+    },
     "PickupTrace": {
       "properties": {
         "id": {
@@ -1133,22 +2428,16 @@
       "type": "object"
     },
     "PlayConfigInfo": {
+      "description": "How the episode was played; the configuration itself is recorded whole beside it.",
       "properties": {
-        "execution_mode": {
-          "title": "Execution Mode",
-          "type": "string"
-        },
-        "tick_budget_sec": {
-          "title": "Tick Budget Sec",
+        "call_budget_sec": {
+          "title": "Call Budget Sec",
           "type": "number"
         },
-        "deterministic_arbiter": {
-          "title": "Deterministic Arbiter",
-          "type": "boolean"
-        },
-        "exploration_floor": {
-          "title": "Exploration Floor",
-          "type": "number"
+        "seed": {
+          "description": "System 1's generator seed, for draws under the explore level",
+          "title": "Seed",
+          "type": "integer"
         },
         "max_ticks": {
           "title": "Max Ticks",
@@ -1156,10 +2445,8 @@
         }
       },
       "required": [
-        "execution_mode",
-        "tick_budget_sec",
-        "deterministic_arbiter",
-        "exploration_floor",
+        "call_budget_sec",
+        "seed",
         "max_ticks"
       ],
       "title": "PlayConfigInfo",
@@ -1283,6 +2570,45 @@
       "title": "ProjectionChainTrace",
       "type": "object"
     },
+    "ProjectionLine": {
+      "description": "The bounded simulator's numbers for one legal action.",
+      "properties": {
+        "expected_value": {
+          "title": "Expected Value",
+          "type": "number"
+        },
+        "damage_taken": {
+          "title": "Damage Taken",
+          "type": "number"
+        },
+        "damage_dealt": {
+          "title": "Damage Dealt",
+          "type": "number"
+        },
+        "survival": {
+          "title": "Survival",
+          "type": "number"
+        },
+        "progress": {
+          "title": "Progress",
+          "type": "number"
+        },
+        "resource": {
+          "title": "Resource",
+          "type": "number"
+        }
+      },
+      "required": [
+        "expected_value",
+        "damage_taken",
+        "damage_dealt",
+        "survival",
+        "progress",
+        "resource"
+      ],
+      "title": "ProjectionLine",
+      "type": "object"
+    },
     "ProjectionStepTrace": {
       "properties": {
         "primitive": {
@@ -1326,8 +2652,47 @@
       "title": "ProjectionStepTrace",
       "type": "object"
     },
+    "Proposal": {
+      "description": "What a reflector that spoke sends System 2's central: who, which change, why, how strongly.",
+      "properties": {
+        "reflector": {
+          "title": "Reflector",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "change": {
+          "title": "Change",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "strength": {
+          "title": "Strength",
+          "type": "number"
+        }
+      },
+      "required": [
+        "reflector",
+        "title",
+        "change",
+        "description",
+        "reason",
+        "strength"
+      ],
+      "title": "Proposal",
+      "type": "object"
+    },
     "ProposalTrace": {
-      "description": "Audit trace for asynchronous LLM proposals and admission decisions (Spec Section 17).",
+      "description": "A slow-path proposal and its admission: the bounds' stage results and the admit instance's answer.",
       "properties": {
         "timestamp": {
           "title": "Timestamp",
@@ -1384,7 +2749,20 @@
             }
           ],
           "default": null,
+          "description": "The admit instance's probability",
           "title": "D1 Admission Probability"
+        },
+        "admit_instance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstanceResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The admit instance's call, in full"
         },
         "subsequent_performance": {
           "items": {
@@ -1432,6 +2810,7 @@
             }
           ],
           "default": null,
+          "description": "Who asked for the proposal",
           "title": "Source Module"
         },
         "stage_results": {
@@ -1479,8 +2858,340 @@
       "title": "ProposalTrace",
       "type": "object"
     },
+    "ReflectionTrace": {
+      "description": "One System 2 cycle.",
+      "properties": {
+        "record": {
+          "const": "cycle",
+          "default": "cycle",
+          "title": "Record",
+          "type": "string"
+        },
+        "cycle_id": {
+          "title": "Cycle Id",
+          "type": "string"
+        },
+        "started_at": {
+          "title": "Started At",
+          "type": "string"
+        },
+        "finished_at": {
+          "title": "Finished At",
+          "type": "string"
+        },
+        "trigger": {
+          "enum": [
+            "decisions",
+            "episode_end"
+          ],
+          "title": "Trigger",
+          "type": "string"
+        },
+        "episode_id": {
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "decision": {
+          "description": "System 2's decision count when the cycle started",
+          "title": "Decision",
+          "type": "integer"
+        },
+        "configuration_version": {
+          "title": "Configuration Version",
+          "type": "integer"
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/Window"
+          },
+          "title": "Windows",
+          "type": "array"
+        },
+        "offered": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": "Reflector -> the change criteria it was asked over",
+          "title": "Offered",
+          "type": "object"
+        },
+        "blocked": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "description": "Reflector -> change -> the bound that removed it",
+          "title": "Blocked",
+          "type": "object"
+        },
+        "skipped": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Reflector -> why it was not called",
+          "title": "Skipped",
+          "type": "object"
+        },
+        "reflectors": {
+          "additionalProperties": {
+            "$ref": "#/$defs/InstanceResult"
+          },
+          "title": "Reflectors",
+          "type": "object"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/Proposal"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "central_criteria": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Central Criteria",
+          "type": "array"
+        },
+        "central": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstanceResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "choice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Choice"
+        },
+        "tie": {
+          "default": false,
+          "title": "Tie",
+          "type": "boolean"
+        },
+        "tied": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tied",
+          "type": "array"
+        },
+        "outcome": {
+          "enum": [
+            "no_proposal",
+            "central_missed",
+            "none_chosen",
+            "test_waiting",
+            "test_failed",
+            "queued",
+            "macro_requested",
+            "macro_not_enqueued"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "history_test": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoryTestResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "applied": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AppliedChange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "trial": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrialRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Always None here: the verdict is its own record"
+        },
+        "calls": {
+          "default": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cycle_id",
+        "started_at",
+        "finished_at",
+        "trigger",
+        "episode_id",
+        "decision",
+        "configuration_version",
+        "outcome"
+      ],
+      "title": "ReflectionTrace",
+      "type": "object"
+    },
+    "RelevanceCounts": {
+      "description": "One sense's record in one context: plain counts and the sums behind two means.",
+      "properties": {
+        "spoke": {
+          "default": 0,
+          "title": "Spoke",
+          "type": "integer"
+        },
+        "followed": {
+          "default": 0,
+          "title": "Followed",
+          "type": "integer"
+        },
+        "followed_paid": {
+          "default": 0,
+          "title": "Followed Paid",
+          "type": "integer"
+        },
+        "overruled": {
+          "default": 0,
+          "title": "Overruled",
+          "type": "integer"
+        },
+        "overruled_paid": {
+          "default": 0,
+          "title": "Overruled Paid",
+          "type": "integer"
+        },
+        "strength_paid_sum": {
+          "default": 0.0,
+          "title": "Strength Paid Sum",
+          "type": "number"
+        },
+        "strength_paid_n": {
+          "default": 0,
+          "title": "Strength Paid N",
+          "type": "integer"
+        },
+        "strength_unpaid_sum": {
+          "default": 0.0,
+          "title": "Strength Unpaid Sum",
+          "type": "number"
+        },
+        "strength_unpaid_n": {
+          "default": 0,
+          "title": "Strength Unpaid N",
+          "type": "integer"
+        }
+      },
+      "title": "RelevanceCounts",
+      "type": "object"
+    },
+    "RelevanceLedger": {
+      "description": "`relevance.json`: records keyed `<sense>|<context signature>`, grown episode by episode.",
+      "properties": {
+        "version": {
+          "default": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "episodes": {
+          "default": 0,
+          "title": "Episodes",
+          "type": "integer"
+        },
+        "return_steps": {
+          "default": 8,
+          "title": "Return Steps",
+          "type": "integer"
+        },
+        "return_gamma": {
+          "default": 0.9,
+          "title": "Return Gamma",
+          "type": "number"
+        },
+        "entries": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RelevanceCounts"
+          },
+          "description": "Keyed \"<sense>|<context signature>\"",
+          "title": "Entries",
+          "type": "object"
+        }
+      },
+      "title": "RelevanceLedger",
+      "type": "object"
+    },
+    "SenseConfig": {
+      "description": "One sense: the channels it is shown, the concern its instructions name, and its finite reasons.",
+      "properties": {
+        "scope": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Scope",
+          "type": "array"
+        },
+        "concern": {
+          "maxLength": 200,
+          "minLength": 3,
+          "title": "Concern",
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scope",
+        "concern",
+        "reasons"
+      ],
+      "title": "SenseConfig",
+      "type": "object"
+    },
     "SlowPathRequestTrace": {
-      "description": "An expansion request this tick handed to the slow worker.",
+      "description": "An expansion request handed to the slow worker during this tick.",
       "properties": {
         "module": {
           "title": "Module",
@@ -1499,7 +3210,7 @@
       "type": "object"
     },
     "StateTrace": {
-      "description": "The frozen world state every module saw this tick.",
+      "description": "The frozen world state of a tick, from which every evidence channel was rendered.",
       "properties": {
         "tick": {
           "title": "Tick",
@@ -1560,6 +3271,11 @@
           "title": "Recent Outgoing Damage",
           "type": "number"
         },
+        "recent_hits": {
+          "default": 0,
+          "title": "Recent Hits",
+          "type": "integer"
+        },
         "recent_kills": {
           "default": 0,
           "title": "Recent Kills",
@@ -1603,71 +3319,10 @@
       "title": "StateTrace",
       "type": "object"
     },
-    "SteeringTrace": {
-      "description": "The four-way strategy meta-decision made after the action ran, and the archive it chose from.",
-      "properties": {
-        "choice": {
-          "title": "Choice",
-          "type": "string"
-        },
-        "probabilities": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Probabilities",
-          "type": "object"
-        },
-        "scores": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Scores",
-          "type": "object"
-        },
-        "confidence": {
-          "default": 0.0,
-          "title": "Confidence",
-          "type": "number"
-        },
-        "active_before": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Active Before"
-        },
-        "active_after": {
-          "title": "Active After",
-          "type": "string"
-        },
-        "entries": {
-          "items": {
-            "$ref": "#/$defs/StrategyEntryTrace"
-          },
-          "title": "Entries",
-          "type": "array"
-        }
-      },
-      "required": [
-        "choice",
-        "active_after"
-      ],
-      "title": "SteeringTrace",
-      "type": "object"
-    },
-    "StrategyEntryTrace": {
+    "StrategyLine": {
       "properties": {
         "strategy_id": {
           "title": "Strategy Id",
-          "type": "string"
-        },
-        "context_signature": {
-          "title": "Context Signature",
           "type": "string"
         },
         "action_sequence": {
@@ -1688,33 +3343,358 @@
         "usage_count": {
           "title": "Usage Count",
           "type": "integer"
-        },
-        "failure_modes": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Failure Modes",
-          "type": "array"
-        },
-        "novelty_signature": {
-          "default": "default",
-          "title": "Novelty Signature",
-          "type": "string"
         }
       },
       "required": [
         "strategy_id",
-        "context_signature",
         "action_sequence",
         "observed_reward",
         "success_rate",
         "usage_count"
       ],
-      "title": "StrategyEntryTrace",
+      "title": "StrategyLine",
+      "type": "object"
+    },
+    "System2EpisodeSummary": {
+      "description": "What System 2 did while an episode was played, counted from its records (`episode.json`).",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "cycles": {
+          "default": 0,
+          "title": "Cycles",
+          "type": "integer"
+        },
+        "tests": {
+          "default": 0,
+          "description": "History tests that ran (not those that waited)",
+          "title": "Tests",
+          "type": "integer"
+        },
+        "tests_passed": {
+          "default": 0,
+          "title": "Tests Passed",
+          "type": "integer"
+        },
+        "trials_started": {
+          "default": 0,
+          "title": "Trials Started",
+          "type": "integer"
+        },
+        "trials_judged": {
+          "default": 0,
+          "title": "Trials Judged",
+          "type": "integer"
+        },
+        "kept": {
+          "default": 0,
+          "title": "Kept",
+          "type": "integer"
+        },
+        "reverted": {
+          "default": 0,
+          "title": "Reverted",
+          "type": "integer"
+        },
+        "calls": {
+          "default": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "usd": {
+          "default": 0.0,
+          "title": "Usd",
+          "type": "number"
+        }
+      },
+      "title": "System2EpisodeSummary",
+      "type": "object"
+    },
+    "System2Note": {
+      "properties": {
+        "record": {
+          "const": "note",
+          "default": "note",
+          "title": "Record",
+          "type": "string"
+        },
+        "cycle_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cycle Id"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "episode_id": {
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "trial_started",
+            "judge_missed",
+            "macro_admitted",
+            "macro_rejected",
+            "macro_abandoned",
+            "revert_applied",
+            "external_change",
+            "restored",
+            "fresh_start",
+            "no_verdict",
+            "error"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "timestamp",
+        "episode_id",
+        "kind",
+        "detail"
+      ],
+      "title": "System2Note",
+      "type": "object"
+    },
+    "TestTick": {
+      "description": "One sampled tick: its label, the old (stored) answer, the new answer, and the noise re-ask when drawn.",
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "episode_id": {
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "tick": {
+          "title": "Tick",
+          "type": "integer"
+        },
+        "context": {
+          "title": "Context",
+          "type": "string"
+        },
+        "stratum": {
+          "enum": [
+            "bad",
+            "good",
+            "rest"
+          ],
+          "title": "Stratum",
+          "type": "string"
+        },
+        "n_step_return": {
+          "title": "N Step Return",
+          "type": "number"
+        },
+        "executed_action": {
+          "title": "Executed Action",
+          "type": "string"
+        },
+        "old": {
+          "$ref": "#/$defs/Answer"
+        },
+        "new": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Answer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "noise": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Answer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "old_hit": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether the old answer counts for its stratum's metric",
+          "title": "Old Hit"
+        },
+        "new_hit": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "New Hit"
+        }
+      },
+      "required": [
+        "key",
+        "episode_id",
+        "tick",
+        "context",
+        "stratum",
+        "n_step_return",
+        "executed_action",
+        "old"
+      ],
+      "title": "TestTick",
+      "type": "object"
+    },
+    "TickRecord": {
+      "description": "One tick, whole.",
+      "properties": {
+        "episode_id": {
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "tick": {
+          "title": "Tick",
+          "type": "integer"
+        },
+        "configuration_version": {
+          "title": "Configuration Version",
+          "type": "integer"
+        },
+        "exploration_level": {
+          "title": "Exploration Level",
+          "type": "string"
+        },
+        "active_strategy": {
+          "title": "Active Strategy",
+          "type": "string"
+        },
+        "inputs": {
+          "$ref": "#/$defs/EvidenceInputs",
+          "description": "What every channel rendered from at this tick, the messages included"
+        },
+        "instances": {
+          "additionalProperties": {
+            "$ref": "#/$defs/InstanceResult"
+          },
+          "description": "The five senses in sense order, then the central",
+          "title": "Instances",
+          "type": "object"
+        },
+        "messages": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "pick": {
+          "$ref": "#/$defs/Pick"
+        },
+        "executed_action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None when the central missed and the tick idled",
+          "title": "Executed Action"
+        },
+        "primitives": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Primitives",
+          "type": "array"
+        },
+        "reward": {
+          "default": 0.0,
+          "title": "Reward",
+          "type": "number"
+        },
+        "done": {
+          "default": false,
+          "title": "Done",
+          "type": "boolean"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutcomeTrace"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the action (or the idle) changed; None in older records"
+        },
+        "stalled": {
+          "default": false,
+          "description": "The action tried to move and moved less than the stall bound",
+          "title": "Stalled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "episode_id",
+        "tick",
+        "configuration_version",
+        "exploration_level",
+        "active_strategy",
+        "inputs",
+        "instances",
+        "pick"
+      ],
+      "title": "TickRecord",
       "type": "object"
     },
     "TickTrace": {
-      "description": "Compact per-tick decision trace (Spec Section 17).\n\nThe fields after `learning` are the decision's anatomy (see `tracing.py`). They are optional,\nso traces written before they existed still parse.",
+      "description": "One tick (schema version 2): the evidence, the six instances, the pick, and what it did.",
       "properties": {
         "timestamp": {
           "title": "Timestamp",
@@ -1724,6 +3704,21 @@
           "title": "Tick",
           "type": "integer"
         },
+        "episode_id": {
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "configuration_version": {
+          "description": "The configuration this tick was decided under",
+          "title": "Configuration Version",
+          "type": "integer"
+        },
+        "configuration_changed": {
+          "default": false,
+          "description": "A pending configuration was applied at this tick's boundary",
+          "title": "Configuration Changed",
+          "type": "boolean"
+        },
         "state_hash": {
           "title": "State Hash",
           "type": "string"
@@ -1732,49 +3727,55 @@
           "title": "Context Signature",
           "type": "string"
         },
-        "budget_mode": {
-          "enum": [
-            "full",
-            "reduced",
-            "critical"
-          ],
-          "title": "Budget Mode",
-          "type": "string"
+        "state": {
+          "$ref": "#/$defs/StateTrace"
         },
         "available_actions": {
+          "description": "The legal menu, in menu order",
           "items": {
             "type": "string"
           },
           "title": "Available Actions",
           "type": "array"
         },
-        "module_outputs": {
+        "pruned_actions": {
           "additionalProperties": {
-            "$ref": "#/$defs/ModuleTrace"
+            "type": "string"
           },
-          "title": "Module Outputs",
+          "description": "Every other action and the first bound it failed",
+          "title": "Pruned Actions",
           "type": "object"
         },
-        "projection_results_used": {
+        "instances": {
           "additionalProperties": {
-            "additionalProperties": {
-              "type": "number"
+            "$ref": "#/$defs/InstanceResult"
+          },
+          "description": "The five senses in sense order, then the central",
+          "title": "Instances",
+          "type": "object"
+        },
+        "messages": {
+          "description": "What the senses that spoke sent the central",
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "title": "Messages",
+          "type": "array"
+        },
+        "pick": {
+          "$ref": "#/$defs/Pick"
+        },
+        "executed_action": {
+          "anyOf": [
+            {
+              "type": "string"
             },
-            "type": "object"
-          },
-          "title": "Projection Results Used",
-          "type": "object"
-        },
-        "arbiter_distribution": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Arbiter Distribution",
-          "type": "object"
-        },
-        "selected_action": {
-          "title": "Selected Action",
-          "type": "string"
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The central's pick; None when the central missed and the tick idled",
+          "title": "Executed Action"
         },
         "primitive_steps_executed": {
           "items": {
@@ -1783,91 +3784,45 @@
           "title": "Primitive Steps Executed",
           "type": "array"
         },
-        "exploration_state": {
-          "additionalProperties": true,
-          "title": "Exploration State",
-          "type": "object"
-        },
-        "active_strategy": {
-          "title": "Active Strategy",
-          "type": "string"
+        "outcome": {
+          "$ref": "#/$defs/OutcomeTrace"
         },
         "reward_outcome": {
           "title": "Reward Outcome",
           "type": "number"
         },
-        "used_d1_ultra": {
-          "default": false,
-          "title": "Used D1 Ultra",
+        "missed": {
+          "description": "The central missed: no keys were held for the decision",
+          "title": "Missed",
           "type": "boolean"
         },
-        "d1_arbiter_distribution": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "D1 Arbiter Distribution",
-          "type": "object"
-        },
-        "learning": {
-          "additionalProperties": true,
-          "title": "Learning",
-          "type": "object"
-        },
-        "state": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/StateTrace"
-            },
-            {
-              "type": "null"
-            }
+        "exploration_level": {
+          "enum": [
+            "exploit",
+            "explore"
           ],
-          "default": null
+          "title": "Exploration Level",
+          "type": "string"
         },
-        "pruned_actions": {
+        "active_strategy": {
+          "title": "Active Strategy",
+          "type": "string"
+        },
+        "projection_results_used": {
           "additionalProperties": {
-            "type": "string"
-          },
-          "title": "Pruned Actions",
-          "type": "object"
-        },
-        "arbiter": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ArbiterTrace"
+            "additionalProperties": {
+              "type": "number"
             },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+            "type": "object"
+          },
+          "description": "The projections channel's numbers",
+          "title": "Projection Results Used",
+          "type": "object"
         },
         "projection_chain": {
           "anyOf": [
             {
               "$ref": "#/$defs/ProjectionChainTrace"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "steering": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SteeringTrace"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "outcome": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/OutcomeTrace"
             },
             {
               "type": "null"
@@ -1886,7 +3841,276 @@
           ],
           "default": null
         },
-        "budget_sec": {
+        "timing_ms": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Timing Ms",
+          "type": "object"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage",
+          "description": "Summed over the tick's six calls"
+        }
+      },
+      "required": [
+        "timestamp",
+        "tick",
+        "episode_id",
+        "configuration_version",
+        "state_hash",
+        "context_signature",
+        "state",
+        "available_actions",
+        "instances",
+        "pick",
+        "executed_action",
+        "primitive_steps_executed",
+        "outcome",
+        "reward_outcome",
+        "missed",
+        "exploration_level",
+        "active_strategy"
+      ],
+      "title": "TickTrace",
+      "type": "object"
+    },
+    "TrialRecord": {
+      "description": "A trial from the change taking effect to its verdict.",
+      "properties": {
+        "cycle_id": {
+          "title": "Cycle Id",
+          "type": "string"
+        },
+        "change": {
+          "title": "Change",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "scope",
+            "macro",
+            "retire",
+            "strategy",
+            "level"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "instance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instance"
+        },
+        "detail": {
+          "default": "",
+          "title": "Detail",
+          "type": "string"
+        },
+        "previous_version": {
+          "title": "Previous Version",
+          "type": "integer"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        },
+        "started_at": {
+          "title": "Started At",
+          "type": "string"
+        },
+        "started_decision": {
+          "title": "Started Decision",
+          "type": "integer"
+        },
+        "started_episode": {
+          "title": "Started Episode",
+          "type": "string"
+        },
+        "started_tick": {
+          "title": "Started Tick",
+          "type": "integer"
+        },
+        "due_decision": {
+          "title": "Due Decision",
+          "type": "integer"
+        },
+        "extensions": {
+          "default": 0,
+          "description": "Times a missed judge extended the trial",
+          "title": "Extensions",
+          "type": "integer"
+        },
+        "judged_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Judged At"
+        },
+        "judged_decision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Judged Decision"
+        },
+        "judge": {
+          "description": "Every judge call, misses included",
+          "items": {
+            "$ref": "#/$defs/InstanceResult"
+          },
+          "title": "Judge",
+          "type": "array"
+        },
+        "table": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrialTable"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "enum": [
+                "keep",
+                "revert"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verdict"
+        },
+        "safety_revert": {
+          "default": false,
+          "description": "Reverted by the safety bound, without asking the judge",
+          "title": "Safety Revert",
+          "type": "boolean"
+        },
+        "by": {
+          "default": "the trial judge",
+          "description": "Who ended the trial; 'no verdict' reverts after the judge's last allowed miss",
+          "enum": [
+            "the trial judge",
+            "the safety bound",
+            "no verdict"
+          ],
+          "title": "By",
+          "type": "string"
+        },
+        "revert": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigDiff"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The revert queued: previous configuration restored, version bumped"
+        }
+      },
+      "required": [
+        "cycle_id",
+        "change",
+        "kind",
+        "previous_version",
+        "version",
+        "started_at",
+        "started_decision",
+        "started_episode",
+        "started_tick",
+        "due_decision"
+      ],
+      "title": "TrialRecord",
+      "type": "object"
+    },
+    "TrialRow": {
+      "description": "One period of a trial's before-and-during table.",
+      "properties": {
+        "decisions": {
+          "default": 0,
+          "title": "Decisions",
+          "type": "integer"
+        },
+        "reward_per_decision": {
+          "default": 0.0,
+          "title": "Reward Per Decision",
+          "type": "number"
+        },
+        "damage_per_decision": {
+          "default": 0.0,
+          "title": "Damage Per Decision",
+          "type": "number"
+        },
+        "kills": {
+          "default": 0.0,
+          "title": "Kills",
+          "type": "number"
+        },
+        "deaths": {
+          "default": 0,
+          "title": "Deaths",
+          "type": "integer"
+        },
+        "missed_ticks": {
+          "default": 0,
+          "title": "Missed Ticks",
+          "type": "integer"
+        },
+        "followed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The changed instance's followed messages (picks, for the central)",
+          "title": "Followed"
+        },
+        "paid_off": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paid Off"
+        },
+        "paid_off_rate": {
           "anyOf": [
             {
               "type": "number"
@@ -1896,33 +4120,100 @@
             }
           ],
           "default": null,
-          "title": "Budget Sec"
+          "title": "Paid Off Rate"
+        }
+      },
+      "title": "TrialRow",
+      "type": "object"
+    },
+    "TrialTable": {
+      "properties": {
+        "before": {
+          "$ref": "#/$defs/TrialRow"
         },
-        "timing_ms": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Timing Ms",
-          "type": "object"
+        "during": {
+          "$ref": "#/$defs/TrialRow"
+        },
+        "instance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The changed instance; None for menu, strategy and level changes",
+          "title": "Instance"
+        },
+        "prediction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The history test's prediction, when there was one",
+          "title": "Prediction"
+        },
+        "text": {
+          "description": "The table as the trial judge was shown it",
+          "title": "Text",
+          "type": "string"
         }
       },
       "required": [
-        "timestamp",
-        "tick",
-        "state_hash",
-        "context_signature",
-        "budget_mode",
-        "available_actions",
-        "module_outputs",
-        "projection_results_used",
-        "arbiter_distribution",
-        "selected_action",
-        "primitive_steps_executed",
-        "exploration_state",
-        "active_strategy",
-        "reward_outcome"
+        "before",
+        "during",
+        "text"
       ],
-      "title": "TickTrace",
+      "title": "TrialTable",
+      "type": "object"
+    },
+    "TrialVerdictTrace": {
+      "description": "A trial's verdict, referring to the cycle that made the change.",
+      "properties": {
+        "record": {
+          "const": "verdict",
+          "default": "verdict",
+          "title": "Record",
+          "type": "string"
+        },
+        "cycle_id": {
+          "title": "Cycle Id",
+          "type": "string"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "episode_id": {
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "trial": {
+          "$ref": "#/$defs/TrialRecord"
+        },
+        "calls": {
+          "default": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "cycle_id",
+        "timestamp",
+        "episode_id",
+        "trial"
+      ],
+      "title": "TrialVerdictTrace",
       "type": "object"
     },
     "TrustFile": {
@@ -1966,6 +4257,50 @@
       "title": "TrustFile",
       "type": "object"
     },
+    "Usage": {
+      "description": "Token usage and cost of one call, as the response's `usage` block reports it.",
+      "properties": {
+        "input_tokens": {
+          "default": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "cost": {
+          "default": 0.0,
+          "title": "Cost",
+          "type": "number"
+        }
+      },
+      "title": "Usage",
+      "type": "object"
+    },
+    "ValueLine": {
+      "description": "The value networks' predicted returns for one legal action, and how often it was tried here.",
+      "properties": {
+        "predictions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Predictions",
+          "type": "object"
+        },
+        "tried": {
+          "title": "Tried",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "predictions",
+        "tried"
+      ],
+      "title": "ValueLine",
+      "type": "object"
+    },
     "WallTrace": {
       "properties": {
         "front": {
@@ -1986,8 +4321,73 @@
       },
       "title": "WallTrace",
       "type": "object"
+    },
+    "Window": {
+      "description": "One of the three windows, as the history held it.",
+      "properties": {
+        "name": {
+          "description": "recent, long or episodes",
+          "title": "Name",
+          "type": "string"
+        },
+        "label": {
+          "description": "How the channels name it",
+          "title": "Label",
+          "type": "string"
+        },
+        "wanted": {
+          "description": "Decisions (recent, long) or episodes (episodes) the window asks for",
+          "title": "Wanted",
+          "type": "integer"
+        },
+        "decisions": {
+          "title": "Decisions",
+          "type": "integer"
+        },
+        "episode_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Episode Ids",
+          "type": "array"
+        },
+        "first": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The first record's key, <episode id>:<tick>",
+          "title": "First"
+        },
+        "last": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last"
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "wanted",
+        "decisions"
+      ],
+      "title": "Window",
+      "type": "object"
     }
   },
   "title": "system1_doom episode bundle",
-  "description": "Generated by `python -m system1_doom.export --schema` from the pydantic models (schema_version 1). Do not edit by hand."
+  "description": "Generated by `python -m system1_doom.export --schema` from the pydantic models (schema_version 2). Do not edit by hand."
 }

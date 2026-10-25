@@ -1,6 +1,6 @@
-import { WATCH, brainOf, resultWords } from '../content/watch'
+import { WATCH, recordingName, resultWords, versionWords } from '../content/watch'
 import { defaultEpisode } from '../data/loader'
-import { openDrawer, openEpisode, openRecording, useApp } from '../store'
+import { openPanel, openRecording, useApp } from '../store'
 
 /** The shipped recordings, the featured one first, in plain words; a card plays its recording from the start. */
 export function RecordingCards() {
@@ -10,10 +10,6 @@ export function RecordingCards() {
   if (episodes.length === 0) return null
   const featured = defaultEpisode(index)
   const ordered = [...episodes.filter((e) => e.name === featured), ...episodes.filter((e) => e.name !== featured)]
-  const howMade = async (name: string) => {
-    if (bundle?.name !== name) await openEpisode(name, null)
-    openDrawer('recording')
-  }
   return (
     <section className="recordings" aria-labelledby="recordings-title">
       <header className="recordings-head">
@@ -22,8 +18,8 @@ export function RecordingCards() {
       </header>
       <ul className="recording-cards">
         {ordered.map((entry) => {
-          const brain = brainOf(entry, bundle?.meta ?? null)
           const open = bundle?.name === entry.name
+          const start = entry.configuration_start ?? 1
           return (
             <li
               key={entry.name}
@@ -33,21 +29,21 @@ export function RecordingCards() {
             >
               <button type="button" className="recording-main" onClick={() => void openRecording(entry.name)}>
                 {open && <span className="recording-now">{WATCH.nowShowing}</span>}
-                <span className="recording-brain">{brain.name}</span>
-                <span className="recording-gloss">{brain.gloss}</span>
-                <span className="recording-result">
-                  run {entry.seed} · {resultWords(entry)}
+                <span className="recording-name">{recordingName(entry)}</span>
+                <span className="recording-gloss">
+                  {versionWords(start, entry.configuration_end ?? start)} · value networks: {entry.value_networks}
                 </span>
+                <span className="recording-result">{resultWords(entry)}</span>
               </button>
-              <button
-                type="button"
-                className="link-button recording-made"
-                data-opens="recording"
-                aria-haspopup="dialog"
-                onClick={() => void howMade(entry.name)}
-              >
-                {WATCH.made}
-              </button>
+              {open && (
+                <button
+                  type="button"
+                  className="link-button recording-made"
+                  onClick={() => openPanel('reference', 'provenance')}
+                >
+                  {WATCH.made}
+                </button>
+              )}
             </li>
           )
         })}

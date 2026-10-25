@@ -1,21 +1,25 @@
 import type {
-  ActionSpec,
   BundleIndexEntry,
   EpisodeMeta,
-  EvaluationSummary,
-  MetricsRow,
   ProposalTrace,
+  ReflectionTrace,
+  RelevanceLedger,
+  System2Note,
   TickTrace,
+  TrialVerdictTrace,
   TrustFile,
 } from '../schema/bundle'
 
 /** The bundle schema version this app reads; `python -m system1_doom.export` writes it into every episode.json. */
-export const SUPPORTED_SCHEMA_VERSION = 1
+export const SUPPORTED_SCHEMA_VERSION = 2
 
 export interface EpisodeIndex {
   schema_version: number
   episodes: BundleIndexEntry[]
 }
+
+/** One line of `reflections.jsonl`: a System 2 cycle, a trial's verdict, or a note. */
+export type System2Record = ReflectionTrace | TrialVerdictTrace | System2Note
 
 /** One recorded episode, as the export command wrote it. */
 export interface EpisodeBundle {
@@ -24,15 +28,16 @@ export interface EpisodeBundle {
   base: string
   meta: EpisodeMeta
   ticks: TickTrace[]
+  /** Macro proposals and their admission, the admit instance's answer included. */
   proposals: ProposalTrace[]
-  /** The training run behind the checkpoint, one row per episode; null when the bundle has none. */
-  metrics: MetricsRow[] | null
-  /** The same seeded episodes played by each brain after training; null when absent. */
-  evaluation: EvaluationSummary | null
-  /** The checkpoint's experience counts; only bundles recorded with a model have them. */
+  /** What System 2 did while the episode was played, in the order it happened. */
+  records: System2Record[]
+  /** Which moment `relevance` is from: a live episode read while playing holds the ledger as it started. */
+  ledgerAt: 'start' | 'end'
+  /** The relevance ledger after the episode (as it started, for a live episode in progress); null when absent. */
+  relevance: RelevanceLedger | null
+  /** How often each action was tried in each context in training; only bundles played with networks have it. */
   trust: TrustFile | null
-  /** Macros admitted during training; null when absent. */
-  macros: ActionSpec[] | null
 }
 
 export class BundleError extends Error {
@@ -82,13 +87,23 @@ export function parseJsonl<T>(text: string, file: string): T[] {
   return records
 }
 
+/**
+ * A file of another schema version is refused with a message that says what to do. Schema 1 is the old
+ * architecture (five modules weighed by an arbiter); its recordings cannot be shown as d1-ultra's decisions.
+ */
 export function checkSchemaVersion(version: number | undefined, file: string): void {
-  if (version !== SUPPORTED_SCHEMA_VERSION) {
+  if (version === SUPPORTED_SCHEMA_VERSION) return
+  if (version === 1) {
     throw new BundleError(
-      `${file} uses bundle schema version ${version ?? 'none'}, but this app reads version ${SUPPORTED_SCHEMA_VERSION}. ` +
-        'Re-export the episode with the matching package, or update the app.',
+      `${file} is a schema 1 recording, from the old architecture where an arbiter weighed five modules. ` +
+        `This app reads schema ${SUPPORTED_SCHEMA_VERSION}, where every decision is made by d1-ultra. ` +
+        'Record the episode again with `python -m system1_doom.export`.',
     )
   }
+  throw new BundleError(
+    `${file} uses bundle schema version ${version ?? 'none'}, but this app reads version ${SUPPORTED_SCHEMA_VERSION}. ` +
+      'Re-export the episode with the matching package, or update the app.',
+  )
 }
 
 export async function loadIndex(root = 'episodes', fetcher: Fetcher = defaultFetcher): Promise<EpisodeIndex> {
@@ -99,8 +114,8 @@ export async function loadIndex(root = 'episodes', fetcher: Fetcher = defaultFet
 
 export interface LoadOptions {
   /**
-   * An episode still being played: it may have no ticks yet, and the three files are read at slightly
-   * different moments, so the tick count is taken from the ticks rather than checked against the meta.
+   * An episode still being played: it may have no ticks yet, and its files are read at slightly different
+   * moments, so the tick count is taken from the ticks rather than checked against the meta.
    */
   live?: boolean
 }
@@ -118,8 +133,9 @@ export async function loadEpisode(
     fetchText(`${base}/episode.json`, fetcher),
     fetchText(`${base}/ticks.jsonl`, fetcher),
     fetchText(`${base}/proposals.jsonl`, fetcher, true),
+    fetchText(`${base}/reflections.jsonl`, fetcher, true),
   ])
-  const [metaText = '', ticksText = '', proposalsText = ''] = settled.map((r) => {
+  const [metaText = '', ticksText = '', proposalsText = '', reflectionsText = ''] = settled.map((r) => {
     if (r.status === 'rejected') throw r.reason
     return r.value
   })
@@ -136,44 +152,72 @@ export async function loadEpisode(
   if (options.live) {
     meta = { ...meta, tick_count: ticks.length, last_tick: ticks[ticks.length - 1]?.tick ?? meta.last_tick }
   }
-  const proposals = parseJsonl<ProposalTrace>(proposalsText, `${name}/proposals.jsonl`)
-
-  // Files copied from the training run, fetched only when episode.json lists them.
   const listed = new Set(meta.files ?? [])
+  // Serve writes an episode's relevance.json before its first tick, so a live episode reads it even from a meta
+  // read too early to list it; trust.json exists only with value networks, and only a listed one is fetched.
   const extra = (file: string) =>
-    listed.has(file) ? fetchText(`${base}/${file}`, fetcher, true).then((text) => text || null) : Promise.resolve(null)
-  const [metricsText, evaluationText, trustText, macrosText] = await Promise.all([
-    extra('metrics.jsonl'),
-    extra('evaluation.json'),
-    extra('trust.json'),
-    extra('macros.json'),
-  ])
+    listed.has(file) || (options.live && file === 'relevance.json')
+      ? fetchText(`${base}/${file}`, fetcher, true).then((text) => text || null)
+      : Promise.resolve(null)
+  const [relevanceText, trustText] = await Promise.all([extra('relevance.json'), extra('trust.json')])
   return {
     name,
     base,
     meta,
     ticks,
-    proposals,
-    metrics: metricsText === null ? null : parseJsonl<MetricsRow>(metricsText, `${name}/metrics.jsonl`),
-    evaluation:
-      evaluationText === null ? null : parseJson<EvaluationSummary>(evaluationText, `${name}/evaluation.json`),
+    proposals: latestProposals(parseJsonl<ProposalTrace>(proposalsText, `${name}/proposals.jsonl`)),
+    records: parseJsonl<System2Record>(reflectionsText, `${name}/reflections.jsonl`),
+    relevance: relevanceText === null ? null : parseJson<RelevanceLedger>(relevanceText, `${name}/relevance.json`),
+    ledgerAt: options.live ? 'start' : 'end',
     trust: trustText === null ? null : parseJson<TrustFile>(trustText, `${name}/trust.json`),
-    macros: macrosText === null ? null : parseJson<ActionSpec[]>(macrosText, `${name}/macros.json`),
   }
 }
 
 /**
- * The recording a fresh visit opens: the first in the index that cleared its level, else the first. The
- * index lists recordings in the order they were exported, so the first is not always the one worth watching.
+ * Another recording's relevance ledger alone, for the ledger's growth over episodes; null when it has none or
+ * cannot be read, since a missing point on that line is no reason to stop the screen.
+ */
+export async function loadLedger(
+  name: string,
+  root = 'episodes',
+  fetcher: Fetcher = defaultFetcher,
+): Promise<RelevanceLedger | null> {
+  try {
+    const text = await fetchText(`${root}/${name}/relevance.json`, fetcher, true)
+    return text ? parseJson<RelevanceLedger>(text, `${name}/relevance.json`) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * One line per proposal. The run log appends a proposal again each time its macro's performance is updated; the
+ * newest line of a proposal (same request and same raw text) is the one kept, in the order proposals first came.
+ */
+export function latestProposals(proposals: ProposalTrace[]): ProposalTrace[] {
+  const byKey = new Map<string, ProposalTrace>()
+  for (const p of proposals) byKey.set(`${p.timestamp}|${p.raw_proposal}`, p)
+  return [...byKey.values()]
+}
+
+/**
+ * The recording a fresh visit opens: the first in the index that cleared its level, else the first. The index
+ * lists recordings by scenario, networks, seed and starting configuration, so the first is not always the one
+ * worth watching first.
  */
 export function defaultEpisode(index: Pick<EpisodeIndex, 'episodes'> | null): string | null {
   const episodes = index?.episodes ?? []
   return (episodes.find((e) => e.cleared) ?? episodes[0])?.name ?? null
 }
 
-/** URL of the screen the controller saw when it decided `tick`. */
+/** URL of the screen the instances saw when they decided `tick`. */
 export function frameUrl(bundle: Pick<EpisodeBundle, 'base' | 'meta'>, tick: number): string {
   return `${bundle.base}/${bundle.meta.frames.dir ?? 'frames'}/${String(tick).padStart(5, '0')}.jpg`
+}
+
+/** URL of a file the bundle names by its path inside the bundle, as an instance's image reference. */
+export function bundleFileUrl(bundle: Pick<EpisodeBundle, 'base'>, path: string): string {
+  return `${bundle.base}/${path}`
 }
 
 /** URL of the screen after the last action, or null when the bundle has none (a live episode still playing). */

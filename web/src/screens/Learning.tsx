@@ -1,105 +1,231 @@
-import { HeadTools } from '../components/DepthToggle'
-import { GateView } from '../components/GateView'
-import { HeadToHead } from '../components/HeadToHead'
-import { LearningCurves } from '../components/LearningCurves'
+import { useEffect, useMemo, useState } from 'react'
+import { EvidenceText } from '../components/Evidence'
 import { Panel } from '../components/Panel'
-import { RewardAnatomy } from '../components/RewardAnatomy'
-import { TrustHere, TrustMap } from '../components/TrustMap'
-import { useFocusPanel } from '../components/flash'
-import type { ExplainerContext } from '../content/explainers'
-import type { EpisodeBundle } from '../data/loader'
-import type { TickTrace } from '../schema/bundle'
-import { openEpisode, useApp } from '../store'
+import { RelevanceChart } from '../components/RelevanceChart'
+import { LEARNING } from '../content/learning'
+import { ledgerPoints, paidSeries, topContexts, triedHere } from '../data/learning'
+import { type EpisodeBundle, loadLedger } from '../data/loader'
+import { SENSES, fmt, pct, sections, valuesAt, words } from '../data/readings'
+import type { RelevanceLedger, TickTrace } from '../schema/bundle'
+import { useApp } from '../store'
 
-/** "No networks in this recording", with a link to the recording of the same seed that has them. */
-function NoNetworks({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
-  const index = useApp((s) => s.index)
-  const pair = index?.episodes.find(
-    (e) => e.model !== 'heuristics' && e.scenario === bundle.meta.scenario && e.seed === bundle.meta.seed,
-  )
-  return (
-    <p className="empty-note" data-testid="no-networks">
-      No networks in this recording: it was played by the heuristics alone.{' '}
-      {pair && (
-        <button
-          type="button"
-          className="link-button"
-          onClick={() => void openEpisode(pair.name, Math.min(tick.tick, pair.ticks - 1))}
-        >
-          See the recording with the networks at tick {Math.min(tick.tick, pair.ticks - 1)} →
-        </button>
-      )}
-    </p>
-  )
+/** The other recordings' ledgers, fetched once per recording list. */
+function useLedgers(names: string[]): Array<{ name: string; ledger: RelevanceLedger | null }> {
+  const [ledgers, setLedgers] = useState<Array<{ name: string; ledger: RelevanceLedger | null }>>([])
+  const key = names.join('|')
+  useEffect(() => {
+    let alive = true
+    void Promise.all(
+      key
+        .split('|')
+        .filter(Boolean)
+        .map(async (name) => ({ name, ledger: await loadLedger(name) })),
+    ).then((loaded) => alive && setLedgers(loaded))
+    return () => {
+      alive = false
+    }
+  }, [key])
+  return ledgers
 }
 
-/** Learning across episodes: how the networks earned their say, and what they do with it at this tick. */
-export function Learning({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: TickTrace; ctx: ExplainerContext }) {
-  const tickIndex = useApp((s) => s.tickIndex)
-  useFocusPanel()
-  const { meta, metrics, evaluation, trust } = bundle
-  const learned = meta.brains.learned_networks && trust !== null
+export function Learning({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
+  const index = useApp((s) => s.index)
+  const others = useLedgers((index?.episodes ?? []).map((e) => e.name).filter((n) => n !== bundle.name))
+  const points = useMemo(() => ledgerPoints(bundle, others), [bundle, others])
+  const series = useMemo(() => paidSeries(points), [points])
   return (
-    <main className="learning" aria-label="Learning across episodes">
+    <main className="screen learning" aria-label="Learning">
       <header className="screen-head">
-        <div>
-          <h2>Learning: how the networks earned their say</h2>
-          <p>
-            The networks never change the menu or the levels. They learn between episodes how to weigh what each level
-            already offers: trust per situation and action for the five modules, and a gate that re-weighs the modules
-            for the arbiter.{' '}
-            {learned
-              ? `This recording loaded the checkpoint saved after ${meta.checkpoint?.episodes ?? '?'} training episodes.`
-              : 'This recording was played by the heuristics alone; the training run below is the one the other recording of this seed used.'}
-          </p>
-        </div>
-        <HeadTools />
+        <h2>{LEARNING.title}</h2>
+        <p>{LEARNING.intro}</p>
       </header>
-
-      <h3 className="section-head">Across episodes</h3>
+      <Panel id="relevance-episodes">
+        {points.length === 0 ? (
+          <p className="muted small">{LEARNING.chart.none}</p>
+        ) : (
+          <>
+            <RelevanceChart series={series} />
+            <details className="chart-table">
+              <summary>{LEARNING.chart.tableTitle}</summary>
+              <div className="table-wrap">
+                <table className="data-table" data-testid="relevance-table">
+                  <thead>
+                    <tr>
+                      {LEARNING.chart.columns.map((c) => (
+                        <th key={c} scope="col">
+                          {c}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {points.flatMap((p) =>
+                      SENSES.map((s) => {
+                        const c = p.totals[s]
+                        return (
+                          <tr
+                            key={`${p.episodes}-${s}`}
+                            className={p.current ? 'here' : undefined}
+                            data-episodes={p.episodes}
+                            data-sense={s}
+                          >
+                            <td>
+                              {p.current
+                                ? `${LEARNING.chart.current}, ${p.label.replace(' this episode', '')}`
+                                : p.label}
+                            </td>
+                            <td className="num">{p.episodes}</td>
+                            <td>
+                              <span className={`dot sense-${s}`} aria-hidden /> {s}
+                            </td>
+                            <td className="num">{c?.spoke ?? 0}</td>
+                            <td className="num">{c?.followed ?? 0}</td>
+                            <td className="num">
+                              {c?.followed_paid ?? 0}{' '}
+                              <span className="muted">({pct(c?.followed ? c.followed_paid / c.followed : null)})</span>
+                            </td>
+                          </tr>
+                        )
+                      }),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </>
+        )}
+      </Panel>
       <div className="learning-grid">
-        <Panel id="headtohead" ctx={ctx} bounds={['same seed, same menu']}>
-          <HeadToHead bundle={bundle} evaluation={evaluation} />
+        <Panel id="values">
+          <Values bundle={bundle} tick={tick} />
         </Panel>
-        <Panel id="curves" ctx={ctx} bounds={['trains between episodes', '≤ 100k transitions']}>
-          {metrics && metrics.length > 0 ? (
-            <>
-              {!learned && (
-                <p className="empty-note">This recording did not use these networks; it was played without them.</p>
-              )}
-              <LearningCurves metrics={metrics} meta={meta} trainedEpisodes={evaluation?.trained_episodes ?? null} />
-            </>
-          ) : (
-            <p className="empty-note">This bundle carries no training run.</p>
-          )}
-        </Panel>
-      </div>
-
-      <h3 className="section-head">At tick {tick.tick}</h3>
-      <div className="learning-grid tick">
-        <Panel id="trustmap" ctx={ctx} bounds={['λ < 1']}>
-          {learned && trust ? (
-            <div className="trust-wrap">
-              <TrustMap trust={trust} meta={meta} tick={tick} />
-              <TrustHere trust={trust} tick={tick} />
-            </div>
-          ) : (
-            <NoNetworks bundle={bundle} tick={tick} />
-          )}
-        </Panel>
-        <Panel id="gateview" ctx={ctx} bounds={['five weights, sum 1']}>
-          {learned && trust && tick.arbiter?.module_weights_gate ? (
-            <GateView tick={tick} contextN={trust.context_counts[tick.context_signature] ?? 0} />
-          ) : learned ? (
-            <p className="empty-note">The gate was not consulted on this tick.</p>
-          ) : (
-            <NoNetworks bundle={bundle} tick={tick} />
-          )}
-        </Panel>
-        <Panel id="anatomy" ctx={ctx} bounds={['8 steps · γ 0.9']}>
-          <RewardAnatomy ticks={bundle.ticks} index={tickIndex} learned={learned} />
+        <Panel id="trust">
+          <Trust bundle={bundle} tick={tick} />
         </Panel>
       </div>
     </main>
+  )
+}
+
+function Values({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
+  const values = valuesAt(tick)
+  if (!values.instance) return <p className="muted small">{LEARNING.values.none}</p>
+  const holder = tick.instances[values.instance]
+  const section = holder ? sections(holder.evidence).find((s) => s.channel === 'values') : undefined
+  if (values.rows.length === 0) {
+    return (
+      <>
+        <p className="small">
+          {bundle.meta.value_networks === 'none'
+            ? LEARNING.values.noNetworks
+            : LEARNING.values.shownTo(values.instance)}
+        </p>
+        {section && <EvidenceText text={`[values]\n${section.body}`} name={values.instance} testId="values-text" />}
+      </>
+    )
+  }
+  const networks = [...new Set(values.rows.flatMap((r) => Object.keys(r.predictions)))]
+  return (
+    <div className="values">
+      <p className="small">{LEARNING.values.shownTo(values.instance)}</p>
+      <p className="small muted">{values.header}</p>
+      <div className="table-wrap">
+        <table className="data-table" data-testid="values-table">
+          <thead>
+            <tr>
+              <th scope="col">{LEARNING.values.action}</th>
+              {networks.map((n) => (
+                <th key={n} scope="col">
+                  <span className={`dot sense-${n}`} aria-hidden /> {n}
+                </th>
+              ))}
+              <th scope="col">{LEARNING.values.tried}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {values.rows.map((r) => (
+              <tr
+                key={r.action}
+                className={r.action === tick.executed_action ? 'here' : undefined}
+                data-action={r.action}
+              >
+                <th scope="row">
+                  {words(r.action)}
+                  {r.action === tick.executed_action && (
+                    <span className="muted small"> · {LEARNING.values.executed}</span>
+                  )}
+                </th>
+                {networks.map((n) => {
+                  const v = r.predictions[n]
+                  return (
+                    <td key={n} className="num">
+                      {v === undefined ? '–' : `${v >= 0 ? '+' : ''}${fmt(v)}`}
+                    </td>
+                  )
+                })}
+                <td className="num">{r.tried ?? '–'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {section && (
+        <details className="saw">
+          <summary>The channel, verbatim</summary>
+          <EvidenceText text={`[values]\n${section.body}`} name={values.instance} testId="values-text" />
+        </details>
+      )}
+    </div>
+  )
+}
+
+function Trust({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
+  const cp = bundle.meta.checkpoint
+  const here = triedHere(bundle.trust, tick)
+  const top = topContexts(bundle.trust, tick.context_signature)
+  return (
+    <div className="trust">
+      {cp && <p className="small">{LEARNING.trust.checkpoint(cp.episodes, cp.transitions_seen, cp.file)}</p>}
+      {cp && <p className="small muted">{LEARNING.trust.share(fmt(cp.network_share))}</p>}
+      {!here ? (
+        <p className="muted small">{LEARNING.trust.none}</p>
+      ) : (
+        <>
+          <p className="chips-label">
+            {LEARNING.trust.here}: <span className="mono">{tick.context_signature}</span>,{' '}
+            {LEARNING.trust.seen(here.seen)}
+          </p>
+          <div className="table-wrap">
+            <table className="data-table" data-testid="tried-table">
+              <thead>
+                <tr>
+                  <th scope="col">{LEARNING.trust.columns[0]}</th>
+                  <th scope="col">{LEARNING.trust.columns[1]}</th>
+                  <th scope="col">n / (n + {bundle.trust?.trust_count ?? 25})</th>
+                </tr>
+              </thead>
+              <tbody>
+                {here.rows.map((r) => (
+                  <tr key={r.action} className={r.action === tick.executed_action ? 'here' : undefined}>
+                    <th scope="row">{words(r.action)}</th>
+                    <td className="num">{r.tried}</td>
+                    <td className="num">{fmt(r.familiarity)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="chips-label">{LEARNING.trust.top}</p>
+          <ol className="contexts small">
+            {top.map((c) => (
+              <li key={c.signature} className={c.here ? 'here' : undefined}>
+                <span className="mono">{c.signature}</span> <span className="muted">{c.n}</span>
+                {c.here ? ' ◀' : ''}
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </div>
   )
 }

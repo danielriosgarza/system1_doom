@@ -1,8 +1,10 @@
 import { type Page, expect, test } from '@playwright/test'
+import { LIVE } from '../playwright.config'
 
-// Against e2e/live-server.mjs: deadly_corridor-heuristics-9 replayed as live-1, live-2, … one tick
-// every 80 ms (36 ticks, then it dies), a second apart.
-test.use({ baseURL: 'http://127.0.0.1:4174/' })
+// Against e2e/live-server.mjs with live mode on: the fixture recording replayed as live-1, live-2, … one tick
+// every 80 ms (40 ticks), a second apart, with schema 2 ticks and each of System 2's records sent as a
+// `reflection` event right after the tick it followed.
+test.use({ baseURL: LIVE })
 
 function collectErrors(page: Page): string[] {
   const errors: string[] = []
@@ -12,7 +14,6 @@ function collectErrors(page: Page): string[] {
 }
 
 const badge = (page: Page) => page.locator('.live-badge')
-const picker = (page: Page) => page.locator('.topbar select')
 
 /** The tick showing: Watch's counter on Watch, the timeline's on the other screens. */
 async function tickNow(page: Page): Promise<number> {
@@ -20,167 +21,61 @@ async function tickNow(page: Page): Promise<number> {
   return Number((await counter.getAttribute('data-tick')) ?? -1)
 }
 
-/** Follow the live episode from early in its run, so a test has most of an episode before it ends. */
-async function followEarly(page: Page): Promise<void> {
-  await page.goto('./#live')
+/** Follow the live episode from early in its run, so a test sees most of an episode. */
+async function followEarly(page: Page, screen = 'watch'): Promise<void> {
+  await page.goto(`./#live/${screen}`)
   await expect(badge(page)).toHaveText('LIVE', { timeout: 10_000 })
-  // Following rides on into the next episode, so a late arrival only waits for that one to start. Ticks
-  // 0 to 5 last under half a second, so the count is read often.
   await expect
     .poll(
       async () => {
         const tick = await tickNow(page)
-        return tick >= 0 && tick < 6
+        return tick >= 0 && tick < 5
       },
-      { intervals: [40], timeout: 10_000 },
+      { intervals: [30], timeout: 10_000 },
     )
     .toBe(true)
-  await expect(badge(page)).toHaveText('LIVE')
   await expect(page.locator('.live-following')).toHaveText('following')
 }
 
-test('#live follows the episode in progress: the badge, a rising count, a new frame, a longer timeline', async ({
-  page,
-}) => {
+test('Watch follows live play: the strip shows each schema 2 tick as it arrives', async ({ page }) => {
   const errors = collectErrors(page)
   await followEarly(page)
   await expect(page).toHaveURL(/#live\/watch$/)
   await expect(page.locator('.watch-honesty')).toContainText('Live:')
-  const bar = page.getByRole('slider', { name: 'Decision' })
-  const before = Number(await bar.getAttribute('aria-valuemax'))
+  await expect(page.getByTestId('watch-counter')).toContainText('playing now')
+  const rows = page.getByTestId('sense-row')
+  await expect(rows).toHaveCount(5)
+  await expect(page.getByTestId('central-row')).toBeVisible()
   const first = await tickNow(page)
   await expect.poll(() => tickNow(page), { timeout: 2_000 }).toBeGreaterThan(first)
-  expect(Number(await bar.getAttribute('aria-valuemax'))).toBeGreaterThan(before)
-  await expect(page.getByTestId('watch-counter')).toContainText('playing now')
-  // Watch shows the newest frame as it arrives, and never loops while following.
-  const stage = page.locator('.watch-img.top')
-  const shown = await stage.getAttribute('src')
-  expect(shown).toMatch(/^episodes\/live-\d+\/frames\/\d{5}\.jpg$/)
-  await expect.poll(() => stage.getAttribute('src'), { timeout: 2_000 }).not.toBe(shown)
-
-  await page.keyboard.press('4')
-  await expect(page).toHaveURL(/#live\/overview$/)
-  await expect(page.getByTestId('live-line')).toBeVisible()
-  await page.keyboard.press('3')
-  await expect(page).toHaveURL(/#live\/tick$/)
-  const frame = page.locator('.frame img')
-  const src = await frame.getAttribute('src')
-  expect(src).toMatch(/^episodes\/live-\d+\/frames\/\d{5}\.jpg$/)
-  await expect.poll(() => frame.getAttribute('src'), { timeout: 2_000 }).not.toBe(src)
+  // The configuration line moves to version 2 once the admitted macro takes effect, and names its trial.
+  await expect(page.getByTestId('config-line')).toHaveAttribute('data-version', '2', { timeout: 5_000 })
+  await expect(page.getByTestId('config-line')).toContainText('trial in flight')
   expect(errors).toEqual([])
 })
 
-test('ArrowLeft stops following, and Follow returns to the newest tick', async ({ page }) => {
-  await followEarly(page)
-  await page.keyboard.press('ArrowLeft')
-  const follow = page.getByRole('button', { name: 'Follow' })
-  await expect(follow).toBeVisible()
-  const held = await tickNow(page)
-  await page.waitForTimeout(400)
-  expect(await tickNow(page)).toBe(held)
-  await expect(page).toHaveURL(new RegExp(`#live-\\d+/${held}/watch$`))
-
-  await follow.click()
-  await expect(page.locator('.live-following')).toBeVisible()
-  // Five ticks arrived during the 400 ms; Follow lands on the newest and keeps moving.
-  await expect.poll(() => tickNow(page), { timeout: 2_000 }).toBeGreaterThan(held + 4)
-  await expect(page).toHaveURL(/#live\/watch$/)
-})
-
-test('at the end the picker lists the episode with its result, the badge reads ended, and the next is followed', async ({
-  page,
-}) => {
-  await page.goto('./#live')
-  await expect(badge(page)).toHaveText('LIVE', { timeout: 10_000 })
-  const name = await picker(page).inputValue()
-  expect(name).toMatch(/^live-\d+$/)
-  await expect(badge(page)).toHaveText('ended', { timeout: 6_000 })
-  await expect(picker(page).locator(`optgroup[label="Live"] option[value="${name}"]`)).toHaveText(
-    /^deadly corridor · heuristics only · run \d+ · died$/,
-  )
-  await expect(badge(page)).toHaveText('LIVE', { timeout: 3_000 })
-  await expect(picker(page)).toHaveValue(`live-${Number(name.slice('live-'.length)) + 1}`)
-  await expect(page.locator('.live-following')).toBeVisible()
-  await expect(picker(page).locator('optgroup[label="Live"] option').first()).toHaveText(
-    /^live · deadly corridor · run \d+ · tick \d+$/,
-  )
-})
-
-test('every screen renders the live episode without console errors', async ({ page }) => {
+test('the slow system fills in as System 2’s records arrive as reflection events', async ({ page }) => {
   const errors = collectErrors(page)
-  await followEarly(page)
-  const screens: Array<[string, string]> = [
-    ['1', 'main.watch'],
-    ['2', 'main.hierarchy'],
-    ['3', 'main.main'],
-    ['4', 'main.overview'],
-    ['5', 'main.learning'],
-    ['6', 'main.menu-screen'],
-  ]
-  for (const [key, main] of screens) {
-    await page.keyboard.press(key)
-    await expect(page.locator(main)).toBeVisible()
-    await page.waitForTimeout(250)
-  }
-  await page.keyboard.press('i')
-  const dialog = page.getByRole('dialog', { name: 'Reference' })
-  await expect(dialog.getByTestId('recorded')).toHaveText(/^Running now, started /)
-  await expect(dialog.locator('.command code').first()).toHaveText(
-    'python -m system1_doom.serve --scenario deadly_corridor.cfg --seed 9 --model heuristics --pace 0.08',
-  )
+  await followEarly(page, 'slow')
+  await expect(page).toHaveURL(/#live\/slow$/)
+  const cycles = page.getByTestId('cycle-row')
+  // The first cycle comes after decision 8; the macro's trial starts at decision 11.
+  await expect(cycles.first()).toBeVisible({ timeout: 5_000 })
+  await expect(page.locator('[data-testid="version-card"][data-version="2"]')).toBeVisible({ timeout: 5_000 })
+  // The history test arrives with the third cycle, and its table with it.
+  await expect(page.getByTestId('history-test').getByTestId('test-row')).toHaveCount(12, { timeout: 8_000 })
+  await expect(page.locator('[data-testid="version-card"][data-version="3"]')).toBeVisible()
+  expect(await cycles.count()).toBeGreaterThanOrEqual(3)
   expect(errors).toEqual([])
 })
 
-test('a visit while serve sets up its first episode, with no recordings, rides in when it starts', async ({ page }) => {
-  const errors = collectErrors(page)
-  // No shipped recordings, nothing played yet, and a first stream that says so before it drops; the
-  // browser's reconnect reaches the stand-in, mid-episode.
-  await page.route('**/episodes/index.json', (route) => route.fulfill({ status: 404, body: 'Not found' }))
-  await page.route('**/live/status.json', async (route) => {
-    const response = await route.fetch()
-    const status = (await response.json()) as Record<string, unknown>
-    await route.fulfill({ response, json: { ...status, current: null, tick: null, episodes: [] } })
-  })
-  let first = true
-  await page.route('**/live/events', (route) => {
-    if (!first) return route.continue()
-    first = false
-    const hello = JSON.stringify({ current: null, tick: null, episodes: [] })
-    return route.fulfill({ contentType: 'text/event-stream', body: `retry: 500\nevent: hello\ndata: ${hello}\n\n` })
-  })
-  await page.goto('./')
-  await expect(badge(page)).toHaveText('LIVE', { timeout: 10_000 })
-  await expect(page.locator('.live-following')).toBeVisible()
-  await expect(page.getByRole('alert')).toHaveCount(0)
-  await expect(page).toHaveURL(/#live\/watch$/)
-  expect(errors.filter((e) => !e.includes('404'))).toEqual([])
-})
-
-test('a shipped recording still opens from the picker, and l comes back to the live episode', async ({ page }) => {
-  await followEarly(page)
-  await picker(page).selectOption('deadly_corridor-learned-9')
-  await expect(page).toHaveURL(/#deadly_corridor-learned-9\/0\/watch$/)
-  // On Watch a recording picked from the list plays from its start, as a card does.
-  await expect(page.getByTestId('watch-counter')).toContainText('of 52')
-  await expect.poll(() => tickNow(page), { timeout: 2_500 }).toBeGreaterThan(0)
-  await expect(page.getByTestId('live-status')).toHaveCount(0)
-  // The picker keeps the focus after a choice, and no key fires in a select.
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-  await page.keyboard.press('l')
-  await expect(badge(page)).toHaveText('LIVE', { timeout: 5_000 })
-  await expect(page.locator('.live-following')).toBeVisible()
-})
-
-test('the live bar keeps to one row at 1280 px, and fits a phone with no sideways scroll', async ({ page }) => {
-  await followEarly(page)
-  const tops = await page
-    .locator('.topbar > *')
-    .evaluateAll((items) => items.map((el) => el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2))
-  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(12)
-
-  await page.setViewportSize({ width: 390, height: 844 })
-  await expect(badge(page)).toBeVisible()
-  const box = await page.getByTestId('live-status').boundingBox()
-  expect(box && box.x + box.width).toBeLessThanOrEqual(390)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+test('The instances follows live play and shows the newest tick’s evidence', async ({ page }) => {
+  await followEarly(page, 'instances')
+  const panel = page.getByTestId('instance-panel')
+  await expect(panel).toHaveAttribute('data-instance', 'survival')
+  const text = page.getByTestId('evidence-text')
+  await expect(text).toContainText('[vitals]')
+  const first = await tickNow(page)
+  await expect.poll(() => tickNow(page), { timeout: 2_000 }).toBeGreaterThan(first)
+  expect((await text.textContent()) ?? '').not.toContain('[messages]')
 })

@@ -68,6 +68,8 @@ from system1_doom.controller import (
 from system1_doom.d1_client import InstanceCounters, TransportFn, load_api_key
 from system1_doom.features import encode_action
 from system1_doom.history import HISTORY_FILE, TickRecord
+from system1_doom.history_test import HistoryTestResult
+from system1_doom.instance import InstanceResult
 from system1_doom.logger import TRACE_SCHEMA_VERSION, ProposalTrace, TickTrace
 from system1_doom.reflection import (
     REFLECTIONS_FILE,
@@ -280,6 +282,8 @@ class TrustFile(BaseModel):
 
 
 class BundleIndexEntry(BaseModel):
+    """One line of `index.json`: what the app's picker and recording cards say before the bundle is opened."""
+
     model_config = ConfigDict(frozen=True)
 
     name: str
@@ -291,6 +295,9 @@ class BundleIndexEntry(BaseModel):
     died: bool
     reward: float
     ticks: int
+    kills: float = 0.0
+    configuration_start: int = Field(default=1, description="The configuration version the episode started from")
+    configuration_end: int = Field(default=1, description="The configuration version it ended at")
 
 
 def _jpeg(screen_buffer: np.ndarray, path: Path) -> None:
@@ -752,12 +759,15 @@ def index_entry(name: str, meta: EpisodeMeta) -> BundleIndexEntry:
         died=meta.result.died,
         reward=meta.result.reward,
         ticks=meta.tick_count,
+        kills=meta.result.kills,
+        configuration_start=meta.configuration_start.version,
+        configuration_end=meta.configuration_end.version,
     )
 
 
 def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
     """Write `index.json` listing every shippable schema-2 bundle under `episodes_dir`, by scenario,
-    networks and seed. Bundles of another schema version, and episodes that lost the connection, are left out."""
+    networks, seed and the configuration version it started from. Bundles of another schema version, and episodes that lost the connection, are left out."""
     entries = []
     for meta_path in sorted(episodes_dir.glob("*/episode.json")):
         raw = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -768,7 +778,7 @@ def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
             continue
         entries.append(index_entry(meta_path.parent.name, meta))
     order = {"none": 0, "best": 1, "latest": 2}
-    entries.sort(key=lambda e: (e.scenario, order[e.value_networks], e.seed))
+    entries.sort(key=lambda e: (e.scenario, order[e.value_networks], e.seed, e.configuration_start, e.name))
     (episodes_dir / "index.json").write_text(
         json.dumps({"schema_version": TRACE_SCHEMA_VERSION, "episodes": [e.model_dump() for e in entries]}, indent=2),
         encoding="utf-8",
@@ -777,7 +787,8 @@ def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
 
 
 def bundle_json_schema() -> Dict[str, Any]:
-    """One JSON Schema document whose $defs hold every record a bundle contains."""
+    """One JSON Schema document whose $defs hold every record a bundle contains, and the models inside them
+    the web app reads by name (its TypeScript types are generated from this document)."""
     models = (
         EpisodeMeta,
         TickTrace,
@@ -792,6 +803,10 @@ def bundle_json_schema() -> Dict[str, Any]:
         ReflectionTrace,
         TrialVerdictTrace,
         System2Note,
+        Configuration,
+        InstanceResult,
+        HistoryTestResult,
+        System2EpisodeSummary,
     )
     _, schema = models_json_schema(
         [(m, "serialization") for m in models],

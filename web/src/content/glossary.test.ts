@@ -4,8 +4,9 @@ import { Fragment, type ReactNode, createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { linkTerms } from '../components/Terms'
+import { SCREENS } from '../store'
 import { EXPLAINERS } from './explainers'
-import { GLOSSARY } from './glossary'
+import { GLOSSARY, REMOVED_TERMS } from './glossary'
 
 const REPO = new URL('../../../', import.meta.url)
 
@@ -20,22 +21,82 @@ function docsTerms(): string[] {
     .map((line) => (line.split('|')[1] ?? '').replaceAll('**', '').split(' / ')[0]!.split(/[(`]/)[0]!.trim())
 }
 
+const known = () => new Set(GLOSSARY.flatMap((e) => [e.term, ...e.aliases]).map((w) => w.toLowerCase()))
+
 describe('the glossary', () => {
-  it('has every term of the documentation glossary', () => {
+  it('has every term of the documentation glossary, which has at least sixteen', () => {
     const terms = docsTerms()
     expect(terms.length).toBeGreaterThanOrEqual(16)
-    const known = new Set(GLOSSARY.flatMap((e) => [e.term, ...e.aliases]).map((w) => w.toLowerCase()))
-    expect(terms.filter((t) => !known.has(t.toLowerCase()))).toEqual([])
+    const words = known()
+    expect(terms.filter((t) => !words.has(t.toLowerCase()))).toEqual([])
   })
 
-  it('links only to panels that exist and code that exists', () => {
+  it('has nothing the documentation glossary lacks: the two are kept together', () => {
+    const terms = new Set(docsTerms().map((t) => t.toLowerCase()))
+    expect(GLOSSARY.filter((e) => !terms.has(e.term.toLowerCase())).map((e) => e.term)).toEqual([])
+  })
+
+  it('names the design’s words', () => {
+    const words = known()
+    const design = [
+      'instance',
+      'sense',
+      'central',
+      'channel',
+      'scope',
+      'message',
+      'strength',
+      'relevance',
+      'configuration',
+      'miss',
+      'pick',
+      'reflector',
+      'history test',
+      'trial',
+      'judge',
+      'admit instance',
+      'action',
+      'macro',
+      'context signature',
+      'projection',
+      'value network',
+      'tick',
+      'bundle',
+      'live episode',
+      'slow path',
+    ]
+    expect(design.filter((w) => !words.has(w))).toEqual([])
+  })
+
+  it('no longer has the removed architecture’s words, in the app or in the documentation', () => {
+    const words = known()
+    const docs = new Set(docsTerms().map((t) => t.toLowerCase()))
+    for (const removed of REMOVED_TERMS) {
+      expect(words.has(removed), removed).toBe(false)
+      expect(docs.has(removed), removed).toBe(false)
+    }
+  })
+
+  it('links only to screens and panels that exist, and names code that exists', () => {
+    const screens = new Set(SCREENS.map((s) => s.id))
     for (const entry of GLOSSARY) {
-      for (const link of entry.see) if ('panel' in link && link.panel) expect(EXPLAINERS).toHaveProperty(link.panel)
-      const files = entry.code.match(/[a-z0-9_]+\.py/g) ?? []
-      expect(files.length, entry.id).toBeGreaterThan(0)
-      for (const file of files) {
-        expect(existsSync(fileURLToPath(new URL(`src/system1_doom/${file}`, REPO))), `${entry.id}: ${file}`).toBe(true)
+      expect(entry.see.length, entry.id).toBeGreaterThan(0)
+      for (const link of entry.see) {
+        expect(screens.has(link.screen), `${entry.id}: ${link.screen}`).toBe(true)
+        if (link.panel) expect(EXPLAINERS, `${entry.id}: ${link.panel}`).toHaveProperty(link.panel)
       }
+      expect(entry.code, entry.id).toMatch(/^[a-z0-9_]+\.py · [A-Za-z_][A-Za-z0-9_.]*$/)
+      const file = entry.code.split(' · ')[0] ?? ''
+      expect(existsSync(fileURLToPath(new URL(`src/system1_doom/${file}`, REPO))), `${entry.id}: ${file}`).toBe(true)
+    }
+  })
+
+  it('names code at real symbols, defined in the file it names', () => {
+    for (const entry of GLOSSARY) {
+      const [file = '', symbol = ''] = entry.code.split(' · ')
+      const source = readFileSync(new URL(`src/system1_doom/${file}`, REPO), 'utf8')
+      const name = symbol.split('.').at(-1) ?? ''
+      expect(source, `${entry.id}: ${entry.code}`).toMatch(new RegExp(`^\\s*(class|def) ${name}\\b`, 'm'))
     }
   })
 
@@ -52,6 +113,15 @@ describe('the glossary', () => {
   })
 })
 
+describe('the explainers', () => {
+  it('give a formula only for the n-step return and the history test’s metrics', () => {
+    const withFormula = Object.entries(EXPLAINERS)
+      .filter(([, e]) => 'formula' in e && e.formula)
+      .map(([id]) => id)
+    expect(withFormula.sort()).toEqual(['history-test', 'ledger', 'relevance-episodes'])
+  })
+})
+
 describe('linkTerms', () => {
   const html = (nodes: ReactNode[]) => renderToStaticMarkup(createElement(Fragment, null, ...nodes))
   const links = (markup: string) =>
@@ -59,34 +129,35 @@ describe('linkTerms', () => {
 
   it('links whole words, longest first, each entry once', () => {
     const markup = html(
-      linkTerms('The arbiter blends the gate share g with trust λ; the ticket is not a tick.', new Set()),
+      linkTerms(
+        'The trial judge read the trial table; a history test is not a history; the ticket is no tick.',
+        new Set(),
+      ),
     )
     expect(links(markup)).toEqual([
-      ['arbiter', 'arbiter'],
-      ['gate-network', 'gate share'],
-      ['trust-lambda', 'trust λ'],
+      ['judge', 'trial judge'],
+      ['trial', 'trial'],
+      ['history-test', 'history test'],
       ['tick', 'tick'],
     ])
-    expect(markup).toContain('the ticket is not a <span')
-    expect(markup).not.toMatch(/data-term="[^"]+"[^>]*>g</)
+    expect(markup).toContain('the ticket is no <span')
   })
 
-  it('never links a bare “gate”, and links a term once across paragraphs sharing a set', () => {
+  it('keeps hyphenated words whole and links a term once across paragraphs sharing a set', () => {
     const seen = new Set<string>()
-    expect(links(html(linkTerms('The gate rejected it; the arbiter moved on.', seen)))).toEqual([
-      ['arbiter', 'arbiter'],
+    expect(links(html(linkTerms('Every d1-ultra answer; the scope-chips are not a scope.', seen)))).toEqual([
+      ['d1-ultra', 'd1-ultra'],
+      ['scope', 'scope'],
     ])
-    expect(links(html(linkTerms('The Arbiter, again, and the admission gate.', seen)))).toEqual([
-      ['admission-gate', 'admission gate'],
-    ])
-    expect([...seen]).toEqual(['arbiter', 'admission-gate'])
+    expect(links(html(linkTerms('The Scope again, and a reflector.', seen)))).toEqual([['reflector', 'reflector']])
+    expect([...seen]).toEqual(['d1-ultra', 'scope', 'reflector'])
   })
 
   it('links a word at the very start and words one character apart', () => {
-    expect(links(html(linkTerms('Tick/arbiter', new Set())))).toEqual([
+    expect(links(html(linkTerms('Tick/scope', new Set())))).toEqual([
       ['tick', 'Tick'],
-      ['arbiter', 'arbiter'],
+      ['scope', 'scope'],
     ])
-    expect(html(linkTerms('Tick/arbiter', new Set()))).toMatch(/<\/span>\/<span/)
+    expect(html(linkTerms('Tick/scope', new Set()))).toMatch(/<\/span>\/<span/)
   })
 })
