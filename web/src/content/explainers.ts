@@ -144,10 +144,6 @@ export const BEATS = [
 ] as const
 
 export const STORY = {
-  sentence:
-    'Every tick this controller freezes the world, shortens a menu of actions, asks five small deciders for their opinion, lets one arbiter pick, executes the pick with fixed reflexes, and files what came back.',
-  invariant:
-    'Each level chooses from a short menu it cannot leave. Learning changes how the menus are weighed, never their shape.',
   howto:
     'Step through the episode with ← and → (Shift for ten) or press play; hover any bar or chip for its numbers; click ? on a panel for the full explanation, and a dotted word in it for the glossary; press ? for the keys; switch Depth to Formula for this tick\u2019s arithmetic.',
 }

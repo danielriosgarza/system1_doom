@@ -1,15 +1,14 @@
 import { LIVE_COPY } from '../content/live'
-import { fmt, gameSeconds } from '../data/derive'
 import { type PickerEntry, mergedEpisodes } from '../data/live'
 import type { BundleIndexEntry } from '../schema/bundle'
-import { SCREENS, followLive, openDrawer, openEpisode, setScreen, setState, startTour, useApp } from '../store'
+import { SCREENS, followLive, openDrawer, openEpisode, openRecording, setScreen, setState, useApp } from '../store'
 
 const scenarioWords = (scenario: string) => scenario.replace('.cfg', '').replaceAll('_', ' ')
 
-/** How a recording is named in the picker. */
+/** How a recording is named in the picker, in the words Watch's cards use. */
 function recordingLabel(e: BundleIndexEntry): string {
-  const brain = e.model === 'heuristics' ? 'heuristics only' : 'learned networks'
-  return `${scenarioWords(e.scenario)} · ${brain} · seed ${e.seed} · ${e.cleared ? 'cleared' : e.died ? 'died' : 'survived'}`
+  const brain = e.model === 'heuristics' ? 'heuristics only' : 'trained networks'
+  return `${scenarioWords(e.scenario)} · ${brain} · run ${e.seed} · ${e.cleared ? 'cleared' : e.died ? 'died' : 'survived'}`
 }
 
 function EpisodeOption({ item, scenario }: { item: PickerEntry; scenario: string }) {
@@ -22,12 +21,12 @@ function EpisodeOption({ item, scenario }: { item: PickerEntry; scenario: string
   }
   return (
     <option value={item.name}>
-      live · {scenarioWords(scenario)} · seed {item.seed} · tick {item.tick ?? 0}
+      live · {scenarioWords(scenario)} · run {item.seed} · tick {item.tick ?? 0}
     </option>
   )
 }
 
-/** The LIVE badge beside the tick counter while the open episode is live; it reads “ended” once it has. */
+/** The LIVE badge beside the episode picker while the open episode is live; it reads “ended” once it has. */
 function LiveBadge() {
   const bundle = useApp((s) => s.bundle)
   const liveOpen = useApp((s) => s.liveOpen)
@@ -57,23 +56,24 @@ function LiveBadge() {
   )
 }
 
+/**
+ * Five things on every screen: the name, the screens, the episode picker, the reference and the theme. The
+ * tick counter sits in the timeline, Depth and the tour in the headers of the screens that use them.
+ */
 export function TopBar() {
   const index = useApp((s) => s.index)
   const bundle = useApp((s) => s.bundle)
-  const tickIndex = useApp((s) => s.tickIndex)
   const screen = useApp((s) => s.screen)
-  const depth = useApp((s) => s.depth)
   const theme = useApp((s) => s.theme)
-  const tour = useApp((s) => s.tour)
   const live = useApp((s) => s.live)
-  const following = useApp((s) => s.following)
   const liveOpen = useApp((s) => s.liveOpen)
-  const tick = bundle?.ticks[tickIndex]
   const items = mergedEpisodes(index, live)
   const liveItems = items.filter((e) => e.live !== null)
   const recordings = items.filter((e) => e.live === null)
+  // On Watch a recording picked here plays from the start, as a card does; elsewhere it opens at its first tick.
   const pick = (name: string) => {
     if (name === live?.current) followLive()
+    else if (screen === 'watch') void openRecording(name)
     else void openEpisode(name)
   }
   return (
@@ -94,6 +94,7 @@ export function TopBar() {
           </button>
         ))}
       </nav>
+      <LiveBadge />
       <label className="control">
         <select value={bundle?.name ?? ''} onChange={(e) => pick(e.target.value)} aria-label="Recorded episode">
           {liveItems.length > 0 ? (
@@ -118,57 +119,17 @@ export function TopBar() {
       </label>
       <button
         type="button"
-        className="icon-button glyph-button"
-        data-opens="recording"
-        aria-haspopup="dialog"
-        aria-label="About this recording"
-        title="About this recording (i)"
-        onClick={() => openDrawer('recording')}
-      >
-        ⓘ
-      </button>
-      {bundle && tick && (
-        // While following a live episode the count changes several times a second: too often to announce.
-        <span className="control tick-counter" aria-live={following ? 'off' : 'polite'} data-testid="tick-counter">
-          Tick {tick.tick}
-          <span className="tick-last"> / {bundle.meta.last_tick}</span>
-          <span className="tick-seconds"> · {fmt(gameSeconds(tick.tick), 1)} s</span>
-        </span>
-      )}
-      <LiveBadge />
-      <button
-        type="button"
-        className="icon-button"
-        onClick={startTour}
-        disabled={!bundle || tour !== null}
-        title="A six-step walk through one real tick"
-      >
-        Tour
-      </button>
-      <button
-        type="button"
-        className="icon-button"
+        className="icon-button topbar-ref"
         data-opens="glossary"
         aria-haspopup="dialog"
-        title="Every word the app uses: what it means, where to see it, where it lives in the code (g)"
+        title="The glossary, the principles, how this recording was made, and the keys (g)"
         onClick={() => openDrawer('glossary')}
       >
-        Glossary
+        Reference
       </button>
-      <span className="control">
-        <span className="control-label">Depth</span>
-        <span className="segmented" role="group" aria-label="Explanation depth">
-          <button type="button" aria-pressed={depth === 'plain'} onClick={() => setState({ depth: 'plain' })}>
-            Plain
-          </button>
-          <button type="button" aria-pressed={depth === 'formula'} onClick={() => setState({ depth: 'formula' })}>
-            Formula
-          </button>
-        </span>
-      </span>
       <button
         type="button"
-        className="icon-button"
+        className="icon-button topbar-theme"
         onClick={() => setState({ theme: theme === 'dark' ? 'light' : 'dark' })}
         aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
       >

@@ -14,16 +14,19 @@ export const KEY_GROUPS: Array<{ title: string; rows: KeyRow[] }> = [
       { keys: ['Shift', '←', '→'], does: 'ten ticks back or forward' },
       { keys: ['Home'], does: 'the first tick' },
       { keys: ['End'], does: 'the last tick' },
-      { keys: ['Space'], does: 'play or pause' },
+      { keys: ['Space'], does: 'play or pause; Watch’s Real time and Slow, and the timeline’s, set the pace' },
       { keys: ['l'], does: 'follow the live episode, opening it if another is open (only while serve is playing)' },
     ],
   },
   {
     title: 'Screens and settings',
     rows: [
-      { keys: ['1', '2', '3', '4', '5'], does: 'Overview, Tick, Hierarchy, Learning, Growing the menu' },
+      {
+        keys: ['1', '2', '3', '4', '5', '6'],
+        does: 'Watch, The chain, The inspector, The diagram, Learning, Growing the menu',
+      },
       { keys: ['f'], does: 'switch Depth between Plain and Formula' },
-      { keys: ['t'], does: 'start the tour' },
+      { keys: ['t'], does: 'start the tour, from any screen' },
     ],
   },
   {
@@ -50,4 +53,4 @@ export const KEYS_NOTE =
   'No key fires while you type in a box, such as the glossary filter, or while Ctrl, Alt or ⌘ is held; while the reference is open, only Esc and Tab reach the app.'
 
 export const SETTINGS_NOTE =
-  'The two settings at the right of the top bar, Depth and the theme, are remembered in this browser.'
+  'The theme, Depth, the pace and a dismissed “How to read this” card are remembered in this browser.'

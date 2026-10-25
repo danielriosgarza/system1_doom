@@ -6,11 +6,13 @@ import { Tour } from './components/Tour'
 import type { ExplainerContext } from './content/explainers'
 import { LIVE_COPY } from './content/live'
 import { admissions } from './data/derive'
+import { PACE_MS } from './data/playback'
 import { Hierarchy } from './screens/Hierarchy'
 import { Inspector } from './screens/Inspector'
 import { Learning } from './screens/Learning'
 import { Menu } from './screens/Menu'
 import { Overview } from './screens/Overview'
+import { Watch } from './screens/Watch'
 import {
   SCREENS,
   closeDrawer,
@@ -26,7 +28,9 @@ import {
   start,
   startTour,
   step,
+  togglePlay,
   useApp,
+  usePlayback,
 } from './store'
 
 function isTyping(target: EventTarget | null): boolean {
@@ -45,6 +49,9 @@ export default function App() {
   const hovered = useApp((s) => s.hoveredAction)
   const screen = useApp((s) => s.screen)
   const tour = useApp((s) => s.tour)
+  const pace = useApp((s) => s.pace)
+  // The playback timer runs here, so a recording plays on every screen, Watch included, which has no timeline.
+  usePlayback()
 
   useEffect(() => {
     void start()
@@ -63,7 +70,7 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { tour: tourStep, bundle: current, playing, drawer } = getState()
+      const { tour: tourStep, bundle: current, drawer } = getState()
       // While the reference drawer is open, only Esc (here) and Tab (inside the dialog) reach the app.
       if (drawer !== null) {
         if (e.key === 'Escape') {
@@ -96,9 +103,8 @@ export default function App() {
       else if (e.key === 'ArrowLeft') step(e.shiftKey ? -10 : -1)
       else if (e.key === 'Home') setTickIndex(0)
       else if (e.key === 'End') setTickIndex(count - 1)
-      else if (e.key === ' ' && (e.target as HTMLElement | null)?.tagName !== 'BUTTON') {
-        setState({ playing: !playing, following: false })
-      } else return
+      else if (e.key === ' ' && (e.target as HTMLElement | null)?.tagName !== 'BUTTON') togglePlay()
+      else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
@@ -123,7 +129,8 @@ export default function App() {
       : null
 
   return (
-    <div className="app">
+    // One decision's span on screen, for animations that run once per decision.
+    <div className="app" style={{ ['--decision-ms' as string]: `${Math.round(PACE_MS[pace])}ms` }}>
       <TopBar />
       {error && (
         <p className="status error" role="alert">
@@ -134,12 +141,13 @@ export default function App() {
       {!error && bundle && !tick && <p className="status">{LIVE_COPY.waiting}</p>}
       {bundle && tick && ctx && (
         <>
+          {screen === 'watch' && <Watch bundle={bundle} tick={tick} tickIndex={tickIndex} />}
           {screen === 'overview' && <Overview bundle={bundle} tick={tick} ctx={ctx} />}
           {screen === 'tick' && <Inspector bundle={bundle} tick={tick} admitted={admitted} ctx={ctx} />}
           {screen === 'hierarchy' && <Hierarchy bundle={bundle} tick={tick} tickIndex={tickIndex} ctx={ctx} />}
           {screen === 'learning' && <Learning bundle={bundle} tick={tick} ctx={ctx} />}
           {screen === 'menu' && <Menu bundle={bundle} tick={tick} ctx={ctx} />}
-          <Scrubber ticks={bundle.ticks} admitted={admitted} ctx={ctx} />
+          {screen !== 'watch' && <Scrubber ticks={bundle.ticks} admitted={admitted} ctx={ctx} />}
           {tour !== null && <Tour step={tour} bundle={bundle} tick={tick} />}
           <Reference bundle={bundle} ctx={ctx} />
         </>

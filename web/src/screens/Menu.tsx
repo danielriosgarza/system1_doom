@@ -1,4 +1,5 @@
 import { AdmissionGate } from '../components/AdmissionGate'
+import { HeadTools } from '../components/DepthToggle'
 import { FollowUp } from '../components/FollowUp'
 import { Panel } from '../components/Panel'
 import { ProposalCard } from '../components/ProposalCard'
@@ -44,12 +45,15 @@ export function Menu({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: TickT
   return (
     <main className="menu-screen" aria-label="Growing the menu">
       <header className="screen-head">
-        <h2>Growing the menu: the one part that writes something new</h2>
-        <p>
-          Everything else in the controller chooses from a menu it cannot change. This path is the exception: a module
-          names a repeated failure in one sentence, a slow worker outside the real-time loop writes a macro, five checks
-          decide whether it joins the menu, and from then on it competes like every other action.
-        </p>
+        <div>
+          <h2>Growing the menu: the one part that writes something new</h2>
+          <p>
+            Everything else in the controller chooses from a menu it cannot change. This path is the exception: a module
+            names a repeated failure in one sentence, a slow worker outside the real-time loop writes a macro, five
+            checks decide whether it joins the menu, and from then on it competes like every other action.
+          </p>
+        </div>
+        <HeadTools />
       </header>
 
       <Panel id="requests" ctx={ctx} bounds={['one counter, one threshold', 'one proposal in flight']}>

@@ -152,7 +152,7 @@ code,
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 5px 8px;
-  max-width: 320px;
+  max-width: 340px;
 }
 
 @media (max-width: 1500px) {
@@ -161,7 +161,7 @@ code,
   }
 }
 
-/* At laptop widths the bar keeps to one row: tighter gaps, a shorter picker, no label before Depth, no seconds. */
+/* At laptop widths the bar keeps to one row: tighter gaps, and below 1360 px a shorter picker. */
 @media (max-width: 1440px) {
   .topbar {
     gap: 8px 10px;
@@ -169,21 +169,57 @@ code,
   }
 
   .control select {
-    max-width: 180px;
+    max-width: 380px;
   }
 
-  .topbar .segmented button,
   .topbar .icon-button {
-    padding: 5px 8px;
+    padding: 5px 9px;
   }
 
-  .control-label,
-  .tick-seconds {
+  .topbar .screens button {
+    padding: 4px 9px;
+  }
+}
+
+@media (max-width: 1360px) {
+  .control select {
+    max-width: 300px;
+  }
+}
+
+/* Below a laptop the screens take a row of their own, and scroll sideways when they do not fit it. */
+@media (max-width: 1100px) {
+  .topbar {
+    gap: 8px;
+  }
+
+  .topbar .live-status {
+    margin-left: auto;
+  }
+
+  .topbar .screens {
+    order: 5;
+    flex: 1 0 100%;
+    margin-right: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .topbar .screens::-webkit-scrollbar {
     display: none;
   }
 
   .topbar .screens button {
-    padding: 4px 7px;
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .topbar .control {
+    margin-left: auto;
+  }
+
+  .topbar .live-status + .control {
+    margin-left: 0;
   }
 }
 
@@ -271,14 +307,10 @@ code,
   font-size: 12px;
 }
 
-/* At laptop widths a live episode makes room for its badge: a shorter picker, no newest-tick count. */
+/* At laptop widths a live episode makes room for its badge with a shorter picker. */
 @media (max-width: 1440px) {
   .topbar.is-live .control select {
-    max-width: 110px;
-  }
-
-  .topbar.is-live .tick-last {
-    display: none;
+    max-width: 160px;
   }
 }
 
@@ -298,7 +330,7 @@ code,
   }
 }
 
-/* Screen tabs, left of the episode picker; later screens slot in here. */
+/* Screen tabs, left of the episode picker. */
 .screens {
   display: inline-flex;
   gap: 2px;
@@ -327,15 +359,39 @@ code,
   font-weight: 650;
 }
 
-/* Five tabs do not fit a phone in one row: let them wrap inside the bar. */
+/* On a phone: the name, the reference and the theme on the first row, the screens on the next, scrolling
+   sideways in one row, and the picker last. */
 @media (max-width: 640px) {
-  .screens {
-    flex-wrap: wrap;
-    max-width: 100%;
+  .topbar .brand {
+    margin-right: auto;
+  }
+
+  .topbar-ref,
+  .topbar-theme {
+    order: 1;
+  }
+
+  .topbar .screens {
+    order: 2;
+  }
+
+  .topbar .live-status,
+  .topbar .control {
+    order: 3;
+    margin-left: 0;
+  }
+
+  .topbar .control {
+    flex: 1 1 auto;
+  }
+
+  .topbar .control select {
+    max-width: none;
+    width: 100%;
   }
 
   .topbar .screens button {
-    padding: 4px 8px;
+    padding: 4px 9px;
   }
 }
 
@@ -344,11 +400,32 @@ code,
   cursor: default;
 }
 
-/* The inspector's compact header: the six beats, then how to use the screen. */
+/* The inspector's compact header: the six beats and the tools, then how to use the screen. */
 .inspector-head {
   max-width: 1480px;
   margin: 0 auto;
   padding: 12px 20px 2px;
+}
+
+.inspector-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+}
+
+/* Depth and the tour, at the right of a screen's header. */
+.head-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.head-tools .control-label {
+  color: var(--faint);
+  font-size: 12.5px;
 }
 
 .howto {
@@ -465,7 +542,7 @@ code,
 }
 
 @media (max-width: 640px) {
-  /* The bar wraps to four rows on a phone; let it scroll away instead of covering a quarter of the screen. */
+  /* The bar takes three rows on a phone; let it scroll away instead of covering a sixth of the screen. */
   .topbar {
     position: static;
   }
@@ -474,9 +551,559 @@ code,
   .inspector-head,
   .overview,
   .hierarchy,
+  .watch,
   .main {
     padding-left: 12px;
     padding-right: 12px;
+  }
+}
+
+/* ------------------------------------------------------------------ watch: the landing */
+
+.watch {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 22px 24px 48px;
+}
+
+.watch-head h2 {
+  margin: 0;
+  max-width: 860px;
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.watch-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* The game on the left at twice its size, the chain on the right; one column below a laptop. */
+.watch-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 640px) minmax(320px, 1fr);
+  gap: 28px;
+  margin-top: 18px;
+  align-items: start;
+}
+
+.watch-left {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.watch-right {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.watch-frame {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+/* Two stacked images: the one on top fades in over the frame before it. */
+.watch-img {
+  z-index: 0;
+}
+
+.watch-img.top {
+  z-index: 1;
+  animation: watch-fade 100ms ease-out;
+}
+
+.watch-frame svg {
+  z-index: 2;
+}
+
+@keyframes watch-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.watch-end {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 3;
+  padding: 48px 18px 18px;
+  background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.78));
+  color: #fff;
+  text-align: center;
+}
+
+.watch-end p {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 650;
+}
+
+.watch-end .watch-again {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.watch-bigplay {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px 14px 24px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+.watch-bigplay-icon {
+  font-size: 15px;
+}
+
+.watch-bigplay:focus-visible {
+  outline-offset: 4px;
+}
+
+.watch-progress svg {
+  display: block;
+  width: 100%;
+  height: 26px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.wp-track {
+  fill: var(--panel-2);
+  stroke: var(--border);
+}
+
+.wp-played {
+  fill: var(--accent-soft);
+}
+
+.wp-cursor {
+  fill: var(--accent);
+  opacity: 0.55;
+}
+
+.wp-health {
+  fill: none;
+  stroke: var(--pos);
+  stroke-width: 1.5;
+}
+
+.watch-transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+/* A fixed width, so the bar does not shift as the label changes between Play and Pause. */
+.watch-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 100px;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.watch-play-icon {
+  width: 14px;
+  font-size: 11px;
+  letter-spacing: -0.15em;
+  text-align: center;
+}
+
+.watch-counter {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.watch-honesty {
+  margin: 0;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.watch-honesty .link-button {
+  font-size: inherit;
+}
+
+/* The chain: six rows, each a button into the chain screen. */
+.chain-strip {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 12px 8px;
+}
+
+.chain-head {
+  padding: 0 6px;
+}
+
+.chain-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.chain-head p {
+  margin: 2px 0 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.chain-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chain-rows li + li {
+  border-top: 1px solid var(--border);
+}
+
+/* Fixed heights, so a choice that wraps to two lines never moves the rows below it. */
+.chain-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 4px 12px;
+  width: 100%;
+  min-height: 66px;
+  margin: 2px 0;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chain-row:hover {
+  background: var(--hover-soft);
+}
+
+/* The highlight when a row's choice changes: a bar at its left edge and a faint wash, gone in about 0.3 s. */
+.chain-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: chain-pulse 300ms ease-out;
+}
+
+@keyframes chain-pulse {
+  0%,
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.chain-num {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--panel-3);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: background-color 120ms ease-out;
+}
+
+/* The number lights while its level's choice is new this decision. */
+.chain-row[data-changed] .chain-num {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.chain-label,
+.chain-choice {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+
+.chain-name {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.chain-gloss {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.chain-choice {
+  gap: 5px;
+}
+
+.chain-value {
+  display: flex;
+  align-items: center;
+  height: 2.6em;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.chain-row.idle .chain-value {
+  color: var(--faint);
+}
+
+.chain-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel-3);
+  overflow: hidden;
+}
+
+.chain-bar:empty {
+  visibility: hidden;
+}
+
+.chain-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 160ms ease-out;
+}
+
+.help-card {
+  position: relative;
+  padding: 12px 16px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+.help-card h3 {
+  margin: 0 0 6px;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.help-card ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.help-card .icon-button {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.recordings {
+  margin-top: 40px;
+}
+
+.recordings-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.recordings-head p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.recording-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recording-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 8px;
+  padding-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.recording-card:hover {
+  border-color: var(--n3);
+}
+
+.recording-card.open {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* The whole card plays its recording; the link below it sits above that and opens how it was made. */
+.recording-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 14px 14px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recording-main::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+}
+
+.recording-main:focus-visible {
+  outline: none;
+}
+
+.recording-main:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.recording-now {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.recording-brain {
+  font-size: 14.5px;
+  font-weight: 650;
+}
+
+.recording-gloss {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.recording-result {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.recording-made {
+  position: relative;
+  z-index: 1;
+  justify-self: start;
+  margin: 0 14px;
+  font-size: 12.5px;
+}
+
+@media (max-width: 1100px) {
+  .watch-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .watch-left,
+  .watch-right {
+    width: 100%;
+    max-width: 720px;
+    justify-self: center;
+  }
+
+  .recording-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .watch {
+    padding-top: 14px;
+  }
+
+  .watch-head h2 {
+    font-size: 18px;
+  }
+
+  .watch-head p {
+    font-size: 14px;
+  }
+
+  .watch-grid {
+    margin-top: 12px;
+    gap: 18px;
+  }
+
+  /* On a phone each row stacks: the name and what it means, then the choice under them. */
+  .chain-row {
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .chain-choice {
+    grid-column: 2;
+  }
+
+  .watch-counter {
+    margin-left: 0;
+    flex: 1 0 100%;
+  }
+
+  .recording-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .watch-img.top,
+  .chain-pulse {
+    animation: none;
+  }
+
+  .chain-bar span,
+  .chain-num {
+    transition: none;
   }
 }
 
@@ -492,7 +1119,9 @@ code,
 }
 
 .panel.flash,
-.scrubber.flash {
+.scrubber.flash,
+.decision-card.flash,
+.prov-live.flash {
   animation: flash 1.2s ease-out;
 }
 
@@ -1514,6 +2143,20 @@ code,
   pointer-events: none;
 }
 
+.scrubber .tick-counter {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.scrub-pace {
+  justify-self: start;
+  font-size: 12px;
+}
+
+.scrub-pace button {
+  padding: 3px 8px;
+}
+
 .track-legend {
   grid-column: 2;
   display: flex;
@@ -1620,20 +2263,30 @@ code,
     max-width: 72vw;
   }
 
+  /* The transport and the counter share a row; the pace is set on Watch, or with the keys. */
   .scrubber-inner {
-    grid-template-columns: minmax(0, 1fr);
     padding: 6px 12px 8px;
   }
 
+  .scrubber-inner .track {
+    grid-column: 1 / -1;
+  }
+
+  .scrubber-inner .tick-counter {
+    grid-row: 1;
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .scrub-pace {
+    display: none;
+  }
+
   .track-legend {
-    grid-column: 1;
+    grid-column: 1 / -1;
     flex-wrap: nowrap;
     overflow-x: auto;
     white-space: nowrap;
-  }
-
-  .scrubber-inner > span:empty {
-    display: none;
   }
 
   .scrub-sentence {
@@ -1704,6 +2357,11 @@ code,
 
 .intro {
   max-width: 1040px;
+}
+
+.overview-title {
+  margin: 0 0 8px;
+  font-size: 17px;
 }
 
 .story-line {
@@ -1928,10 +2586,10 @@ code,
   opacity: 0.5;
 }
 
-/* One pulse runs down the fast path per tick while playing, inside the 450 ms step. */
+/* One pulse runs down the fast path per tick while playing, inside one decision's span at the pace chosen. */
 .pulse {
   fill: var(--accent);
-  animation: pulse-travel 0.42s ease-in-out forwards;
+  animation: pulse-travel calc(var(--decision-ms, 450ms) * 0.92) ease-in-out forwards;
 }
 
 @keyframes pulse-travel {
@@ -1954,7 +2612,9 @@ code,
   }
 
   .panel.flash,
-  .scrubber.flash {
+  .scrubber.flash,
+  .decision-card.flash,
+  .prov-live.flash {
     animation: none;
   }
 }
@@ -2006,6 +2666,23 @@ code,
   max-width: 1480px;
   margin: 0 auto;
   padding: 14px 20px 24px;
+}
+
+.screen-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0 24px;
+}
+
+.screen-head > div:first-child {
+  flex: 1 1 560px;
+  min-width: 0;
+}
+
+.screen-head .head-tools {
+  margin-bottom: 12px;
 }
 
 .screen-head h2 {
@@ -2082,6 +2759,7 @@ code,
   border-radius: 12px;
   padding: 10px 14px 12px;
   min-width: 0;
+  scroll-margin-top: 70px;
 }
 
 .decision-card.idle {
@@ -2460,6 +3138,15 @@ code,
   border-radius: 12px;
   padding: 10px 14px 12px;
   min-width: 0;
+}
+
+/* The frame the agent saw, at the top of the chain's side column. */
+.saw-card .frame {
+  margin: 8px 0 8px;
+}
+
+.saw-card .link-button {
+  font-size: 13px;
 }
 
 .side-card h3 {

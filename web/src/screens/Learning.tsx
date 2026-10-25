@@ -1,3 +1,4 @@
+import { HeadTools } from '../components/DepthToggle'
 import { GateView } from '../components/GateView'
 import { HeadToHead } from '../components/HeadToHead'
 import { LearningCurves } from '../components/LearningCurves'
@@ -41,15 +42,18 @@ export function Learning({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: T
   return (
     <main className="learning" aria-label="Learning across episodes">
       <header className="screen-head">
-        <h2>Learning: how the networks earned their say</h2>
-        <p>
-          The networks never change the menu or the levels. They learn between episodes how to weigh what each level
-          already offers: trust per situation and action for the five modules, and a gate that re-weighs the modules for
-          the arbiter.{' '}
-          {learned
-            ? `This recording loaded the checkpoint saved after ${meta.checkpoint?.episodes ?? '?'} training episodes.`
-            : 'This recording was played by the heuristics alone; the training run below is the one the other recording of this seed used.'}
-        </p>
+        <div>
+          <h2>Learning: how the networks earned their say</h2>
+          <p>
+            The networks never change the menu or the levels. They learn between episodes how to weigh what each level
+            already offers: trust per situation and action for the five modules, and a gate that re-weighs the modules
+            for the arbiter.{' '}
+            {learned
+              ? `This recording loaded the checkpoint saved after ${meta.checkpoint?.episodes ?? '?'} training episodes.`
+              : 'This recording was played by the heuristics alone; the training run below is the one the other recording of this seed used.'}
+          </p>
+        </div>
+        <HeadTools />
       </header>
 
       <h3 className="section-head">Across episodes</h3>

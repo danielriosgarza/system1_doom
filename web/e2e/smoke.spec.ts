@@ -7,6 +7,8 @@ interface Trace {
   available_actions: string[]
   context_signature: string
   arbiter?: { gate_share?: number | null } | null
+  state?: { enemies?: unknown[] } | null
+  outcome?: { kills_delta?: number } | null
 }
 
 function ticksOf(episode: string): Trace[] {
@@ -19,6 +21,21 @@ function ticksOf(episode: string): Trace[] {
 
 const pretty = (id: string) => id.replaceAll('_', ' ')
 
+const index = JSON.parse(readFileSync(new URL('../public/episodes/index.json', import.meta.url), 'utf8')) as {
+  episodes: Array<{ name: string; cleared: boolean }>
+}
+/** The recording a fresh visit opens: the first that cleared its level. */
+const featured = (index.episodes.find((e) => e.cleared) ?? index.episodes[0])?.name as string
+
+/** The tour's tick: the first kill with an enemy in view, else the first tick with one in view. */
+function tourTick(ticks: Trace[]): number {
+  const inView = (t: Trace) => (t.state?.enemies?.length ?? 0) > 0
+  return (ticks.find((t) => inView(t) && (t.outcome?.kills_delta ?? 0) > 0) ?? ticks.find(inView) ?? ticks[0])
+    ?.tick as number
+}
+
+const screens = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Screens' })
+
 function collectErrors(page: import('@playwright/test').Page): string[] {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
@@ -30,16 +47,15 @@ test('scrubbing to tick 5 shows the action the trace selected', async ({ page })
   const errors = collectErrors(page)
 
   await page.goto('./')
-  await page.getByRole('navigation', { name: 'Screens' }).getByRole('button', { name: 'Tick' }).click()
-  const index = JSON.parse(readFileSync(new URL('../public/episodes/index.json', import.meta.url), 'utf8')) as {
-    episodes: Array<{ name: string }>
-  }
-  const first = index.episodes[0]?.name as string
+  await screens(page).getByRole('button', { name: 'The inspector' }).click()
+  const first = featured
   const trace = ticksOf(first).find((t) => t.tick === 5) as Trace
 
+  // Leaving Watch paused the landing wherever it was; Home goes back to the first tick.
+  await page.locator('body').click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('Home')
   await expect(page.locator('.tick-counter')).toContainText('Tick 0 /')
   // Scrub with the keyboard, the way the timeline's explainer says to.
-  await page.locator('body').click({ position: { x: 5, y: 5 } })
   for (let i = 0; i < 5; i += 1) await page.keyboard.press('ArrowRight')
   await expect(page.locator('.tick-counter')).toContainText('Tick 5 /')
   await expect(page).toHaveURL(new RegExp(`#${first}/5$`))
@@ -77,33 +93,34 @@ test('a link opens the same tick of another episode, and the timeline is clickab
   await expect(page.locator('#panel-arbiter .formula')).toContainText('score(a) =')
 })
 
-test('a fresh visit opens the overview, and the tour walks six beats to the hierarchy', async ({ page }) => {
+test('the tour starts from the chain and walks six beats back to the chain', async ({ page }) => {
   const errors = collectErrors(page)
   await page.goto('./')
-  await expect(page.locator('svg.architecture')).toBeVisible()
-  await expect(page).toHaveURL(/\/0\/overview$/)
+  await expect(page).toHaveURL(new RegExp(`#${featured}/0/watch$`))
+  // Watch has no tour; the chain and the inspector do.
+  await expect(page.getByRole('button', { name: 'Take the tour' })).toHaveCount(0)
+  await screens(page).getByRole('button', { name: 'The chain' }).click()
 
   await page.getByRole('button', { name: 'Take the tour' }).click()
   const card = page.getByRole('dialog')
   // The tour runs on the featured tick: the first kill with an enemy in view.
-  await expect(page.locator('.tick-counter')).toContainText('Tick 2 /')
+  const at = tourTick(ticksOf(featured))
+  await expect(page.locator('.tick-counter')).toContainText(`Tick ${at} /`)
   const beats = ['Freeze the world', 'Shorten the menu', 'Five opinions', 'One decision', 'Act', 'See and remember']
   for (const [i, beat] of beats.entries()) {
     await expect(card).toContainText(`${i + 1} / 7`)
     await expect(card.locator('h2')).toContainText(beat)
-    await expect(page).toHaveURL(/\/2$/)
+    await expect(page).toHaveURL(new RegExp(`/${at}$`))
     await page.keyboard.press('ArrowRight')
   }
-  // The seventh card is on the hierarchy, over the tower.
+  // The seventh card is on the chain, over the tower.
   await expect(card).toContainText('7 / 7')
-  await expect(page).toHaveURL(/\/2\/hierarchy$/)
+  await expect(page).toHaveURL(new RegExp(`/${at}/hierarchy$`))
   await expect(page.locator('.tower')).toBeVisible()
   await page.keyboard.press('ArrowLeft')
   await expect(card).toContainText('6 / 7')
   await page.keyboard.press('Escape')
   await expect(card).toHaveCount(0)
-
-  await page.getByRole('navigation', { name: 'Screens' }).getByRole('button', { name: 'Overview' }).click()
   await expect(page.getByRole('button', { name: 'Take the tour again' })).toBeVisible()
   expect(errors).toEqual([])
 })
@@ -188,6 +205,7 @@ test('the tour fits a phone screen', async ({ page }) => {
   const errors = collectErrors(page)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('./')
+  await screens(page).getByRole('button', { name: 'The chain' }).click()
   await page.getByRole('button', { name: 'Take the tour' }).click()
   const card = page.getByRole('dialog')
   for (let step = 1; step <= 7; step += 1) {
@@ -331,7 +349,7 @@ test('the admission gate on the overview opens Growing the menu, and the screen 
 test('the glossary filters, and a “where to see it” link flashes the panel', async ({ page }) => {
   const errors = collectErrors(page)
   await page.goto('./#deadly_corridor-learned-9/17/learning')
-  await page.getByRole('button', { name: 'Glossary' }).click()
+  await page.getByRole('button', { name: 'Reference' }).click()
   const dialog = page.getByRole('dialog', { name: 'Reference' })
   await expect(dialog.getByRole('tab', { name: 'Glossary' })).toHaveAttribute('aria-selected', 'true')
   const entries = dialog.locator('.gloss-entry')
@@ -367,7 +385,7 @@ test('a linked word in an explanation opens its glossary entry', async ({ page }
 test('the principles tab lists seven, and the last one opens the trust map', async ({ page }) => {
   const errors = collectErrors(page)
   await page.goto('./#deadly_corridor-learned-9/17')
-  await page.getByRole('button', { name: 'Glossary' }).click()
+  await page.getByRole('button', { name: 'Reference' }).click()
   const dialog = page.getByRole('dialog', { name: 'Reference' })
   await dialog.getByRole('tab', { name: 'Principles' }).click()
   await expect(dialog.locator('.invariant')).toContainText('bounded decision systems decide')
@@ -383,23 +401,32 @@ test('the principles tab lists seven, and the last one opens the trust map', asy
   expect(errors).toEqual([])
 })
 
-test('the ⓘ button says how each recording was made and how to make it again', async ({ page }) => {
+test('This recording says how each recording was made, how to make it again and how to play it live', async ({
+  page,
+}) => {
   const errors = collectErrors(page)
   await page.goto('./#deadly_corridor-learned-9/17')
-  await page.getByRole('button', { name: 'About this recording' }).click()
+  await expect(page.locator('#panel-arbiter')).toBeVisible()
+  await page.keyboard.press('i')
   const dialog = page.getByRole('dialog', { name: 'Reference' })
   await expect(dialog.getByRole('tab', { name: 'This recording' })).toHaveAttribute('aria-selected', 'true')
   await expect(dialog).toContainText('seed 9')
   const checkpoint = dialog.getByTestId('checkpoint')
   await expect(checkpoint).toContainText('300')
   await expect(checkpoint).toContainText('25,204')
-  await expect(dialog.locator('.command code').first()).toContainText('--model latest')
+  const exportCommand = dialog.locator('.command code', { hasText: 'system1_doom.export --scenario' })
+  const serveCommand = dialog.locator('#prov-live .command code')
+  await expect(exportCommand).toContainText('--model latest')
+  await expect(serveCommand).toHaveText(
+    'python -m system1_doom.serve --scenario deadly_corridor.cfg --seed 9 --model latest',
+  )
   await expect(dialog.locator('[data-module]')).toHaveCount(5)
 
   await dialog.getByRole('button', { name: /heuristics only, seed 9, at tick 17/ }).click()
   await expect(page).toHaveURL(/#deadly_corridor-heuristics-9\/17$/)
   await expect(dialog.getByTestId('checkpoint')).toContainText('the heuristics played alone')
-  await expect(dialog.locator('.command code').first()).toContainText('--model heuristics')
+  await expect(exportCommand).toContainText('--model heuristics')
+  await expect(serveCommand).toContainText('--model heuristics')
   expect(errors).toEqual([])
 })
 
@@ -407,7 +434,7 @@ test('keys switch screens and open the reference, but not while typing', async (
   const errors = collectErrors(page)
   await page.goto('./#deadly_corridor-learned-9/17')
   await expect(page.locator('#panel-arbiter')).toBeVisible()
-  await page.keyboard.press('3')
+  await page.keyboard.press('2')
   await expect(page).toHaveURL(/\/17\/hierarchy$/)
 
   await page.keyboard.press('g')
@@ -420,7 +447,7 @@ test('keys switch screens and open the reference, but not while typing', async (
   await expect(page).toHaveURL(/\/17\/hierarchy$/)
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Glossary' })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Reference' })).toBeFocused()
 
   await page.keyboard.press('?')
   await expect(dialog.getByRole('tab', { name: 'Keyboard' })).toHaveAttribute('aria-selected', 'true')
@@ -436,7 +463,7 @@ test('on a phone the reference fills the screen and leaves no sideways scroll', 
   const errors = collectErrors(page)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('./#deadly_corridor-learned-9/17')
-  await page.getByRole('button', { name: 'Glossary' }).click()
+  await page.getByRole('button', { name: 'Reference' }).click()
   const dialog = page.getByRole('dialog', { name: 'Reference' })
   // Measured once the slide-in has finished.
   await expect
@@ -455,11 +482,26 @@ test('on a phone the reference fills the screen and leaves no sideways scroll', 
   expect(errors).toEqual([])
 })
 
-test('the top bar keeps to one row at 1280 px', async ({ page }) => {
-  await page.goto('./#deadly_corridor-learned-9/17')
-  await expect(page.locator('.tick-counter')).toBeVisible()
-  const tops = await page
-    .locator('.topbar > *')
-    .evaluateAll((items) => items.map((el) => el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2))
-  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(12)
+test('the top bar keeps to one row at 1280 px, with five things in it', async ({ page }) => {
+  for (const where of ['./', './#deadly_corridor-learned-9/17']) {
+    await page.goto(where)
+    await expect(page.locator('.chain-row, .tick-counter').first()).toBeVisible()
+    const tops = await page
+      .locator('.topbar > *')
+      .evaluateAll((items) => items.map((el) => el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2))
+    expect(tops).toHaveLength(5)
+    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(12)
+  }
+  await expect(screens(page).getByRole('button')).toHaveText([
+    'Watch',
+    'The chain',
+    'The inspector',
+    'The diagram',
+    'Learning',
+    'Growing the menu',
+  ])
+  // The tick counter is in the timeline, and Depth and the tour in the screen's own header.
+  await expect(page.locator('.scrubber .tick-counter')).toContainText('Tick 17 / 51')
+  await expect(page.locator('.inspector-head').getByRole('group', { name: 'Explanation depth' })).toBeVisible()
+  await expect(page.locator('.inspector-head').getByRole('button', { name: 'Take the tour' })).toBeVisible()
 })
