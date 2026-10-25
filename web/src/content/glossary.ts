@@ -70,7 +70,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'How much time the tick’s budget allows: 40 ms by default, 5 s in a recording that waits for d1-ultra. Full runs everything, reduced drops the projections, and critical repeats the cached action with stand-in module outputs.',
     see: [{ screen: 'tick', panel: 'arbiter', label: 'The inspector → One decision (the “out of time” rule)' }],
-    code: 'controller.py · DoomDecisionController._select_budget_mode',
+    code: 'configuration.py · Bounds.call_budget_sec',
     now: ({ tick }) => `This tick ran in ${tick.budget_mode} mode.`,
   },
   {
@@ -119,7 +119,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'A flat chance, used only in training, that the arbiter takes a random legal action instead of its pick: 0.6 at the first episode, falling in a straight line to 0.05 by episode 100, then flat. Zero in a recording.',
     see: [{ screen: 'learning', panel: 'curves' }],
-    code: 'train.py · exploration_schedule',
+    code: 'configuration.py · Configuration.exploration_level',
     now: ({ meta }) =>
       meta.config.exploration_floor > 0
         ? `${fmt(meta.config.exploration_floor, 2)} in this recording.`
