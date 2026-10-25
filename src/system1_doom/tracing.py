@@ -80,6 +80,7 @@ class EnemyTrace(BaseModel):
     screen_y: int
     width: int
     height: int
+    is_attacking: bool = False
 
 
 class PickupTrace(BaseModel):
@@ -114,6 +115,7 @@ class StateTrace(BaseModel):
     pickups: List[PickupTrace] = Field(default_factory=list)
     recent_incoming_damage: float = 0.0
     recent_outgoing_damage: float = 0.0
+    recent_hits: int = 0
     recent_kills: int = 0
     recent_actions: List[str] = Field(default_factory=list)
     episode_progress: Dict[str, float] = Field(default_factory=dict)
@@ -246,6 +248,7 @@ def state_trace(world_state: "WorldState") -> StateTrace:
                 screen_y=e.screen_y,
                 width=e.width,
                 height=e.height,
+                is_attacking=e.is_attacking,
             )
             for e in obs.visible_enemies
         ],
@@ -265,6 +268,7 @@ def state_trace(world_state: "WorldState") -> StateTrace:
         ],
         recent_incoming_damage=_r(obs.recent_incoming_damage),
         recent_outgoing_damage=_r(obs.recent_outgoing_damage),
+        recent_hits=obs.recent_hits,
         recent_kills=obs.recent_kills,
         recent_actions=list(obs.recent_actions),
         episode_progress={k: _r(v) for k, v in obs.episode_progress.items()},

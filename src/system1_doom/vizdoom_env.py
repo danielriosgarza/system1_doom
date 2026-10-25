@@ -227,6 +227,7 @@ class ViZDoomBridge:
         kills = int(self._safe_var(vzd.GameVariable.KILLCOUNT, 0.0))
 
         recent_in_dmg = max(0.0, self._prev_health - health)
+        recent_hits = int(max(0.0, hits - self._prev_hits))
         recent_out_dmg = max(0.0, (hits - self._prev_hits) * 20.0)
         recent_kills = max(0, kills - self._prev_kills)
 
@@ -333,6 +334,7 @@ class ViZDoomBridge:
             visible_pickups=tuple(pickups),
             recent_incoming_damage=recent_in_dmg,
             recent_outgoing_damage=recent_out_dmg,
+            recent_hits=recent_hits,
             recent_kills=recent_kills,
             movement_state=movement_state,
             recent_actions=tuple(self._action_history[-6:]),
