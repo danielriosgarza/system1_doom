@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import shutil
 
 import jsonschema
 import pytest
@@ -10,6 +11,7 @@ from system1_doom import export
 from system1_doom.actions import ActionVocabulary
 from system1_doom.history import load_history, rerender_instance
 from system1_doom.logger import TRACE_SCHEMA_VERSION, TickTrace
+from system1_doom.reflection import load_reflections
 from system1_doom.relevance import RelevanceLedger
 from tests.fake_d1 import FakeD1, shoot_when_aimed
 from tests.test_state_and_actions import make_sample_world_state
@@ -40,7 +42,10 @@ def test_export_writes_every_file_and_a_frame_per_tick(bundle):
     assert meta["slow_path"] == "templates" and "brains" not in meta and "model" not in meta and "modules" not in meta
     assert 1 <= len(ticks) == meta["tick_count"] <= 5
     assert {"episode.json", "ticks.jsonl", "history.jsonl", "relevance.json", "proposals.jsonl"} <= set(meta["files"])
-    assert "reflections.jsonl" not in meta["files"]
+    # System 2 is on: its end-of-episode cycle is in the bundle, and its calls are not in the episode's cost.
+    assert "reflections.jsonl" in meta["files"] and meta["system2"]["enabled"] and meta["system2"]["cycles"] == 1
+    (cycle,) = load_reflections((bundle / "reflections.jsonl").read_text())
+    assert cycle.record == "cycle" and cycle.trigger == "episode_end" and cycle.calls == meta["system2"]["calls"] > 0
     for name in meta["files"]:
         assert (bundle / name).is_file(), name
     for tick in ticks:
@@ -143,6 +148,73 @@ def test_copied_run_files_validate_against_their_models(tmp_path):
     jsonschema.validate(
         json.loads((out / "evaluation.json").read_text()), {"$defs": schema["$defs"], "$ref": "#/$defs/EvaluationSummary"}
     )
+
+
+def test_check_validates_the_reflections_and_the_counts_episode_json_gives(bundle, tmp_path):
+    copy = tmp_path / "copy"
+    shutil.copytree(bundle, copy)
+    (line,) = (copy / "reflections.jsonl").read_text().splitlines()
+    schema = export.bundle_json_schema()
+    jsonschema.validate(json.loads(line), {"$defs": schema["$defs"], "$ref": "#/$defs/ReflectionTrace"})
+    (copy / "reflections.jsonl").write_text(line + "\n" + '{"record": "cycle"}\n')
+    problems = export.check_bundle(copy)
+    assert len(problems) == 1 and problems[0].startswith("reflections.jsonl line 2")
+    (copy / "reflections.jsonl").write_text("")  # valid, but episode.json counts one cycle
+    problems = export.check_bundle(copy)
+    assert len(problems) == 1 and "does not match reflections.jsonl" in problems[0]
+
+
+def test_export_without_system2_records_no_reflections(tmp_path, capsys):
+    out = tmp_path / "off"
+    argv = ["--scenario", "basic.cfg", "--seed", "3", "--max-ticks", "3", "--run-dir", str(tmp_path / "run"), "--out", str(out), "--no-system2"]
+    assert export.main(argv, transport=FakeD1(shoot_when_aimed)) == 0
+    meta = export.EpisodeMeta.model_validate_json((out / "episode.json").read_text())
+    assert meta.system2 is not None and not meta.system2.enabled and meta.system2.cycles == 0
+    assert (out / "reflections.jsonl").read_text() == "" and export.check_bundle(out) == []
+    assert "configuration version 1 -> 1" in capsys.readouterr().out
+
+
+def test_exported_episodes_start_from_the_saved_configuration_and_carry_it_on(tmp_path, capsys):
+    from system1_doom.configuration import default_configuration
+
+    run = tmp_path / "run"
+    run.mkdir()
+    saved = run / "configuration.json"
+    default_configuration().with_changes(exploration_level="explore").save(saved)
+    argv = ["--scenario", "basic.cfg", "--seed", "3", "--max-ticks", "2", "--episodes", "2", "--run-dir", str(run), "--no-system2"]
+    assert export.main(argv + ["--out", str(tmp_path / "a")], transport=FakeD1(shoot_when_aimed)) == 0
+    assert capsys.readouterr().err.count(f"configuration: {saved} (version 2)") == 2
+    metas = [export.EpisodeMeta.model_validate_json((b / "episode.json").read_text()) for b in sorted((tmp_path / "a").iterdir())]
+    assert [m.configuration_start.version for m in metas] == [2, 2]
+    assert all(m.configuration_start.exploration_level == "explore" for m in metas)
+    # --fresh-configuration: the first episode starts from the design's version 1; the next one carries on from it.
+    assert export.main(argv + ["--out", str(tmp_path / "b"), "--fresh-configuration"], transport=FakeD1(shoot_when_aimed)) == 0
+    err = capsys.readouterr().err
+    assert "configuration: the design's version 1" in err and f"configuration: {saved} (version 1)" in err
+    metas = [export.EpisodeMeta.model_validate_json((b / "episode.json").read_text()) for b in sorted((tmp_path / "b").iterdir())]
+    assert [(m.configuration_start.version, m.configuration_start.exploration_level) for m in metas] == [(1, "exploit"), (1, "exploit")]
+
+
+def test_a_change_queued_at_an_exported_episodes_end_takes_effect_in_the_next_episode(tmp_path, capsys):
+    from tests.fake_d1 import explore_level_system2
+
+    out = tmp_path / "two"
+    argv = ["--scenario", "basic.cfg", "--seed", "3", "--max-ticks", "3", "--episodes", "2", "--run-dir", str(tmp_path / "run"),
+            "--out", str(out), "--no-slow-path"]
+    assert export.main(argv, transport=FakeD1(shoot_when_aimed, system2_policy=explore_level_system2)) == 0
+    first, second = sorted(out.iterdir())
+    metas = [export.EpisodeMeta.model_validate_json((b / "episode.json").read_text()) for b in (first, second)]
+    # Episode 1's end cycle queued the level change; its controller closed before any tick boundary.
+    (cycle,) = [r for r in load_reflections((first / "reflections.jsonl").read_text()) if r.record == "cycle"]
+    assert cycle.trigger == "episode_end" and cycle.outcome == "queued" and cycle.choice == "level:explore"
+    assert metas[0].configuration_end.version == 1
+    # Episode 2 restores it: from its first tick it plays at the bumped version, and the trial starts there.
+    ticks = [TickTrace.model_validate_json(line) for line in (second / "ticks.jsonl").read_text().splitlines()]
+    assert ticks[0].configuration_version == 2 and ticks[0].configuration_changed and all(t.exploration_level == "explore" for t in ticks)
+    assert metas[1].configuration_end.version == 2 and metas[1].configuration_end.exploration_level == "explore"
+    kinds = [r.kind for r in load_reflections((second / "reflections.jsonl").read_text()) if r.record == "note"]
+    assert kinds[:2] == ["restored", "trial_started"] and metas[1].system2.trials_started == 1
+    assert export.check_bundle(first) == [] and export.check_bundle(second) == []
 
 
 def test_index_lists_shippable_schema_2_bundles(bundle):

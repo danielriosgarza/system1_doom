@@ -7,7 +7,13 @@ for a chosen call of a chosen instance, to exceed the budget, raise, answer off 
 malformed probabilities, or answer HTTP 429.
 
 Calls are counted per instance name from 0, and every instance is called once per tick, so "call k of
-the central" is the central of the k-th tick played with this fake.
+the central" is the central of the k-th tick played with this fake (System 2's history test re-runs a
+sense or the central under the same name, so it adds to that count).
+
+System 2's instances are told apart from the payload too: a reflector asks `speak`, `change` and
+`reason` and names itself in its instructions ("You are the survival auditor ..."), System 2's central
+asks `configure`, and the trial judge asks `verdict`. They answer from `system2_policy`
+(`default_system2_policy` unless given), so every System 1 policy works unchanged with System 2 on.
 """
 
 from __future__ import annotations
@@ -48,15 +54,31 @@ def noul(value: float) -> Dict[str, Any]:
     return {"type": "noul", "noul": value}
 
 
+SYSTEM2_CENTRAL = "system2_central"
+TRIAL_JUDGE = "trial_judge"
+
+
 def instance_name(payload: Dict[str, Any]) -> str:
     questions = payload["questions"]
     if "choose" in questions:
         return "central"
     if "admit" in questions:
         return "admit"
+    if "configure" in questions:
+        return SYSTEM2_CENTRAL
+    if "verdict" in questions:
+        return TRIAL_JUDGE
+    if "change" in questions:
+        match = re.search(r"You are the (\w+) (auditor|reflector) ", questions["change"]["instructions"])
+        assert match, questions["change"]["instructions"]
+        return f"{match.group(1)}_{match.group(2)}"
     match = re.search(r"You are the (\w+) sense", questions["speak"]["instructions"])
     assert match, questions["speak"]["instructions"]
     return match.group(1)
+
+
+def is_system2(name: str) -> bool:
+    return name in (SYSTEM2_CENTRAL, TRIAL_JUDGE) or name.endswith(("_auditor", "_reflector"))
 
 
 def menu_of(payload: Dict[str, Any]) -> List[str]:
@@ -160,11 +182,94 @@ def spread_central(name: str, payload: Dict[str, Any]) -> Answers:
     return {"choose": {"type": "choice", "choice": menu[0], "probabilities": probs, "confidence": 0.4}}
 
 
+def sense_record(state: str, sense: str, window: str = "last 100 decisions") -> Optional[Tuple[int, int, int]]:
+    """(spoke, followed, followed and paid off) from a window's line of `h_sense:<sense>`, or None."""
+    match = re.search(
+        rf"^- {re.escape(window)}[^:]*: spoke (\d+), followed (\d+), paid off (\d+) of",
+        section(state, f"h_sense:{sense}"),
+        flags=re.M,
+    )
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3))) if match else None
+
+
+def reflector_answer(payload: Dict[str, Any], speak: float, change: str, reason: Optional[str] = None) -> Answers:
+    """A reflector's three answers: `change` (else the first criterion) at 0.7, `reason` (else the first)."""
+    questions = payload["questions"]
+    changes = list(questions["change"]["criteria"])
+    reasons = list(questions["reason"]["criteria"])
+    return {
+        "speak": noul(speak),
+        "change": choice(changes, change if change in changes else changes[0]),
+        "reason": choice(reasons, reason if reason in reasons else reasons[0]),
+    }
+
+
+def first_proposal(payload: Dict[str, Any]) -> Answers:
+    """System 2's central takes the first proposed change, else `none`."""
+    criteria = list(payload["questions"]["configure"]["criteria"])
+    wanted = next((c for c in criteria if c != "none"), "none")
+    return {"configure": choice(criteria, wanted, 0.8)}
+
+
+def judge(payload: Dict[str, Any], verdict: str = "keep") -> Answers:
+    criteria = list(payload["questions"]["verdict"]["criteria"])
+    return {"verdict": choice(criteria, verdict, 0.8)}
+
+
+def default_system2_policy(name: str, payload: Dict[str, Any]) -> Answers:
+    """The survival auditor proposes `widen:survival:pickups` at 0.9 when, over the last 100 decisions, the
+    survival sense was followed and paid off less than half the time; every other reflector keeps at 0.1.
+    System 2's central takes the first proposal; the trial judge keeps."""
+    if name == SYSTEM2_CENTRAL:
+        return first_proposal(payload)
+    if name == TRIAL_JUDGE:
+        return judge(payload, "keep")
+    if name == "survival_auditor":
+        record = sense_record(payload["state"], "survival")
+        if record is not None and record[1] >= 1 and record[2] / record[1] < 0.5:
+            return reflector_answer(payload, 0.9, "widen:survival:pickups", "poor_payoff")
+    return reflector_answer(payload, 0.1, "keep", "too_little_data")
+
+
+def explore_level_system2(name: str, payload: Dict[str, Any]) -> Answers:
+    """System 2 that makes one change: the exploration reflector proposes `level:explore` at 0.9, every other
+    reflector keeps at 0.1, System 2's central takes the first proposal, and the trial judge keeps."""
+    if name == SYSTEM2_CENTRAL:
+        return first_proposal(payload)
+    if name == TRIAL_JUDGE:
+        return judge(payload, "keep")
+    if name == "exploration_reflector":
+        return reflector_answer(payload, 0.9, "level:explore", "stuck_or_repeating")
+    return reflector_answer(payload, 0.1, "keep", "too_little_data")
+
+
+def survival_until_pickups(name: str, payload: Dict[str, Any]) -> Answers:
+    """System 1 for the System 2 story: until its scope shows `pickups`, the survival sense speaks at 0.9 for
+    the first menu action every tick (and the central follows it, the first message); once it sees pickups
+    it is silent. The other senses and the central are `shoot_when_aimed`."""
+    if name == "survival":
+        menu = menu_of(payload)
+        if "[pickups]" in payload["state"]:
+            return _sense(payload, 0.1, menu[0], "no_threat")
+        return _sense(payload, 0.9, menu[0], "enemy_too_close")
+    return shoot_when_aimed(name, payload)
+
+
+ANSWER_KEYS = ("choose", "action", "configure", "change", "verdict")
+
+
 class FakeD1:
     """A thread-safe scripted transport. `fail(instance, calls, kind)` scripts a fault on chosen calls."""
 
-    def __init__(self, policy: Policy = default_policy, timeout_overrun: float = 0.2, retry_after: float = 0.05) -> None:
+    def __init__(
+        self,
+        policy: Policy = default_policy,
+        timeout_overrun: float = 0.2,
+        retry_after: float = 0.05,
+        system2_policy: Policy = default_system2_policy,
+    ) -> None:
         self.policy = policy
+        self.system2_policy = system2_policy
         self.timeout_overrun = timeout_overrun
         self.retry_after = retry_after
         self._lock = threading.Lock()
@@ -202,8 +307,8 @@ class FakeD1:
             raise D1HTTPError(429, retry_after=self.retry_after, message="rate limited")
         if fault == "timeout":
             time.sleep(timeout + self.timeout_overrun)
-        answers = self.policy(name, payload)
-        key = "choose" if "choose" in answers else "action"
+        answers = (self.system2_policy if is_system2(name) else self.policy)(name, payload)
+        key = next((k for k in ANSWER_KEYS if k in answers), "action")
         if fault == "off_menu" and key in answers:
             answers[key] = {"type": "choice", "choice": "teleport_hack", "probabilities": {"teleport_hack": 1.0}, "confidence": 1.0}
         if fault == "malformed" and key in answers:

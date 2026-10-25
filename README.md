@@ -14,8 +14,31 @@ instance's yes.
 
 The design is in
 [`docs/superpowers/specs/2026-10-25-d1-decision-maker-design.md`](docs/superpowers/specs/2026-10-25-d1-decision-maker-design.md);
-System 1 (the senses and the central) is built, and System 2 (a slow loop
-that changes what each instance sees) is next.
+System 1 (the senses and the central) and System 2 (a slow loop that
+changes what each instance sees) are built; the web app's rewrite around
+them is the third pull request.
+
+## System 2
+
+System 2 changes what the agent's instances see while it plays, one
+change at a time, and every one of its decisions is a d1-ultra instance
+too. On its own thread, every 20 decisions or at the end of an episode,
+nine reflectors read System 1's history: one for each sense, one for
+the central, one each for the menu, the strategy and the exploration
+level. Each may propose one change from a finite menu the bounds allow:
+widen or narrow a scope by one channel, ask the slow path for a macro or
+retire one, switch the strategy, change the level. System 2's central
+chooses one change or none. A scope change must first pass a history
+test (the instance re-run under the new scope on 24 of the agent's own
+stored ticks); then the change takes effect at a tick boundary, is
+observed for 60 decisions, and a trial judge keeps or reverts it. Every
+cycle is logged to `reflections.jsonl`. The configuration reached is
+saved to `runs/<scenario>/configuration.json`, and the next run in that
+folder starts from it (`--fresh-configuration` starts from the design's
+version 1; each run says which on stderr). `--no-system2` switches System 2 off in
+`cli`, `train`, `export` and `serve`. A cycle without a history test is
+at most 10 calls, about $0.0003; a history test adds 28 calls, about
+$0.001.
 
 ## Play
 
@@ -31,7 +54,8 @@ python -m system1_doom.cli --scenario deadly_corridor.cfg --episodes 1 --visible
 A tick takes about 0.8 s (five sense calls in parallel, then the
 central) and costs about $0.0002 at the measured usage. `cli`, `train`,
 `export` and `serve` all exit with a message when the key is missing;
-`--call-budget`, `--explore`/`--exploit` and `--seed` work on each.
+`--call-budget`, `--explore`/`--exploit`, `--seed`, `--configuration`,
+`--fresh-configuration` and `--no-system2` work on each.
 `--codex` lets the slow path ask the Codex CLI for proposals instead of
 its templates.
 
@@ -62,13 +86,13 @@ python -m system1_doom.serve --scenario deadly_corridor.cfg --networks best
 ## Documentation
 
 - [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md): how everything works,
-  every entry point and flag (§11), misses and budgets (§14), measured
-  results (§15), testing and CI (§16).
+  System 2 (§8.16), every entry point and flag (§11), misses and budgets
+  (§14), measured results (§15), testing and CI (§16).
 - [`docs/spec.md`](docs/spec.md): the original implementation spec.
 - [`web/README.md`](web/README.md): the web explainer.
 
 ```bash
 python -m pytest -k "not live"     # the Python suite, on a fake d1-ultra, no key needed
-python -m pytest -m live           # the two live tests, with LIQUID_API_KEY
+python -m pytest -m live           # the four live tests, with LIQUID_API_KEY
 (cd web && npm test && npm run e2e) # the app's unit and browser tests
 ```

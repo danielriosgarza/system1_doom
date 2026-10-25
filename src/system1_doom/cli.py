@@ -5,6 +5,12 @@
 
 Play needs LIQUID_API_KEY (in the environment or a .env file): five senses and a central instance
 decide every tick, so without the key there is nothing that could decide.
+
+System 2 is on unless `--no-system2`: every 20 decisions and at each episode end it may change the
+configuration (one trial at a time), saving it to the run folder's `configuration.json`; its records go to
+`reflections.jsonl` in the log folder. Play starts from that saved configuration when it exists (System 2's
+state then restores), from `--configuration PATH` when given, or from the design's version 1 with
+`--fresh-configuration`, and says which on stderr.
 """
 
 from __future__ import annotations
@@ -19,12 +25,15 @@ from system1_doom.controller import NO_KEY_MESSAGE, ControllerConfig, DoomDecisi
 from system1_doom.d1_client import TransportFn, load_api_key
 from system1_doom.train import (
     INSTALL_HINT,
+    ConfigurationFileError,
     RunStore,
+    add_configuration_flags,
     default_run_dir,
     format_row,
     learn_from_episode,
     load_learner,
     load_play_learner,
+    starting_configuration,
 )
 from system1_doom.vizdoom_env import ViZDoomBridge
 
@@ -44,8 +53,9 @@ def build_parser() -> argparse.ArgumentParser:
     level.add_argument("--explore", dest="level", action="store_const", const="explore", help="Start at the explore level")
     level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Start at the exploit level (default)")
     parser.add_argument("--seed", type=int, default=None, help="ViZDoom seed, and System 1's seed for draws under explore")
-    parser.add_argument("--configuration", default=None, help="A configuration.json to start from (default: the design's)")
+    add_configuration_flags(parser)
     parser.add_argument("--disable-slow-llm", action="store_true", help="Disable the slow macro-proposal worker")
+    parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
     parser.add_argument("--visible", action="store_true", help="Show live 640x480 ViZDoom window on your display")
     parser.add_argument("--no-dashboard", action="store_true", help="Hide the side window of the six instances")
     parser.add_argument(
@@ -76,6 +86,8 @@ def _episode_summary(index: int, result: Dict[str, Any]) -> Dict[str, Any]:
         "kills": result["kills"],
         "cost": result["cost"],
         "misses": result["misses"],
+        "configuration_version": result["configuration_end"].version,
+        "system2": result["system2"],
         "mean_tick_ms": round(sum(t.timing_ms.get("total", 0.0) for t in result["traces"]) / max(1, result["ticks"]), 1),
         "actions_executed": result["actions"],
     }
@@ -92,6 +104,14 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
         api_key = "test-transport"
 
     store = RunStore(args.run_dir or default_run_dir(args.scenario))
+    if args.fresh_configuration:
+        store.forget_configuration()
+    try:
+        start = starting_configuration(store, args.configuration, args.fresh_configuration)
+    except ConfigurationFileError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    print(start.line, file=sys.stderr, flush=True)
     learner = None
     if args.learn or (not args.no_learned and (store.best.is_file() or store.checkpoint.is_file())):
         try:
@@ -113,11 +133,14 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
     cfg = ControllerConfig(
         call_budget_sec=args.call_budget,
         seed=args.seed or 0,
-        configuration_path=args.configuration,
+        configuration_path=str(start.path) if start.path else None,
         exploration_level=args.level,
         enable_slow_llm=not args.disable_slow_llm,
         log_dir=args.log_dir,
         relevance_path=str(store.relevance),
+        enable_system2=not args.no_system2,
+        configuration_out=str(store.configuration),
+        system2_state_path=str(store.system2),
         show_dashboard=args.visible and not args.no_dashboard,
         record_experience=args.learn,
         record_frames=bool(args.save_gif or args.save_mp4),
@@ -127,7 +150,8 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
     except Exception:
         env.close()
         raise
-    ctrl.restore_macros(store.load_macros())
+    if not start.saved:
+        ctrl.restore_macros(store.load_macros())
     learned_info = (
         {
             "model_file": str(store.checkpoint if args.learn or not store.best.is_file() else store.best),
@@ -150,6 +174,7 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
                 row = learn_from_episode(ctrl, learner, store, result, args.scenario, time.perf_counter() - t0)
                 print(format_row(row), file=sys.stderr, flush=True)
             results.append(_episode_summary(episode_index + 1, result))
+        ctrl.wait_system2(120.0)  # the end-of-episode cycle's calls belong in the summary
         saved_gif = str(ctrl.recorder.save_gif(args.save_gif)) if args.save_gif else None
         saved_mp4 = str(ctrl.recorder.save_mp4(args.save_mp4)) if args.save_mp4 else None
         counters = ctrl.counters()
@@ -180,6 +205,8 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
             "history_log": str(ctrl.history.path),
             "relevance": str(store.relevance),
             "proposals_log": str(ctrl.logger.proposals_path),
+            "reflections_log": str(ctrl.logger.reflections_path) if ctrl.system2 is not None else None,
+            "configuration": str(store.configuration) if ctrl.system2 is not None else None,
             "saved_gif": saved_gif,
             "saved_mp4": saved_mp4,
         }

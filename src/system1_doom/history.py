@@ -2,13 +2,17 @@
 
 Design spec, sections 6, 7 and 9. A `TickRecord` keeps everything a tick produced: the evidence inputs
 every channel rendered from (the messages included), the six instance results with their verbatim
-evidence and full answers, the pick, the executed action and its primitives, and the reward that
-followed. The store keeps the last `history_ring` ticks in memory (2,000 by default) and appends every
-tick to `history.jsonl` in the log directory, which is copied into bundles.
+evidence and full answers, the pick, the executed action and its primitives, the reward that followed,
+what the action changed (damage, kills, death, displacement) and whether it stalled. The store keeps the
+last `history_ring` ticks in memory (2,000 by default) and appends every tick to `history.jsonl` in the
+log directory, which is copied into bundles.
 
 Because rendering is deterministic, a stored tick re-rendered under an instance's own scope reproduces
 the text that instance saw, byte for byte; `rerender` renders a stored tick under any scope, which is
-what System 2's history test will use. The relevance ledger is updated from the records of an episode.
+what System 2's history test uses. The test also attaches the screen the instance saw when `frame` is in
+the new scope: the store keeps each ring record's frame in memory beside it (`frame`), because the log
+folder's `frames/<tick>.jpg` is rewritten by the next episode with the same tick numbers. The relevance
+ledger is updated from the records of an episode.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from system1_doom.evidence import EvidenceInputs, Message, RenderedEvidence, ren
 from system1_doom.instance import InstanceResult
 from system1_doom.relevance import RelevanceDecision, SpokenMessage
 from system1_doom.system1 import Pick, System1Result
+from system1_doom.tracing import OutcomeTrace
 
 HISTORY_FILE = "history.jsonl"
 
@@ -47,10 +52,17 @@ class TickRecord(BaseModel):
     primitives: Tuple[str, ...] = ()
     reward: float = 0.0
     done: bool = False
+    outcome: Optional[OutcomeTrace] = Field(default=None, description="What the action (or the idle) changed; None in older records")
+    stalled: bool = Field(default=False, description="The action tried to move and moved less than the stall bound")
 
     @property
     def context(self) -> str:
         return self.inputs.context
+
+    @property
+    def key(self) -> str:
+        """`<episode id>:<tick>`, unique in a history."""
+        return f"{self.episode_id}:{self.tick}"
 
     def relevance_decision(self) -> RelevanceDecision:
         """This tick as the relevance ledger sees it."""
@@ -72,6 +84,8 @@ def make_record(
     primitives: Sequence[str],
     reward: float,
     done: bool,
+    outcome: Optional[OutcomeTrace] = None,
+    stalled: bool = False,
 ) -> TickRecord:
     """The record of a tick System 1 decided and the motor executed (or idled through)."""
     return TickRecord(
@@ -88,6 +102,8 @@ def make_record(
         primitives=tuple(primitives),
         reward=float(reward),
         done=bool(done),
+        outcome=outcome,
+        stalled=bool(stalled),
     )
 
 
@@ -103,20 +119,30 @@ def rerender_instance(record: TickRecord, instance: str, scope: Optional[Sequenc
 
 
 class HistoryStore:
-    """The last `ring` ticks in memory; every tick appended to `history.jsonl` when a path is given."""
+    """The last `ring` ticks in memory; every tick appended to `history.jsonl` when a path is given.
+
+    Each ring record's frame (the base64 JPEG every instance with `frame` in scope was shown) is kept in
+    memory beside it and dropped with it, so the history test can attach the very screen of a tick from an
+    earlier episode, whose `frames/<tick>.jpg` in the log folder a later episode may have rewritten.
+    """
 
     def __init__(self, path: Optional[Union[str, Path]] = None, ring: int = 2000) -> None:
         self.path = Path(path) if path is not None else None
         self.ring = max(1, ring)
         self._records: Deque[TickRecord] = deque(maxlen=self.ring)
+        self._frames: Dict[str, str] = {}
         self._lock = threading.Lock()
         self.appended = 0
         if self.path is not None:
             self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def append(self, record: TickRecord) -> None:
+    def append(self, record: TickRecord, frame_b64: Optional[str] = None) -> None:
         with self._lock:
+            if len(self._records) == self.ring:
+                self._frames.pop(self._records[0].key, None)
             self._records.append(record)
+            if frame_b64:
+                self._frames[record.key] = frame_b64
             self.appended += 1
             if self.path is not None:
                 with self.path.open("a", encoding="utf-8") as handle:
@@ -125,6 +151,11 @@ class HistoryStore:
     def __len__(self) -> int:
         with self._lock:
             return len(self._records)
+
+    def frame(self, record: TickRecord) -> Optional[str]:
+        """The base64 JPEG the instances were shown at this ring record, or None (no screen, or out of the ring)."""
+        with self._lock:
+            return self._frames.get(record.key)
 
     def records(self, episode_id: Optional[str] = None) -> List[TickRecord]:
         with self._lock:

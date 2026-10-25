@@ -1,13 +1,15 @@
-"""The decision log: one TickTrace per tick (`ticks.jsonl`) and one ProposalTrace per proposal.
+"""The decision log: one TickTrace per tick (`ticks.jsonl`), one ProposalTrace per proposal, and System 2's records.
 
 Schema version 2 (design spec, section 10): a tick is the record of six d1-ultra instances, the five
 senses and the central, each with its scope, its verbatim evidence, its full answers, whether it
 spoke or missed, its timing and usage; the messages the central heard; the pick (`top`, `drawn` or
-`missed`); and the executed action, its primitives and what it changed.
+`missed`); and the executed action, its primitives and what it changed. System 2's cycles, trial verdicts
+and notes go to `reflections.jsonl` (`reflection.py`), written from System 2's thread under a lock.
 """
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -92,8 +94,11 @@ class DecisionLogger:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.ticks_path = self.log_dir / "ticks.jsonl"
         self.proposals_path = self.log_dir / "proposals.jsonl"
+        self.reflections_path = self.log_dir / "reflections.jsonl"
         self._tick_traces: List[TickTrace] = []
         self._proposal_traces: List[ProposalTrace] = []
+        self._reflections: List[BaseModel] = []
+        self._reflection_lock = threading.Lock()
 
     @staticmethod
     def now_iso() -> str:
@@ -108,6 +113,14 @@ class DecisionLogger:
         self._proposal_traces.append(trace)
         with self.proposals_path.open("a", encoding="utf-8") as f:
             f.write(trace.model_dump_json() + "\n")
+
+    def log_reflection(self, record: BaseModel) -> None:
+        """Append one of System 2's records (a cycle, a verdict or a note) to `reflections.jsonl`."""
+        line = record.model_dump_json()
+        with self._reflection_lock:
+            self._reflections.append(record)
+            with self.reflections_path.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
 
     def record_macro_performance(self, action_id: str, reward: float) -> None:
         for idx, pt in enumerate(self._proposal_traces):
@@ -125,3 +138,8 @@ class DecisionLogger:
     @property
     def proposal_traces(self) -> List[ProposalTrace]:
         return list(self._proposal_traces)
+
+    @property
+    def reflection_records(self) -> List[BaseModel]:
+        with self._reflection_lock:
+            return list(self._reflections)
