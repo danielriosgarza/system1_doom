@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
+import { Scrubber } from './components/Scrubber'
 import { TopBar } from './components/TopBar'
 import { LIVE_COPY } from './content/live'
 import { PACE_MS } from './data/playback'
+import { Instances } from './screens/Instances'
 import { Watch } from './screens/Watch'
 import {
   SCREENS,
@@ -31,6 +33,7 @@ export default function App() {
   const error = useApp((s) => s.error)
   const theme = useApp((s) => s.theme)
   const pace = useApp((s) => s.pace)
+  const screen = useApp((s) => s.screen)
   // The playback timer runs here, so a recording plays on every screen.
   usePlayback()
 
@@ -81,7 +84,13 @@ export default function App() {
       )}
       {!error && loading && !bundle && <p className="status">Loading the episode…</p>}
       {!error && bundle && !tick && <p className="status">{LIVE_COPY.waiting}</p>}
-      {bundle && tick && <Watch bundle={bundle} tick={tick} tickIndex={tickIndex} />}
+      {bundle && tick && (
+        <>
+          {screen === 'watch' && <Watch bundle={bundle} tick={tick} tickIndex={tickIndex} />}
+          {screen === 'instances' && <Instances bundle={bundle} tick={tick} tickIndex={tickIndex} />}
+          {screen !== 'watch' && <Scrubber bundle={bundle} />}
+        </>
+      )}
     </div>
   )
 }

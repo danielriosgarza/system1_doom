@@ -1,6 +1,7 @@
 import { type PointerEvent, useEffect, useRef } from 'react'
 import { RecordingCards } from '../components/RecordingCards'
 import { Stage } from '../components/Stage'
+import { Strip } from '../components/Strip'
 import { useWidth } from '../components/useWidth'
 import { WATCH, counterText } from '../content/watch'
 import type { EpisodeBundle } from '../data/loader'
@@ -120,6 +121,9 @@ export function Watch({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
           <Transport bundle={bundle} tick={tick} tickIndex={tickIndex} />
           <p className="watch-honesty">{live ? WATCH.liveHonesty : WATCH.honesty}</p>
         </section>
+        <div className="watch-right">
+          <Strip bundle={bundle} tick={tick} tickIndex={tickIndex} />
+        </div>
       </div>
       <RecordingCards />
     </main>

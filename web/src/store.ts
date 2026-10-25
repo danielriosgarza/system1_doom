@@ -23,7 +23,10 @@ export type Theme = 'dark' | 'light'
 export type Screen = 'watch' | 'instances' | 'slow' | 'learning' | 'menu' | 'reference'
 
 /** The screens in the order the tabs and the keys 1 to 6 list them; the ids are the URL's. */
-export const SCREENS: Array<{ id: Screen; label: string }> = [{ id: 'watch', label: 'Watch' }]
+export const SCREENS: Array<{ id: Screen; label: string }> = [
+  { id: 'watch', label: 'Watch' },
+  { id: 'instances', label: 'The instances' },
+]
 
 export interface AppState {
   index: EpisodeIndex | null
