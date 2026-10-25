@@ -266,9 +266,12 @@ export function openPanel(screen: Screen, panel: string): void {
   setState({ focusPanel: panel })
 }
 
-/** Open the reference drawer on one tab; for the glossary, optionally at one entry. Playback is left alone. */
+/**
+ * Open the reference drawer on one tab; for the glossary, optionally at one entry. Playback goes on, but the
+ * landing stops looping: the viewer has taken over.
+ */
 export function openDrawer(section: DrawerSection, term: string | null = null): void {
-  setState({ drawer: section, term })
+  setState({ drawer: section, term, loop: false })
 }
 
 export function closeDrawer(): void {
