@@ -14,7 +14,7 @@ import type { Pace } from '../data/playback'
 import type { BundleIndexEntry, EpisodeMeta, ProposalTrace, TickTrace } from '../schema/bundle'
 
 export const WATCH = {
-  title: 'A Doom agent built from a chain of six small decisions, four of them a second.',
+  title: 'A Doom agent built from a chain of six small decisions, made four times a second.',
   subtitle: 'Watch it play; each row shows what one level just decided.',
   chainTitle: 'The decision chain',
   chainNote: 'Slowest level at the top. Click a row to see why it chose that.',
