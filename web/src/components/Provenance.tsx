@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LIVE_COPY } from '../content/live'
 import {
   BRAIN_WORDS,
@@ -7,6 +7,7 @@ import {
   MODULES,
   exportCommand,
   fmt,
+  liveConfigOf,
   pct,
   prettyId,
   serveCommand,
@@ -63,7 +64,18 @@ function Command({ text, label }: { text: string; label: string }) {
 export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
   const index = useApp((s) => s.index)
   const live = useApp((s) => (s.live?.current === bundle.name ? s.live : null))
+  const term = useApp((s) => s.term)
   const { meta } = bundle
+  // Watch's "run it on your machine" opens this tab at the serve command.
+  const liveRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const el = liveRef.current
+    if (term !== 'live' || !el) return
+    el.scrollIntoView({ block: 'start' })
+    el.classList.remove('flash')
+    void el.offsetWidth
+    el.classList.add('flash')
+  }, [term])
   const { config, result, checkpoint } = meta
   const others = index?.episodes.filter((e) => e.name !== bundle.name) ?? []
   return (
@@ -226,6 +238,32 @@ export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: Tick
           <p>{LIVE_COPY.serveIntro}</p>
           <Command text={serveCommand(live.config)} label="the serve command" />
         </>
+      )}
+      {!live && !stillPlaying(meta) && (
+        <section className="prov-live" id="prov-live" ref={liveRef} tabIndex={-1} aria-labelledby="prov-live-title">
+          <h4 id="prov-live-title">{LIVE_COPY.watchLive}</h4>
+          <p>
+            {LIVE_COPY.watchLiveIntro} From the repository root, with the package installed and the app built (
+            <code>cd web && npm install && npm run build</code>):
+          </p>
+          <Command text={serveCommand(liveConfigOf(meta))} label="the serve command" />
+          <p>
+            Then open <code>http://127.0.0.1:8765/</code>; Ctrl+C stops it.
+            {meta.model !== 'heuristics' && (
+              <>
+                {' '}
+                The trained networks are read from <code>runs/{meta.scenario.replace('.cfg', '')}</code>, which{' '}
+                <code>python -m system1_doom.train</code> fills; <code>--model heuristics</code> needs no training.
+              </>
+            )}
+            {meta.brains.d1_ultra && (
+              <>
+                {' '}
+                <code>--d1</code> needs <code>LIQUID_API_KEY</code>, in the environment or in <code>.env</code>.
+              </>
+            )}
+          </p>
+        </section>
       )}
       <h4>How to make it again</h4>
       <p>{live ? LIVE_COPY.exportAgain : 'From the repository root, with the package installed:'}</p>

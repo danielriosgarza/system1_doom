@@ -4146,6 +4146,17 @@ tr.pinned td {
   color: var(--muted);
 }
 
+.prov-live {
+  margin: 0 -8px;
+  padding: 0 8px 2px;
+  border-radius: 8px;
+  scroll-margin-top: 8px;
+}
+
+.prov-live:focus {
+  outline: none;
+}
+
 .prov-title {
   margin: 0 0 6px;
   font-size: 15px;

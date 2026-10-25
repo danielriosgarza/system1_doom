@@ -1584,6 +1584,26 @@ export function serveCommand(config: LiveConfig): string {
   return parts.join(' ')
 }
 
+/**
+ * The serve settings that play a recording's own settings live: the same scenario, seed, brains, arbiter and
+ * tick cap, at serve's default pace and with no end to the episodes.
+ */
+export function liveConfigOf(meta: EpisodeMeta): LiveConfig {
+  return {
+    scenario: meta.scenario,
+    seed: meta.seed,
+    model: meta.model,
+    d1: meta.brains.d1_ultra,
+    d1_sync: d1Sync(meta),
+    codex: meta.brains.slow_path === 'codex',
+    slow_path: meta.brains.slow_path !== 'off',
+    deterministic: meta.config.deterministic_arbiter,
+    max_ticks: meta.config.max_ticks,
+    pace_sec: SERVE_PACE_SEC,
+    episodes: null,
+  }
+}
+
 /** Rebuilds episodes/index.json after a recording is added. */
 export const INDEX_COMMAND = 'python -m system1_doom.export --index web/public/episodes'
 
