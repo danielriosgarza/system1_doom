@@ -8,6 +8,7 @@ from system1_doom import train
 from system1_doom.actions import ActionSpec, ActionVocabulary
 from system1_doom.controller import ControllerConfig, DoomDecisionController
 from system1_doom.learning import Learner
+from system1_doom.logger import TickTrace
 from system1_doom.relevance import load_ledger
 from system1_doom.vizdoom_env import ViZDoomBridge
 from tests.fake_d1 import FakeD1, default_policy
@@ -92,6 +93,28 @@ def test_train_command_writes_run_folder_and_resumes(tmp_path):
     best.episodes = 99
     best.save(store.best)
     assert train.load_play_learner(store).episodes == 99
+
+
+def test_train_and_evaluation_start_from_the_saved_configuration_and_fresh_forgets_it(tmp_path, capsys):
+    from system1_doom.configuration import Configuration, default_configuration
+
+    store = train.RunStore(tmp_path / "run")
+    default_configuration().with_changes(exploration_level="explore").save(store.configuration)
+    store.system2.write_text("{}")
+    fake = FakeD1(default_policy)
+    common = ["--scenario", "basic.cfg", "--max-ticks", "3", "--run-dir", str(store.root), "--seed", "3", "--train-steps", "2"]
+
+    # Evaluation plays under the saved configuration, with System 2 off, and saves nothing.
+    assert train.main(common + ["--evaluate", "1"], transport=fake) == 0
+    assert f"configuration: {store.configuration} (version 2)" in capsys.readouterr().err
+    traces = [TickTrace.model_validate_json(line) for line in (store.root / "eval" / "none" / "ticks.jsonl").read_text().splitlines()]
+    assert traces and all(t.configuration_version == 2 and t.exploration_level == "explore" for t in traces)
+    assert not (store.root / "eval" / "none" / "reflections.jsonl").exists() and store.system2.read_text() == "{}"
+
+    # --fresh clears the run folder, so the session starts from the design's version 1.
+    assert train.main(common + ["--episodes", "1", "--fresh", "--no-system2"], transport=fake) == 0
+    assert "configuration: the design's version 1" in capsys.readouterr().err
+    assert Configuration.load(store.configuration).version == 1 and not store.system2.exists()
 
 
 def test_admitted_macros_persist_and_are_revalidated(tmp_path):

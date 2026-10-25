@@ -8,8 +8,14 @@ episodes from what it played, and serve the `values` evidence channel. Training 
 cost too: about six calls per decision. The run folder also keeps the relevance ledger
 (`relevance.json`), which every episode updates, and, with System 2 on (the default; `--no-system2`
 switches it off), the configuration as System 2 changed it (`configuration.json`, saved at every change
-and episode end; `--configuration` starts from it), System 2's state (`system2.json`) and its records
-(`reflections.jsonl`). Evaluation plays with System 2 off, so its episodes stay identical.
+and episode end), System 2's state (`system2.json`) and its records (`reflections.jsonl`).
+
+Every entry point that plays starts from the run folder's `configuration.json` when it exists, so System
+2's work carries across runs (and `system2.json` restores, its fingerprint matching); `--configuration
+PATH` names another file, and `--fresh-configuration` starts from the design's version 1, forgetting the
+saved configuration and System 2's state (`--fresh` implies it). `starting_configuration` decides which,
+and each run says so in one line on stderr. Evaluation plays under that configuration with System 2 off,
+so its episodes stay identical.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Union
 
 from system1_doom.actions import ActionSpec
 from system1_doom.charts import render_learning_curves, rolling_mean
+from system1_doom.configuration import Configuration
 from system1_doom.controller import NO_KEY_MESSAGE, ControllerConfig, DoomDecisionController
 from system1_doom.d1_client import TransportFn, load_api_key
 from system1_doom.vizdoom_env import ViZDoomBridge
@@ -88,9 +95,67 @@ class RunStore:
     def save_macros(self, specs: Sequence[ActionSpec]) -> None:
         self.macros.write_text(json.dumps([s.model_dump(mode="json") for s in specs], indent=2), encoding="utf-8")
 
+    def forget_configuration(self) -> None:
+        """`--fresh-configuration`: the saved configuration and System 2's state go, so both start over."""
+        for path in (self.configuration, self.system2):
+            path.unlink(missing_ok=True)
+
 
 def default_run_dir(scenario: str) -> Path:
     return Path("runs") / Path(scenario).stem
+
+
+class ConfigurationFileError(ValueError):
+    """The configuration a run would start from does not exist or does not load."""
+
+
+class StartingConfiguration:
+    """The configuration a run starts from: a file and its version, or the design's version 1 (`path` None)."""
+
+    def __init__(self, path: Optional[Path], version: int, saved: bool) -> None:
+        self.path = path
+        self.version = version
+        # The run folder's own configuration.json: it already holds every macro admitted and retired, so the
+        # run folder's macros.json is not merged into it (that would change it, and System 2 would start fresh).
+        self.saved = saved
+
+    @property
+    def line(self) -> str:
+        if self.path is None:
+            return "configuration: the design's version 1"
+        return f"configuration: {self.path} (version {self.version})"
+
+
+def starting_configuration(store: RunStore, path: Optional[Union[str, Path]] = None, fresh: bool = False) -> StartingConfiguration:
+    """Which configuration a run starts from: `path` when given; else, unless `fresh`, the run folder's saved
+    `configuration.json` when it exists (System 2's `system2.json` then restores, its fingerprint matching);
+    else the design's version 1. Reads only; `RunStore.forget_configuration` is the caller's, for runs that save."""
+    chosen = Path(path) if path is not None else (store.configuration if not fresh and store.configuration.is_file() else None)
+    if chosen is None:
+        return StartingConfiguration(None, 1, False)
+    if not chosen.is_file():
+        raise ConfigurationFileError(f"{chosen}: no such configuration file")
+    try:
+        version = Configuration.load(chosen).version
+    except Exception as exc:  # noqa: BLE001 - any failure to load is reported with its remedy
+        raise ConfigurationFileError(
+            f"{chosen} does not load as a configuration ({str(exc).splitlines()[0][:200]}); "
+            "start from the design's version 1 with --fresh-configuration"
+        ) from exc
+    return StartingConfiguration(chosen, version, chosen.resolve() == store.configuration.resolve())
+
+
+def add_configuration_flags(parser: argparse.ArgumentParser) -> None:
+    """`--configuration PATH` and `--fresh-configuration`, shared by every entry point that plays."""
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--configuration", default=None, metavar="PATH",
+        help="A configuration.json to start from (default: the run folder's configuration.json when it exists, else the design's version 1)",
+    )
+    group.add_argument(
+        "--fresh-configuration", action="store_true",
+        help="Start from the design's version 1: the run folder's saved configuration and System 2 state are forgotten",
+    )
 
 
 def load_learner(store: RunStore, overrides: Optional[Dict[str, Any]] = None, fresh: bool = False) -> "Learner":
@@ -216,9 +281,16 @@ def evaluate(
     max_ticks: int,
     transport: Optional[TransportFn] = None,
     api_key: Optional[str] = None,
+    start: Optional[StartingConfiguration] = None,
 ) -> Dict[str, Dict[str, float]]:
-    """Play identical seeded episodes with d1-ultra deciding, with no, the latest and the best value networks as evidence."""
+    """Play identical seeded episodes with d1-ultra deciding, with no, the latest and the best value networks as evidence.
+
+    Every contender plays under the same configuration (`start`, by default the run folder's saved one) with
+    System 2 off and nothing saved, so the episodes differ only by the networks.
+    """
     from system1_doom.learning import Learner
+
+    start = start or starting_configuration(store)
 
     contenders: List[Any] = [("none", None)]
     for label, path in (("latest", store.checkpoint), ("best", store.best)):
@@ -228,9 +300,13 @@ def evaluate(
     report: Dict[str, Dict[str, float]] = {}
     for label, model in contenders:
         env = ViZDoomBridge(scenario=scenario, window_visible=False)
-        cfg = ControllerConfig(seed=EVAL_SEED_BASE, enable_slow_llm=False, log_dir=str(store.root / "eval" / label))
+        cfg = ControllerConfig(
+            seed=EVAL_SEED_BASE, enable_slow_llm=False, log_dir=str(store.root / "eval" / label),
+            configuration_path=str(start.path) if start.path else None,
+        )
         ctrl = DoomDecisionController(env=env, config=cfg, learner=model, transport=transport, api_key=api_key)
-        ctrl.restore_macros(store.load_macros())
+        if not start.saved:
+            ctrl.restore_macros(store.load_macros())
         results = []
         try:
             for i in range(episodes):
@@ -275,7 +351,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--episodes", type=int, default=50, help="Episodes to play in this session")
     parser.add_argument("--max-ticks", type=int, default=500, help="Decision cap per episode")
     parser.add_argument("--run-dir", default=None, help="Run folder (default: runs/<scenario name>)")
-    parser.add_argument("--fresh", action="store_true", help="Delete the run folder's models and history first")
+    parser.add_argument(
+        "--fresh", action="store_true", help="Delete the run folder's models, history, configuration and System 2 state first"
+    )
     parser.add_argument("--train-steps", type=int, default=None, help="Gradient steps after each episode (default 200)")
     parser.add_argument(
         "--trust-count",
@@ -291,7 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Play at the exploit level (default)")
     parser.add_argument("--codex", action="store_true", help="Let the slow Codex worker propose new macros")
     parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
-    parser.add_argument("--configuration", default=None, help="A configuration.json to start from (e.g. the run folder's)")
+    add_configuration_flags(parser)
     parser.add_argument(
         "--evaluate",
         type=int,
@@ -319,9 +397,16 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
         api_key = "test-transport"
 
     store = RunStore(args.run_dir or default_run_dir(args.scenario))
+    fresh_configuration = args.fresh_configuration or args.fresh
     if args.evaluate > 0:
         try:
-            report = evaluate(args.scenario, store, args.evaluate, args.max_ticks, transport=transport, api_key=api_key)
+            start = starting_configuration(store, args.configuration, fresh_configuration)
+        except ConfigurationFileError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        print(start.line, file=sys.stderr, flush=True)
+        try:
+            report = evaluate(args.scenario, store, args.evaluate, args.max_ticks, transport=transport, api_key=api_key, start=start)
         except CheckpointMismatch as exc:
             print(f"{exc}\nRetrain with --fresh.", file=sys.stderr)
             return 2
@@ -329,6 +414,13 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
         return 0
     if args.fresh:
         store.reset()
+    elif fresh_configuration:
+        store.forget_configuration()
+    try:
+        start = starting_configuration(store, args.configuration, fresh_configuration)
+    except ConfigurationFileError as exc:
+        print(exc, file=sys.stderr)
+        return 2
 
     overrides: Dict[str, Any] = {}
     if args.train_steps is not None:
@@ -347,7 +439,7 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
     cfg = ControllerConfig(
         call_budget_sec=args.call_budget,
         seed=args.seed or 0,
-        configuration_path=args.configuration,
+        configuration_path=str(start.path) if start.path else None,
         exploration_level=args.level,
         enable_slow_llm=args.codex,
         log_dir=str(store.root),
@@ -362,7 +454,9 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
     except Exception:
         env.close()
         raise
-    ctrl.restore_macros(store.load_macros())
+    if not start.saved:
+        ctrl.restore_macros(store.load_macros())
+    print(start.line, file=sys.stderr, flush=True)
 
     resumed = learner.episodes
     print(

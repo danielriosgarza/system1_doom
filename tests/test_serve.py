@@ -221,7 +221,11 @@ def test_the_flags_reach_the_status_and_serving_needs_the_key(monkeypatch, capsy
     assert "d1_sync" not in status and "deterministic" not in status and "model" not in status
     assert status["system2"] is True and config.configuration is None
     off = serve.config_from_args(serve.build_parser().parse_args(["--no-system2", "--configuration", "runs/x/configuration.json"]))
-    assert off.system2 is False and off.configuration == Path("runs/x/configuration.json")
+    assert off.system2 is False and off.configuration == Path("runs/x/configuration.json") and not off.fresh_configuration
+    fresh = serve.config_from_args(serve.build_parser().parse_args(["--fresh-configuration"]))
+    assert fresh.fresh_configuration and fresh.configuration is None
+    with pytest.raises(SystemExit):
+        serve.build_parser().parse_args(["--fresh-configuration", "--configuration", "x.json"])
     monkeypatch.setattr(serve, "load_api_key", lambda: None)
     assert serve.main(["--port", "0"]) == 2 and "LIQUID_API_KEY" in capsys.readouterr().err
 

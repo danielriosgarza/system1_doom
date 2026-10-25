@@ -28,7 +28,8 @@ On one origin:
 System 2 is on unless `--no-system2`. Each of its records (a cycle, a trial verdict, a note) is published
 as a `reflection` event as it is logged, and the episode in progress serves its `reflections.jsonl` from
 memory like the other files. An episode's files are finished only once System 2's end-of-episode cycle
-has, so that cycle's record belongs to the episode that ended.
+has, so that cycle's record belongs to the episode that ended. Play starts from the run folder's saved
+configuration when it exists, as every entry point does (`--configuration PATH`, `--fresh-configuration`).
 
 Publishing never waits for a viewer: publishing a tick is a queue put, a viewer whose queue is full
 is dropped, and pacing is a sleep after a tick, never inside it.
@@ -75,7 +76,7 @@ from system1_doom.export import (
 from system1_doom.logger import TRACE_SCHEMA_VERSION, ProposalTrace, TickTrace
 from system1_doom.reflection import REFLECTIONS_FILE
 from system1_doom.system2 import Record
-from system1_doom.train import RunStore, default_run_dir
+from system1_doom.train import ConfigurationFileError, RunStore, add_configuration_flags, default_run_dir
 
 LIVE_NAME = re.compile(r"^live-(\d+)$")
 LIVE_FILES = ("episode.json", "ticks.jsonl", "proposals.jsonl", REFLECTIONS_FILE)
@@ -112,6 +113,7 @@ class ServeConfig:
     slow_path: bool = True
     system2: bool = True
     configuration: Optional[Path] = None
+    fresh_configuration: bool = False
     episodes: Optional[int] = None
     pace: float = 0.23
     rest: float = 3.0
@@ -499,6 +501,7 @@ def play(config: ServeConfig, hub: LiveHub, stop: threading.Event, log: bool = F
         config.api_key,
         config.system2,
         config.configuration,
+        config.fresh_configuration,
     )
     player.ctrl.add_reflection_listener(hub.add_reflection)
     try:
@@ -533,7 +536,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--codex", action="store_true", help="Let the slow path call the Codex CLI instead of templates")
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
     parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
-    parser.add_argument("--configuration", default=None, help="A configuration.json to start from (default: the design's)")
+    add_configuration_flags(parser)
     parser.add_argument("--episodes", type=int, default=None, help="Episodes to play (default: until Ctrl+C)")
     parser.add_argument(
         "--pace", type=float, default=0.23, help="Least wall time per tick in seconds (default 0.23: 8 frames at 35 fps; 0 runs flat out)"
@@ -564,6 +567,7 @@ def config_from_args(args: argparse.Namespace) -> ServeConfig:
         slow_path=not args.no_slow_path,
         system2=not args.no_system2,
         configuration=Path(args.configuration) if args.configuration else None,
+        fresh_configuration=args.fresh_configuration,
         episodes=args.episodes,
         pace=max(0.0, args.pace),
         rest=max(0.0, args.rest),
@@ -612,7 +616,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         try:
             play(config, hub, stop, log=True)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, ConfigurationFileError) as exc:
             print(exc, file=sys.stderr)
             return 2
         if not stop.is_set():

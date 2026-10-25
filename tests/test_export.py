@@ -174,6 +174,27 @@ def test_export_without_system2_records_no_reflections(tmp_path, capsys):
     assert "configuration version 1 -> 1" in capsys.readouterr().out
 
 
+def test_exported_episodes_start_from_the_saved_configuration_and_carry_it_on(tmp_path, capsys):
+    from system1_doom.configuration import default_configuration
+
+    run = tmp_path / "run"
+    run.mkdir()
+    saved = run / "configuration.json"
+    default_configuration().with_changes(exploration_level="explore").save(saved)
+    argv = ["--scenario", "basic.cfg", "--seed", "3", "--max-ticks", "2", "--episodes", "2", "--run-dir", str(run), "--no-system2"]
+    assert export.main(argv + ["--out", str(tmp_path / "a")], transport=FakeD1(shoot_when_aimed)) == 0
+    assert capsys.readouterr().err.count(f"configuration: {saved} (version 2)") == 2
+    metas = [export.EpisodeMeta.model_validate_json((b / "episode.json").read_text()) for b in sorted((tmp_path / "a").iterdir())]
+    assert [m.configuration_start.version for m in metas] == [2, 2]
+    assert all(m.configuration_start.exploration_level == "explore" for m in metas)
+    # --fresh-configuration: the first episode starts from the design's version 1; the next one carries on from it.
+    assert export.main(argv + ["--out", str(tmp_path / "b"), "--fresh-configuration"], transport=FakeD1(shoot_when_aimed)) == 0
+    err = capsys.readouterr().err
+    assert "configuration: the design's version 1" in err and f"configuration: {saved} (version 1)" in err
+    metas = [export.EpisodeMeta.model_validate_json((b / "episode.json").read_text()) for b in sorted((tmp_path / "b").iterdir())]
+    assert [(m.configuration_start.version, m.configuration_start.exploration_level) for m in metas] == [(1, "exploit"), (1, "exploit")]
+
+
 def test_index_lists_shippable_schema_2_bundles(bundle):
     entries = export.write_index(bundle.parent)
     assert [e.name for e in entries] == [bundle.name]

@@ -26,8 +26,8 @@
 > (the value networks). This document describes the code as it is.
 
 **Package:** `system1-doom` 0.3.0 · **Python:** ≥ 3.11 · **Source layout:**
-`src/system1_doom/` (32 modules, ≈ 11,300 LOC) · **Tests:** `tests/`
-(25 files, 228 tests, 4 of them live) · **Web explainer:** `web/` (Vite +
+`src/system1_doom/` (32 modules, ≈ 11,500 LOC) · **Tests:** `tests/`
+(25 files, 232 tests, 4 of them live) · **Web explainer:** `web/` (Vite +
 React + TypeScript; still on trace schema 1 until the third pull request
 of the design), online at <https://danielriosgarza.github.io/system1_doom/>
 
@@ -221,9 +221,11 @@ Play writes `ticks.jsonl`, `history.jsonl`, `proposals.jsonl`,
 `--log-dir` (default `logs/`), and updates the relevance ledger in
 `runs/<scenario-stem>/relevance.json`. The configuration System 2 reaches
 is saved in `runs/<scenario-stem>/configuration.json` (System 2's own
-state in `system2.json`): add `--configuration
-runs/<scenario-stem>/configuration.json` to start the next session from
-it, or `--no-system2` to keep the configuration as it starts. Training writes
+state in `system2.json`), and the next run in that folder starts from it,
+so System 2's work carries on; `--fresh-configuration` starts from the
+design's version 1 instead, and `--no-system2` keeps the configuration as
+it starts. Each run says on stderr which configuration it starts from.
+Training writes
 to `runs/<scenario-stem>/`; re-running the same command resumes from
 `checkpoint.pt` — add `--fresh` to start over. Full flag reference: §11.
 
@@ -242,7 +244,7 @@ system1_doom/
 │       ├── specs/2026-10-23-learning-controller-design.md
 │       └── plans/2026-10-23-d1-ultra-doom-controller.md
 ├── src/system1_doom/               # the package (see table below)
-├── tests/                          # 25 files, 228 tests, fake_d1.py and system2_fixtures.py (§16)
+├── tests/                          # 25 files, 232 tests, fake_d1.py and system2_fixtures.py (§16)
 ├── web/                            # the web explainer: Vite + React app and demo bundles (§8.15)
 ├── runs/<scenario>/                # training output, the relevance ledger, the configuration and System 2's state (§13)
 ├── bundles/                        # episode bundles from `system1_doom.export` (§13)
@@ -278,12 +280,12 @@ system1_doom/
 | `controller.py` | 750 | `DoomDecisionController`: one tick and one episode; configuration hook; System 2's host; misses; cost |
 | `logger.py` | 145 | Schema-2 `TickTrace`/`ProposalTrace` JSONL logging, and System 2's `reflections.jsonl` |
 | `tracing.py` | 276 | Typed trace records (state, pruning, projections, outcome, slow-path request), read-only |
-| `export.py` | 898 | Episode bundles, `--check`, `--index`, `--schema` (`python -m system1_doom.export`) |
-| `serve.py` | 632 | Live mode: plays episodes as `export` does and streams every tick (`python -m system1_doom.serve`) |
+| `export.py` | 914 | Episode bundles, `--check`, `--index`, `--schema` (`python -m system1_doom.export`) |
+| `serve.py` | 636 | Live mode: plays episodes as `export` does and streams every tick (`python -m system1_doom.serve`) |
 | `visualizer.py` | 347 | Split-screen HUD frames, GIF/MP4 recorder, live Tk panel of the six instances |
 | `charts.py` | 117 | `learning_curves.png` from `metrics.jsonl` (matplotlib, dark theme) |
-| `cli.py` | 206 | Play/watch entry point (`python -m system1_doom.cli`) |
-| `train.py` | 398 | Training/evaluation entry point, `RunStore`, resume, best-checkpoint tracking (`python -m system1_doom.train`) |
+| `cli.py` | 220 | Play/watch entry point (`python -m system1_doom.cli`) |
+| `train.py` | 492 | Training/evaluation entry point, `RunStore`, resume, best-checkpoint tracking, which configuration a run starts from (`starting_configuration`) (`python -m system1_doom.train`) |
 | `__init__.py` | 3 | Package docstring + `__version__` |
 
 Dependencies point “downwards” only: `controller` wires everything;
@@ -638,10 +640,12 @@ paid-off rate drop of 0.15 on 10 followed messages.
 as a whole; `replace(**fields)` and `with_bounds(**fields)` keep the
 version and are for setting up the initial configuration before play
 (`--call-budget`, `--explore`, macros restored from a run folder).
-`save()`/`load()` round-trip JSON (`--configuration FILE`); with System 2
-on, the entry points save the configuration in play to
-`runs/<scenario>/configuration.json` at every change that takes effect
-and at every episode end. The controller applies a queued configuration only at a tick boundary
+`save()`/`load()` round-trip JSON. The entry points save the
+configuration in play to `runs/<scenario>/configuration.json` at every
+change that takes effect and at every episode end, and start from that
+file when it exists (`--configuration PATH` names another,
+`--fresh-configuration` starts from version 1; §11, §8.16). The
+controller applies a queued configuration only at a tick boundary
 (`request_configuration`, §8.13); the trace records each tick's
 `configuration_version` and whether it changed, and the bundle the
 configuration at the start and the end of the episode.
@@ -1503,14 +1507,28 @@ happens in between: `trial_started`, `judge_missed`, `no_verdict`, `macro_admitt
 
 **Persistence.** The configuration is saved to
 `runs/<scenario>/configuration.json` at every change that takes effect
-and at every episode end; `--configuration` starts a session from it.
-System 2's own state (its decision count, the last cycle, cooling, the
+and at every episode end, and every entry point that plays starts from
+that file when it exists, so System 2's work carries across runs and a
+recording can start from a later configuration version without a flag.
+`--configuration PATH` names another file; `--fresh-configuration`
+starts from the design's version 1 and forgets the saved configuration
+and System 2's state (`train --fresh` implies it). Each run says which in
+one line on stderr: `configuration: runs/basic/configuration.json
+(version 2)`, or `configuration: the design's version 1`. The saved
+configuration already holds every macro admitted and retired, so the run
+folder's `macros.json` is merged only into a configuration that is not
+the run folder's own. A multi-episode `export` plays each episode with
+its own controller: the first starts as asked, each next one from the
+configuration the one before saved. System 2's own state (its decision count, the last cycle, cooling, the
 change log, recent tests and verdicts, the trial in flight, a pending
 change) is saved atomically to `runs/<scenario>/system2.json` at every
 cycle, verdict, note, configuration change and episode end, and when
 play stops. It is restored at the first tick only when the session
 starts from the configuration it was saved with (a fingerprint of that
-configuration); otherwise System 2 starts fresh, with a note. A revert
+configuration), which the default start ensures; a flag that changes the
+configuration before play (a different `--call-budget`, `--explore` or
+`--exploit`) changes the fingerprint, and System 2 starts fresh, with a
+note, as it does from any other configuration. A revert
 saved before it took effect is queued again on restore; any other
 pending change is dropped, with a note.
 
@@ -1591,11 +1609,16 @@ All four entry points that play (`cli`, `train`, `export`, `serve`) exit
 game; each takes `--call-budget SEC` (per-call budget, default 5),
 `--explore`/`--exploit` (the starting exploration level, default
 exploit), `--seed` (the game's seed and System 1's draw seed),
-`--configuration FILE` (a `configuration.json` to start from, such as
-the run folder's) and `--no-system2` (System 2 is on by default; with it
-off the configuration stays as it starts). `train --evaluate` always
-plays with System 2 off, so the brains it compares face one
-configuration.
+`--configuration PATH`, `--fresh-configuration` and `--no-system2`.
+Each starts from the run folder's `configuration.json` when it exists
+(System 2's `system2.json` then restores), from `--configuration PATH`
+when given, or from the design's version 1 with `--fresh-configuration`
+(which forgets the saved configuration and System 2's state), and prints
+which on stderr; a file that does not load stops the run with exit code
+2 and that remedy. System 2 is on by default; with `--no-system2` the
+configuration stays as it starts. `train --evaluate` always plays with
+System 2 off, under the configuration a run would start from, and saves
+nothing, so the brains it compares face one configuration.
 
 ### `python -m system1_doom.cli` — play / watch
 
@@ -1607,7 +1630,8 @@ configuration.
 | `--call-budget SEC` | 5 | Per-call budget for each d1-ultra call |
 | `--explore` / `--exploit` | exploit | Starting exploration level |
 | `--seed` | — | ViZDoom seed and System 1's draw seed |
-| `--configuration FILE` | the design's | A `configuration.json` to start from (§8.4), such as `runs/<scenario>/configuration.json`, where System 2 saves the one in play |
+| `--configuration PATH` | the run folder's `configuration.json` if it exists, else the design's version 1 | Another `configuration.json` to start from (§8.4) |
+| `--fresh-configuration` | — | Start from the design's version 1, forgetting the run folder's saved configuration and System 2 state |
 | `--disable-slow-llm` | — | No slow path |
 | `--no-system2` | — | Switch System 2 off: the configuration stays as it starts |
 | `--visible` | — | 640×480 ViZDoom window + the six-instance side window (unless `--no-dashboard`); default step delay becomes 120 ms |
@@ -1639,7 +1663,7 @@ an episode ended as `connection_lost`.
 | `--episodes` | 50 | Episodes this session (numbering resumes) |
 | `--max-ticks` | 500 | Decision cap per episode |
 | `--run-dir` | `runs/<scenario-stem>` | Run folder |
-| `--fresh` | — | Delete the run folder's models, ledger, history, configuration and System 2 state first |
+| `--fresh` | — | Delete the run folder's models, ledger, history, configuration and System 2 state first (so it implies `--fresh-configuration`) |
 | `--train-steps` | 200 | Gradient steps after each episode |
 | `--trust-count` | 25 | Tries at which the reported network share reaches 50% |
 | `--chart-every` | 5 | Redraw `learning_curves.png` every N episodes |
@@ -1647,7 +1671,7 @@ an episode ended as `connection_lost`.
 | `--call-budget`, `--explore`/`--exploit` | 5 / exploit | As above |
 | `--codex` | off | Let the slow worker call the Codex CLI |
 | `--no-system2` | — | Switch System 2 off |
-| `--configuration FILE` | the design's | A `configuration.json` to start from, such as the run folder's |
+| `--configuration PATH`, `--fresh-configuration` | the run folder's, else the design's | As `cli` |
 | `--evaluate N` | 0 | Skip training; play N identical seeded episodes with no, the latest and the best networks as evidence and write `evaluation.json` |
 
 One line per episode is printed (reward, kills, health, outcome, network
@@ -1671,7 +1695,7 @@ hint), or on a checkpoint mismatch (with a `--fresh` remedy).
 | `--codex` | off | Let the slow path call the Codex CLI; otherwise it runs on templates |
 | `--no-slow-path` | — | Switch the slow path off |
 | `--no-system2` | — | Switch System 2 off; `reflections.jsonl` is then empty |
-| `--configuration FILE` | the design's | A `configuration.json` to start from |
+| `--configuration PATH`, `--fresh-configuration` | the run folder's, else the design's | As `cli`, for the first episode; each next one starts from the configuration the one before saved |
 | `--check BUNDLE` | — | Validate a bundle and exit (exit code 1 on problems); no key needed |
 | `--index DIR` | — | Write `DIR/index.json` listing its shippable bundles and exit; no key needed |
 | `--schema OUT.json` | — | Write the bundle JSON Schema and exit; no key needed |
@@ -1693,7 +1717,7 @@ python -m system1_doom.export --index bundles
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--scenario`, `--seed`, `--networks`, `--run-dir`, `--max-ticks`, `--call-budget`, `--explore`/`--exploit`, `--codex`, `--no-slow-path`, `--no-system2`, `--configuration` | as `export` | How to play; episode k gets seed `seed + k - 1` |
+| `--scenario`, `--seed`, `--networks`, `--run-dir`, `--max-ticks`, `--call-budget`, `--explore`/`--exploit`, `--codex`, `--no-slow-path`, `--no-system2`, `--configuration`, `--fresh-configuration` | as `export` | How to play; episode k gets seed `seed + k - 1` |
 | `--episodes N` | until Ctrl+C | Episodes to play; afterwards the server keeps serving until Ctrl+C |
 | `--pace SEC` | 0.23 | Least wall time per tick (8 game frames at 35 fps); 0 plays flat out |
 | `--rest SEC` | 3 | Pause between episodes |
@@ -1722,7 +1746,7 @@ entry points above (or embed `DoomDecisionController` directly — §17).
 | `call_budget_sec` | `None` | Overrides the configuration's per-call budget (`--call-budget`) |
 | `seed` | `0` | Seeds System 1's generator for draws under the explore level |
 | `configuration` | `None` | The initial `Configuration` (else `configuration_path`, else the design's) |
-| `configuration_path` | `None` | A `configuration.json` to start from |
+| `configuration_path` | `None` | A `configuration.json` to start from (the entry points pass the run folder's when it exists, `train.starting_configuration`) |
 | `exploration_level` | `None` | Overrides the initial level |
 | `enable_slow_llm` | `True` | Master slow-path switch |
 | `use_codex_cli` | `True` | Use `codex exec` when available; else fallback templates |
@@ -1782,8 +1806,8 @@ that led to it.
 | `replay.npz` | Replay buffer arrays (`states, actions, returns`), chronological |
 | `macros.json` | Admitted macros as `ActionSpec` JSON; **re-validated on load** |
 | `relevance.json` | The relevance ledger, restored at start and saved after every episode played with this run folder (play, training, recording) |
-| `configuration.json` | The configuration in play, saved at every change that takes effect and at every episode end (with System 2 on); start a session from it with `--configuration` |
-| `system2.json` | System 2's state: decision count, cooling, change log, recent tests and verdicts, the trial in flight; restored when a session starts from the configuration it was saved with |
+| `configuration.json` | The configuration in play, saved at every change that takes effect and at every episode end; every entry point that plays starts from it when it exists (`--fresh-configuration` starts from the design's version 1 instead) |
+| `system2.json` | System 2's state: decision count, cooling, change log, recent tests and verdicts, the trial in flight; restored when a session starts from the configuration it was saved with, as it does by default |
 | `metrics.jsonl` | One row per training episode: reward, kills, health, armor, ticks, cleared/died, finished reason, missed ticks, cost, d1 calls, transitions, replay size, network share, per-network losses, macros, timings |
 | `learning_curves.png` | The chart of §8.14 |
 | `evaluation.json` | Latest `--evaluate` report (no/latest/best networks over identical seeds) |
@@ -1818,6 +1842,7 @@ their checkpoints load (the gate keys are ignored) and serve the
 | Fewer than 24 stored ticks for the history test, or too few calls left in the cycle | No test: the change waits, and a later cycle may propose it again | outcome `test_waiting` |
 | The trial judge misses | The trial is extended by 20 decisions and the judge asked again | note `judge_missed`; `extensions` on the trial |
 | The trial judge misses a third time (`judge_extensions_max`) | The trial ends as revert with no verdict: the configuration before the change is restored at the next tick boundary, and cooling starts | verdict `by: "no verdict"` with its table; note `no_verdict` |
+| The run folder's `configuration.json`, or `--configuration PATH`, does not load | The entry point exits 2 before the game starts, naming `--fresh-configuration` | — |
 | The slow path cannot take System 2's macro request (off or busy) | No change this cycle | outcome `macro_not_enqueued` |
 | System 2's macro request unanswered for 60 decisions | Abandoned; cycles resume | note `macro_abandoned` |
 | The session ends with a revert queued but not yet in play | Saved in `system2.json` and queued again when the next session starts from the same configuration | note `restored` |
@@ -1921,8 +1946,8 @@ with `train --evaluate` (no, latest and best networks on the same seeds).
 ## 16. Testing
 
 ```bash
-python -m pytest                 # 228 tests, 25 files, from the repo root
-python -m pytest -k "not live"   # the 224 that need no key, as CI runs them
+python -m pytest                 # 232 tests, 25 files, from the repo root
+python -m pytest -k "not live"   # the 228 that need no key, as CI runs them
 ```
 
 Every behaviour is exercised without a key through `tests/fake_d1.py`:
@@ -1967,10 +1992,10 @@ and about 45 seconds with them.
 | `test_llm_and_admission.py` | The bounds reject before any call; the admit instance admits at its yes; a missed admit rejects; the admit evidence and its determinism; the background worker |
 | `test_archive.py` | The archive holds no decision; the active strategy follows the configuration; a full archive makes room by age, never by score; outcomes update the record shown as evidence |
 | `test_learning.py` | n-step returns; per-network rewards; running stats; replay round-trip; each value net learns its own signal; episode credit assignment; checkpoint round-trip, overrides and mismatch; a checkpoint with gate weights loads (synthetic, and the shipped one when present) |
-| `test_training.py` | The motor executes an action's own plan; `train` writes the full run folder (with the ledger and history) and resumes; admitted macros persist and are re-validated; no exploration schedule; fail fast without the key; the idle burst |
-| `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved |
-| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none |
-| `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2` and `--configuration` |
+| `test_training.py` | The motor executes an action's own plan; `train` writes the full run folder (with the ledger and history) and resumes; training and evaluation start from the saved configuration (evaluation with System 2 off, saving nothing) and `--fresh` forgets it; admitted macros persist and are re-validated; no exploration schedule; fail fast without the key; the idle burst |
+| `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a configuration that does not load stops play with its remedy |
+| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration` |
+| `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration` |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run build`

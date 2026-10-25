@@ -7,8 +7,10 @@ Play needs LIQUID_API_KEY (in the environment or a .env file): five senses and a
 decide every tick, so without the key there is nothing that could decide.
 
 System 2 is on unless `--no-system2`: every 20 decisions and at each episode end it may change the
-configuration (one trial at a time), saving it to the run folder's `configuration.json`, which
-`--configuration` loads; its records go to `reflections.jsonl` in the log folder.
+configuration (one trial at a time), saving it to the run folder's `configuration.json`; its records go to
+`reflections.jsonl` in the log folder. Play starts from that saved configuration when it exists (System 2's
+state then restores), from `--configuration PATH` when given, or from the design's version 1 with
+`--fresh-configuration`, and says which on stderr.
 """
 
 from __future__ import annotations
@@ -23,12 +25,15 @@ from system1_doom.controller import NO_KEY_MESSAGE, ControllerConfig, DoomDecisi
 from system1_doom.d1_client import TransportFn, load_api_key
 from system1_doom.train import (
     INSTALL_HINT,
+    ConfigurationFileError,
     RunStore,
+    add_configuration_flags,
     default_run_dir,
     format_row,
     learn_from_episode,
     load_learner,
     load_play_learner,
+    starting_configuration,
 )
 from system1_doom.vizdoom_env import ViZDoomBridge
 
@@ -48,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     level.add_argument("--explore", dest="level", action="store_const", const="explore", help="Start at the explore level")
     level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Start at the exploit level (default)")
     parser.add_argument("--seed", type=int, default=None, help="ViZDoom seed, and System 1's seed for draws under explore")
-    parser.add_argument("--configuration", default=None, help="A configuration.json to start from (default: the design's)")
+    add_configuration_flags(parser)
     parser.add_argument("--disable-slow-llm", action="store_true", help="Disable the slow macro-proposal worker")
     parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
     parser.add_argument("--visible", action="store_true", help="Show live 640x480 ViZDoom window on your display")
@@ -99,6 +104,14 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
         api_key = "test-transport"
 
     store = RunStore(args.run_dir or default_run_dir(args.scenario))
+    if args.fresh_configuration:
+        store.forget_configuration()
+    try:
+        start = starting_configuration(store, args.configuration, args.fresh_configuration)
+    except ConfigurationFileError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    print(start.line, file=sys.stderr, flush=True)
     learner = None
     if args.learn or (not args.no_learned and (store.best.is_file() or store.checkpoint.is_file())):
         try:
@@ -120,7 +133,7 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
     cfg = ControllerConfig(
         call_budget_sec=args.call_budget,
         seed=args.seed or 0,
-        configuration_path=args.configuration,
+        configuration_path=str(start.path) if start.path else None,
         exploration_level=args.level,
         enable_slow_llm=not args.disable_slow_llm,
         log_dir=args.log_dir,
@@ -137,7 +150,8 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
     except Exception:
         env.close()
         raise
-    ctrl.restore_macros(store.load_macros())
+    if not start.saved:
+        ctrl.restore_macros(store.load_macros())
     learned_info = (
         {
             "model_file": str(store.checkpoint if args.learn or not store.best.is_file() else store.best),

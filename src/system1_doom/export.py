@@ -28,8 +28,9 @@ per episode (schema version 2):
 System 2 is on unless `--no-system2`: it reads the run folder's history as the episodes are played, may
 change the configuration between ticks (each change a trial, `configuration_start` and `configuration_end`
 show where the episode began and ended), and saves `configuration.json` and `system2.json` in the run
-folder; `--configuration` starts from a saved configuration. `episode.json` counts its cycles, history
-tests and trials (`system2`).
+folder. Recording starts from that saved configuration when it exists (or `--configuration PATH`, or the
+design's version 1 with `--fresh-configuration`), and each next episode of `--episodes N` from the one the
+episode before saved. `episode.json` counts its cycles, history tests and trials (`system2`).
 
 An episode that ended with `connection_lost` (three central misses in a row) is written so it can be
 inspected, but it is not shippable: export exits 1, `--check` reports it and `--index` leaves it out.
@@ -79,7 +80,7 @@ from system1_doom.reflection import (
 )
 from system1_doom.relevance import RelevanceLedger, save_ledger
 from system1_doom.state import WorldState
-from system1_doom.train import RunStore, default_run_dir
+from system1_doom.train import ConfigurationFileError, RunStore, add_configuration_flags, default_run_dir, starting_configuration
 from system1_doom.vizdoom_env import ViZDoomBridge
 
 if TYPE_CHECKING:
@@ -413,13 +414,23 @@ def build_player(
     api_key: Optional[str] = None,
     system2: bool = True,
     configuration_path: Optional[Path] = None,
+    fresh_configuration: bool = False,
 ) -> Player:
-    """The bridge and controller a bundle is played with, writing its frames and logs into `out`."""
+    """The bridge and controller a bundle is played with, writing its frames and logs into `out`.
+
+    It starts from `configuration_path` when given, else (unless `fresh_configuration`, which also forgets
+    the saved configuration and System 2's state) from the run folder's saved `configuration.json` when it
+    exists, else from the design's version 1, and says which on stderr.
+    """
+    if fresh_configuration:
+        store.forget_configuration()
+    start = starting_configuration(store, configuration_path, fresh_configuration)
+    print(start.line, file=sys.stderr, flush=True)
     env = RecordingBridge(frames_dir=out / "frames", scenario=scenario, window_visible=False, seed=seed)
     cfg = ControllerConfig(
         call_budget_sec=call_budget_sec,
         seed=seed,
-        configuration_path=str(configuration_path) if configuration_path else None,
+        configuration_path=str(start.path) if start.path else None,
         exploration_level=exploration_level,
         enable_slow_llm=slow_path,
         use_codex_cli=codex,
@@ -437,7 +448,8 @@ def build_player(
         raise
     keeper = LastFrameKeeper()
     ctrl.recorder = keeper  # type: ignore[assignment]
-    ctrl.restore_macros(store.load_macros())
+    if not start.saved:
+        ctrl.restore_macros(store.load_macros())
     return Player(scenario, networks, max_ticks, slow_path, store, learner, model_path, env, cfg, ctrl, keeper)
 
 
@@ -582,6 +594,7 @@ def record_bundle(
     api_key: Optional[str] = None,
     system2: bool = True,
     configuration_path: Optional[Path] = None,
+    fresh_configuration: bool = False,
 ) -> EpisodeMeta:
     """Play one seeded episode with d1-ultra deciding and write it as a bundle in `out`."""
     store = RunStore(run_dir or default_run_dir(scenario))
@@ -589,7 +602,7 @@ def record_bundle(
     _prepare_out_dir(out)
     player = build_player(
         scenario, seed, out, networks, store, learner, model_path, max_ticks, slow_path, codex,
-        call_budget_sec, exploration_level, transport, api_key, system2, configuration_path,
+        call_budget_sec, exploration_level, transport, api_key, system2, configuration_path, fresh_configuration,
     )
     try:
         result, traces = play_episode(player, seed)
@@ -811,7 +824,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--codex", action="store_true", help="Let the slow path call the Codex CLI instead of templates")
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
     parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
-    parser.add_argument("--configuration", default=None, help="A configuration.json to start from (default: the design's)")
+    add_configuration_flags(parser)
     parser.add_argument("--check", metavar="BUNDLE", default=None, help="Validate a bundle and exit")
     parser.add_argument("--index", metavar="DIR", default=None, help="Write DIR/index.json listing its bundles and exit")
     parser.add_argument("--schema", metavar="OUT.json", default=None, help="Write the bundle JSON Schema and exit")
@@ -871,9 +884,12 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
                 transport=transport,
                 api_key=api_key,
                 system2=not args.no_system2,
-                configuration_path=Path(args.configuration) if args.configuration else None,
+                # Each episode is its own controller: the first starts as asked, each next one from the
+                # configuration the one before saved in the run folder, as serve's episodes carry on.
+                configuration_path=Path(args.configuration) if args.configuration and i == 0 else None,
+                fresh_configuration=args.fresh_configuration and i == 0,
             )
-        except (FileNotFoundError, FileExistsError) as exc:
+        except (FileNotFoundError, FileExistsError, ConfigurationFileError) as exc:
             print(exc, file=sys.stderr)
             return 2
         status = "cleared" if meta.result.cleared else ("died" if meta.result.died else "survived")

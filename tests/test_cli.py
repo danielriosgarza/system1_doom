@@ -41,10 +41,98 @@ def test_play_starts_from_a_configuration_file(tmp_path, capsys):
     argv = ["--scenario", "basic.cfg", "--ticks", "1", "--configuration", str(path), "--log-dir", str(tmp_path / "logs"),
             "--run-dir", str(tmp_path / "run"), "--disable-slow-llm"]
     assert cli.main(argv, transport=FakeD1()) == 0
-    summary = json.loads(capsys.readouterr().out)
-    assert summary["configuration_version"] == 2
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out)
+    assert summary["configuration_version"] == 2 and f"configuration: {path} (version 2)" in captured.err
     (trace,) = [TickTrace.model_validate_json(line) for line in (tmp_path / "logs" / "ticks.jsonl").read_text().splitlines()]
     assert trace.active_strategy == "strat_corridor_advance" and trace.configuration_version == 2
+
+
+def _level_policy(name, payload):
+    """System 2 for the carry-over story: the exploration reflector proposes `level:explore`, the central takes it."""
+    from tests.fake_d1 import SYSTEM2_CENTRAL, TRIAL_JUDGE, first_proposal, judge, reflector_answer
+
+    if name == SYSTEM2_CENTRAL:
+        return first_proposal(payload)
+    if name == TRIAL_JUDGE:
+        return judge(payload, "keep")
+    if name == "exploration_reflector":
+        return reflector_answer(payload, 0.9, "level:explore", "stuck_or_repeating")
+    return reflector_answer(payload, 0.1, "keep", "too_little_data")
+
+
+def _notes(path, kind):
+    from system1_doom.reflection import System2Note, load_reflections
+
+    return [r for r in load_reflections(path.read_text()) if isinstance(r, System2Note) and r.kind == kind]
+
+
+def test_the_configuration_and_system2_carry_across_runs_unless_started_fresh(tmp_path, capsys):
+    from system1_doom.configuration import Configuration
+    from system1_doom.controller import ControllerConfig, DoomDecisionController
+    from system1_doom.system2 import System2State
+    from system1_doom.train import RunStore
+    from system1_doom.vizdoom_env import ViZDoomBridge
+
+    store = RunStore(tmp_path / "run")
+    # Run 1, played as the entry points play: System 2 changes the level at the first episode's end, the
+    # change takes effect at the second episode's first tick boundary (version 2), and its trial is in flight.
+    env = ViZDoomBridge(scenario="basic.cfg", window_visible=False, seed=4)
+    cfg = ControllerConfig(
+        enable_slow_llm=False, log_dir=str(tmp_path / "logs1"), relevance_path=str(store.relevance), enable_system2=True,
+        configuration_out=str(store.configuration), system2_state_path=str(store.system2),
+    )
+    ctrl = DoomDecisionController(env=env, config=cfg, transport=FakeD1(shoot_when_aimed, system2_policy=_level_policy), api_key="liquid_test_key")
+    try:
+        ctrl.run_episode(max_ticks=3)
+        assert ctrl.wait_system2(30)
+        env.restart_episode()
+        second = ctrl.run_episode(max_ticks=3)
+    finally:
+        ctrl.close()
+    saved = Configuration.load(store.configuration)
+    assert second["configuration_end"].version == 2 and saved.version == 2 and saved.exploration_level == "explore"
+    state = System2State.model_validate_json(store.system2.read_text())
+    assert state.configuration_version == 2 and state.trial is not None and state.trial.change == "level:explore"
+    decisions = state.decisions
+
+    # Run 2, a new process with no flag: it starts from the saved version 2, and System 2's state restores.
+    argv = ["--scenario", "basic.cfg", "--ticks", "3", "--run-dir", str(store.root), "--disable-slow-llm"]
+    assert cli.main(argv + ["--log-dir", str(tmp_path / "logs2")], transport=FakeD1(shoot_when_aimed, system2_policy=_level_policy)) == 0
+    captured = capsys.readouterr()
+    assert f"configuration: {store.configuration} (version 2)" in captured.err
+    (result,) = json.loads(captured.out)["results"]
+    assert result["configuration_version"] == 2
+    traces = [TickTrace.model_validate_json(line) for line in (tmp_path / "logs2" / "ticks.jsonl").read_text().splitlines()]
+    assert traces and all(t.configuration_version == 2 and t.exploration_level == "explore" for t in traces)
+    (restored,) = _notes(tmp_path / "logs2" / "reflections.jsonl", "restored")
+    assert "trial of level:explore continues" in restored.detail and _notes(tmp_path / "logs2" / "reflections.jsonl", "fresh_start") == []
+    state = System2State.model_validate_json(store.system2.read_text())
+    assert state.decisions == decisions + result["ticks"] and state.trial is not None and state.trial.change == "level:explore"
+
+    # Run 3 with --fresh-configuration: the design's version 1, and System 2 starts over.
+    assert cli.main(argv + ["--fresh-configuration", "--log-dir", str(tmp_path / "logs3")], transport=FakeD1(shoot_when_aimed, system2_policy=_level_policy)) == 0
+    captured = capsys.readouterr()
+    assert "configuration: the design's version 1" in captured.err
+    (result,) = json.loads(captured.out)["results"]
+    assert result["configuration_version"] == 1
+    traces = [TickTrace.model_validate_json(line) for line in (tmp_path / "logs3" / "ticks.jsonl").read_text().splitlines()]
+    assert traces and all(t.configuration_version == 1 and t.exploration_level == "exploit" for t in traces)
+    assert _notes(tmp_path / "logs3" / "reflections.jsonl", "restored") == []
+    state = System2State.model_validate_json(store.system2.read_text())
+    assert state.decisions == result["ticks"] and state.cycles == 1 and state.trial is None and state.configuration_version == 1
+    assert Configuration.load(store.configuration).version == 1
+
+
+def test_a_configuration_that_does_not_load_stops_play_with_its_remedy(tmp_path, capsys):
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "configuration.json").write_text('{"version": "broken"}')
+    argv = ["--scenario", "basic.cfg", "--ticks", "1", "--run-dir", str(run), "--disable-slow-llm", "--log-dir", str(tmp_path / "logs")]
+    assert cli.main(argv, transport=FakeD1()) == 2
+    assert "--fresh-configuration" in capsys.readouterr().err and not (tmp_path / "logs").exists()
+    assert cli.main(argv + ["--configuration", str(tmp_path / "missing.json")], transport=FakeD1()) == 2
+    assert "no such configuration file" in capsys.readouterr().err
 
 
 def test_play_runs_system2_unless_switched_off(tmp_path, capsys):
