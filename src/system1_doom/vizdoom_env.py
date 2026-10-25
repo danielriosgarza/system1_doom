@@ -179,7 +179,7 @@ class ViZDoomBridge:
         self._last_displacement: Optional[float] = None
         self._last_reward: Optional[float] = None
         self._landmarks: Dict[int, _Remembered] = {}
-        # Per enemy object id: the agent's attacks on it in a row (it the chosen target) that hit nothing.
+        # Per enemy object id: how many of the agent's attacks on it in a row, as the chosen target, hit nothing.
         self._attacks_without_hit: Dict[int, int] = {}
 
     def _safe_var(self, var: vzd.GameVariable, default: float = 0.0) -> float:
@@ -528,9 +528,11 @@ class ViZDoomBridge:
             # An attack on the chosen enemy: the evidence keeps how many in a row hit nothing.
             self._attacks_without_hit[enemy] = 0 if burst.hits_delta > 0 else self._attacks_without_hit.get(enemy, 0) + 1
         displacement = self._displacement(x0, y0)
-        if pickup is not None and walked_at and not burst.episode_finished:
-            after = math.hypot(pickup.x - self._safe_var(vzd.GameVariable.POSITION_X, x0), pickup.y - self._safe_var(vzd.GameVariable.POSITION_Y, y0))
-            if before - after < UNREACHABLE_PICKUP_PROGRESS:
+        # The episode's first decision barely moves (the game is still starting): it is not a walk that failed.
+        if pickup is not None and walked_at and self._episode_tick > 0 and not burst.episode_finished:
+            x1 = self._safe_var(vzd.GameVariable.POSITION_X, x0)
+            y1 = self._safe_var(vzd.GameVariable.POSITION_Y, y0)
+            if before - math.hypot(pickup.x - x1, pickup.y - y1) < UNREACHABLE_PICKUP_PROGRESS:
                 # Walking at this pickup got nowhere (a ledge, a wall, a full inventory): the evidence says so.
                 pickup.approaches_nowhere += 1
         if not burst.episode_finished:

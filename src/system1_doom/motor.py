@@ -5,8 +5,9 @@ action's primitive list. Each primitive keeps a small amount of closed-loop assi
 targets d1-ultra chose, never at targets of its own: `shoot` turns onto the enemy the combat sense
 chose before firing and strafes keep tracking it, and the forward steps of a pickup-seeking action
 turn toward the pickup the resource sense chose, by its remembered position, so it works while the
-pickup is out of view (turning in place while it lies behind). Without a chosen target (no enemy visible, the sense missed, or the target is
-not in view) the assistance has nothing to aim at: the primitive's keys are pressed as they are.
+pickup is out of view (turning in place while it lies behind). Without a chosen target (no enemy
+visible, the sense missed, or the target is not in view) the assistance has nothing to aim at: the
+primitive's keys are pressed as they are.
 Every burst is bounded by the length of the action's primitive list. When the central instance
 missed, `idle` presses no key for the decision's frames: nothing stands in for it.
 """
@@ -314,7 +315,7 @@ class TacticalMotor:
         align_px = max(8.0, screen_w * 10.0 / 320.0)
 
         if primitive == "shoot":
-            target = self._locked_enemy(self._living_enemies(state), center)
+            target = self._locked_enemy(self._living_enemies(state))
             if target is None:
                 return {"ATTACK"} if "ATTACK" in self.button_names else set()
             return self._aim_buttons(target["cx"], center, align_px)
@@ -322,7 +323,7 @@ class TacticalMotor:
         if primitive in COMPOUND_STRAFE_FIRE:
             # Keep moving sideways the whole step; turn onto the target, fire once it is centred.
             flags = {COMPOUND_STRAFE_FIRE[primitive]}
-            target = self._locked_enemy(self._living_enemies(state), center)
+            target = self._locked_enemy(self._living_enemies(state))
             turn = self._turn_toward(target["cx"], center, align_px) if target is not None else None
             flags.add(turn if turn is not None else "ATTACK")
             return flags
@@ -332,7 +333,7 @@ class TacticalMotor:
             return set()
         flags = {button}
         if primitive in ("strafe_left", "strafe_right"):
-            target = self._locked_enemy(self._living_enemies(state), center)
+            target = self._locked_enemy(self._living_enemies(state))
             if target is not None:
                 turn = self._turn_toward(target["cx"], center, align_px)
                 if turn is not None:
@@ -377,7 +378,7 @@ class TacticalMotor:
             return "TURN_RIGHT"
         return None
 
-    def _locked_enemy(self, enemies: List[Dict[str, float]], center: float) -> Optional[Dict[str, float]]:
+    def _locked_enemy(self, enemies: List[Dict[str, float]]) -> Optional[Dict[str, float]]:
         """The enemy d1 chose, while it is in view; there is no other target."""
         if self.lock_id is None:
             return None
