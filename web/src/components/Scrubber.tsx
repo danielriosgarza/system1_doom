@@ -30,10 +30,10 @@ const MARK_LEGEND: Array<{ kind: MarkKind; label: string }> = [
   { kind: 'damage', label: 'damage' },
   { kind: 'kill', label: 'kill' },
   { kind: 'death', label: 'death' },
-  { kind: 'miss', label: 'a call missed' },
-  { kind: 'drawn', label: 'drawn under explore' },
-  { kind: 'change', label: 'new configuration' },
-  { kind: 'cycle', label: 'slow-system cycle' },
+  { kind: 'miss', label: 'missed call' },
+  { kind: 'drawn', label: 'action drawn under explore' },
+  { kind: 'change', label: 'new configuration version' },
+  { kind: 'cycle', label: 'System 2 cycle' },
 ]
 
 /** One mark of the timeline. */

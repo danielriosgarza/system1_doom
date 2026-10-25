@@ -140,7 +140,7 @@ function MenuReflector({ bundle }: { bundle: EpisodeBundle }) {
                       {r.proposed
                         ? chosen
                           ? outcomeWords(cycle.outcome)
-                          : 'proposed; another change was chosen'
+                          : 'proposed, but System 2’s central instance chose another change'
                         : '–'}
                     </td>
                   </>

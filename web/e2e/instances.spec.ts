@@ -31,13 +31,13 @@ test('the strip shows five sense rows, spoke, silent or missed, and the central 
   await expect(central).toHaveAttribute('data-kind', 'top')
   await expect(central.getByTestId('central-pick')).toHaveText('weave fire')
   await expect(central).toContainText('its top answer, 70%')
-  await expect(central).toContainText('heard 2 messages')
+  await expect(central).toContainText('received 2 messages')
   await expect(strip(page).getByTestId('act-row')).toContainText('strafe left')
   await expect(strip(page).getByTestId('config-line')).toHaveAttribute('data-version', '1')
-  await expect(strip(page).getByTestId('config-line')).toContainText('no trial in flight')
+  await expect(strip(page).getByTestId('config-line')).toContainText('no trial in progress')
 })
 
-test('the strip says when the central missed, and the configuration line names the trial in flight', async ({
+test('the strip says when the central missed, and the configuration line names the trial in progress', async ({
   page,
 }) => {
   await page.goto(`./#${FIXTURE}/5/watch`)
@@ -48,7 +48,7 @@ test('the strip says when the central missed, and the configuration line names t
   const line = strip(page).getByTestId('config-line')
   await expect(line).toHaveAttribute('data-version', '2')
   await expect(line).toContainText('admitted macros')
-  await expect(line).toContainText(/trial in flight: 2 of \d+ decisions/)
+  await expect(line).toContainText(/trial in progress: 2 of \d+ decisions observed/)
 })
 
 test('clicking a row opens that instance at that decision', async ({ page }) => {
@@ -77,7 +77,7 @@ test('the survival sense’s evidence is verbatim and never shows a channel outs
     'projections',
   ])
   await expect(panel(page).getByTestId('hidden-chips').locator('[data-channel="pickups"]')).toBeVisible()
-  await expect(panel(page)).toContainText('No screen: frame is not in its scope.')
+  await expect(panel(page)).toContainText('No screen image: the frame channel is not in its scope.')
 })
 
 test('the evidence the browser shows is the text in the trace, character for character', async ({ page, request }) => {
@@ -114,7 +114,7 @@ test('a central miss shows its reason and the raw answer as returned', async ({ 
   await page.getByRole('tab', { name: /^central/ }).click()
   const miss = panel(page).getByTestId('miss-box')
   await expect(miss).toContainText('it answered with something off the menu')
-  await expect(miss).toContainText('No keys were held for this decision.')
+  await expect(miss).toContainText('No keys were pressed for this decision.')
   await expect(miss.locator('.raw-answer')).toContainText('"choice": "teleport_hack"')
 })
 
@@ -126,5 +126,5 @@ test('the answers are bars: the speak strength, the action and reason distributi
   await expect(answers.getByRole('list', { name: 'Reason distribution' })).toBeVisible()
   await page.getByRole('tab', { name: /^central/ }).click()
   await expect(answers.getByRole('list', { name: 'The central’s choice distribution' })).toBeVisible()
-  await expect(answers).toContainText('survival says weave fire, strength 0.90')
+  await expect(answers).toContainText('survival recommends weave fire, strength 0.90')
 })

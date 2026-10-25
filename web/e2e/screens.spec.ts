@@ -55,7 +55,7 @@ test('the history test’s table: every sampled tick, its stratum, the old and n
   const trial = page.getByTestId('trial')
   await expect(trial.getByTestId('trial-verdict')).toHaveAttribute('data-verdict', 'keep')
   await expect(trial.getByTestId('trial-table')).toContainText('reward per decision')
-  await trial.getByText('What the judge saw, verbatim').click()
+  await trial.getByText('What the judge was shown, exactly as sent').click()
   await expect(trial.getByTestId('judge-evidence')).toContainText('[trial]')
 })
 

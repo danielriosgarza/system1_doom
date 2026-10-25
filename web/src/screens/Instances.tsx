@@ -51,7 +51,9 @@ function Answers({ view, tick, yesAt }: { view: InstanceView; tick: TickTrace; y
           <p>
             <strong>{INSTANCES.miss}:</strong> {missWords(view.missReason)}
             {view.error ? ` (${view.error})` : ''}.{' '}
-            {central ? 'No keys were held for this decision.' : 'A missed sense is silent; nothing stands in for it.'}
+            {central
+              ? 'No keys were pressed for this decision.'
+              : 'A missed sense sends no message; nothing replaces its answer.'}
           </p>
           {view.raw && (
             <>
@@ -103,7 +105,7 @@ function Answers({ view, tick, yesAt }: { view: InstanceView; tick: TickTrace; y
             <ul className="heard">
               {(tick.messages ?? []).map((m) => (
                 <li key={m.sense}>
-                  <span className={`dot sense-${m.sense}`} aria-hidden /> {m.sense} says{' '}
+                  <span className={`dot sense-${m.sense}`} aria-hidden /> {m.sense} recommends{' '}
                   <strong>{words(m.action)}</strong>, strength {fmt(m.strength)}, reason {words(m.reason)}
                 </li>
               ))}

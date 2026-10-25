@@ -347,7 +347,7 @@ export function versionTimeline(bundle: Pick<EpisodeBundle, 'records' | 'ticks' 
   entries.set(startVersion, {
     version: startVersion,
     tickIndex: 0,
-    change: startVersion === 1 ? 'the design’s initial configuration' : 'as an earlier episode left it',
+    change: startVersion === 1 ? 'the initial configuration from the design' : 'as earlier episodes left it',
     changes: [],
     status: 'start',
     cycle: null,
