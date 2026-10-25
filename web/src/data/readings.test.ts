@@ -128,7 +128,7 @@ describe('the configuration versions System 2 made', () => {
   it('reads version 1 from the start, version 2 a kept macro, version 3 the widened survival scope, kept', () => {
     const timeline = versionTimeline(bundle)
     expect(timeline.map((e) => [e.version, e.status, e.change])).toEqual([
-      [1, 'start', 'the design’s initial configuration'],
+      [1, 'start', 'the initial configuration from the design'],
       [2, 'kept', 'macro:combat'],
       [3, 'kept', 'widen:survival:pickups'],
     ])

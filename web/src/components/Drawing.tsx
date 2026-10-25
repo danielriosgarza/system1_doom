@@ -22,7 +22,7 @@ function Arrow({ children }: { children?: ReactNode }) {
   )
 }
 
-/** The two systems, drawn: what decides (d1-ultra) and what only renders, bounds and presses keys (code). */
+/** The two systems, drawn: what decides (d1-ultra) and what only produces evidence, enforces limits and presses keys (code). */
 export function Drawing() {
   return (
     <figure className="drawing" data-testid="two-systems">
@@ -32,10 +32,10 @@ export function Drawing() {
             <TermLink id="system-1" text="System 1" /> <span className="muted">every decision</span>
           </h3>
           <Node>
-            <strong>Evidence</strong>: eighteen <TermLink id="channel" text="channels" /> rendered as text from the
-            game, the simulator and the value networks
+            <strong>Evidence</strong>: eighteen <TermLink id="channel" text="channels" /> of plain text, rendered from
+            the game, the simulator and the value networks
           </Node>
-          <Arrow>each sense is shown only its scope</Arrow>
+          <Arrow>each sense is shown only the channels in its scope</Arrow>
           <div className="node-row">
             {SENSES.map((s) => (
               <Node key={s} d1 className={`sense sense-${s}`}>
@@ -44,92 +44,96 @@ export function Drawing() {
             ))}
           </div>
           <Arrow>
-            <TermLink id="message" text="messages" />: action, reason, strength (only senses that speak)
+            <TermLink id="message" text="messages" />: a recommended action, a reason and a strength, from each sense
+            whose speak probability reached 0.5
           </Arrow>
           <Node d1 className="central">
             <strong>
-              <TermLink id="central" text="Central" />
+              <TermLink id="central" text="Central instance" />
             </strong>
-            : hears the messages and each sense’s relevance, chooses the action from the legal menu
+            : receives the messages and each sense’s relevance record, and chooses the action from the legal menu
           </Node>
           <Arrow>
-            <TermLink id="pick" text="pick" />: top · drawn · missed
+            <TermLink id="pick" text="pick" />: top answer · drawn at random · missed
           </Arrow>
           <Node>
-            <strong>Act</strong>: the action’s fixed primitives for 8 game frames, or no keys after a miss
+            <strong>Act</strong>: the action’s fixed primitives, held for 8 game frames; no keys after a miss
           </Node>
-          <Arrow>the game moves on; the next decision</Arrow>
+          <Arrow>the game moves on to the next decision</Arrow>
           <Node>
-            <strong>History</strong>: every tick whole · the relevance ledger · the value networks, trained between
-            episodes
+            <strong>History</strong>: every tick stored in full · the relevance ledger · the value networks, trained
+            between episodes
           </Node>
         </section>
         <section className="sys sys2" aria-label="System 2">
           <h3>
-            <TermLink id="system-2" text="System 2" /> <span className="muted">every 20 decisions, its own thread</span>
+            <TermLink id="system-2" text="System 2" />{' '}
+            <span className="muted">after every 20 decisions, on its own thread</span>
           </h3>
           <Node>
-            <strong>History channels</strong> over three windows: the recent decisions, a longer run, the last episodes
+            <strong>History channels</strong> over three time windows: the last 20 decisions, the last 100, and the last
+            3 episodes
           </Node>
-          <Arrow>each reflector is shown its own channels; the bounds filter its changes</Arrow>
+          <Arrow>each reflector is shown its own channels; the bounds filter the changes it may propose</Arrow>
           <Node d1 className="reflectors">
             <strong>
               Nine <TermLink id="reflector" text="reflectors" />
             </strong>
             <span className="node-list small">{REFLECTORS.map((r) => r.replace('_', ' ')).join(' · ')}</span>
           </Node>
-          <Arrow>proposals: change, reason, strength</Arrow>
+          <Arrow>proposals: a change, a reason and a strength</Arrow>
           <Node d1>
-            <strong>System 2’s central</strong>: one change, or none
+            <strong>System 2’s central instance</strong>: one change, or none
           </Node>
           <div className="node-split">
             <div>
-              <Arrow>a scope change</Arrow>
+              <Arrow>for a scope change</Arrow>
               <Node>
                 <strong>
                   <TermLink id="history-test" text="History test" />
                 </strong>
-                : the instance asked again (d1-ultra) on stored ticks; passes or not
+                : the instance is asked again (d1-ultra) on stored decisions; the change passes or fails
               </Node>
             </div>
             <div>
-              <Arrow>a new macro</Arrow>
+              <Arrow>for a new macro</Arrow>
               <Node d1>
                 <strong>
                   <TermLink id="slow-path" text="Slow path" />
                 </strong>
-                , bounds, then the <TermLink id="admit-instance" text="admit instance" />: yes or no
+                , then the checks, then the <TermLink id="admit-instance" text="admit instance" />: yes or no
               </Node>
             </div>
           </div>
-          <Arrow>at a tick boundary</Arrow>
+          <Arrow>takes effect at the start of a decision</Arrow>
           <Node>
             <strong>
               <TermLink id="configuration" text="Configuration" />
             </strong>{' '}
-            version n + 1: scopes, menu, strategy, level
+            version n + 1: scopes, menu, strategy, exploration level
           </Node>
           <Arrow>
-            a <TermLink id="trial" text="trial" />, then
+            a <TermLink id="trial" text="trial" /> of 60 decisions, then
           </Arrow>
           <Node d1>
             <strong>
               <TermLink id="judge" text="Trial judge" />
             </strong>
-            : keep, or revert to the previous configuration
+            : keep the change, or revert to the previous configuration
           </Node>
         </section>
       </div>
       <p className="drawing-loop">
         <span aria-hidden>↺</span> System 1 reads the configuration at every decision: what each instance is shown, the
-        menu it chooses from, the strategy and the level. System 2 never presses a key and never holds up a tick.
+        menu it chooses from, the active strategy and the exploration level. System 2 never presses a key and never
+        delays a decision.
       </p>
       <figcaption className="drawing-legend">
         <span className="node d1 legend-node">
           <span className="node-badge">d1-ultra</span>
         </span>{' '}
-        a d1-ultra instance: it decides · <span className="node code legend-node">code</span> code: it renders evidence,
-        keeps bounds and presses keys; it never chooses
+        a d1-ultra instance: it decides · <span className="node code legend-node">code</span> code: it produces
+        evidence, enforces limits and presses keys; it never chooses
       </figcaption>
     </figure>
   )

@@ -12,7 +12,8 @@ export function TermLink({ id, text }: { id: string; text?: string }) {
         {text ?? entry?.term ?? id}
       </button>
       <span className="tip-body" role="tooltip" id={tipId}>
-        <strong>{entry?.term}</strong>: {entry?.meaning} <span className="muted">Click for the glossary.</span>
+        <strong>{entry?.term}</strong>: {entry?.meaning}{' '}
+        <span className="muted">Click to open the glossary entry.</span>
       </span>
     </span>
   )

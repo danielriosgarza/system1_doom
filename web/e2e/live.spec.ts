@@ -50,7 +50,7 @@ test('Watch follows live play: the strip shows each schema 2 tick as it arrives'
   await expect.poll(() => tickNow(page), { timeout: 2_000 }).toBeGreaterThan(first)
   // The configuration line moves to version 2 once the admitted macro takes effect, and names its trial.
   await expect(page.getByTestId('config-line')).toHaveAttribute('data-version', '2', { timeout: 5_000 })
-  await expect(page.getByTestId('config-line')).toContainText('trial in flight')
+  await expect(page.getByTestId('config-line')).toContainText('trial in progress')
   expect(errors).toEqual([])
 })
 

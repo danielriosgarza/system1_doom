@@ -83,7 +83,7 @@ export function Strip({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
           <span className="dot act" aria-hidden />
           <span className="strip-name">{STRIP.act}</span>
           <span className="strip-value">
-            {act.action ? act.keys : 'nothing pressed: the central missed'}
+            {act.action ? act.keys : 'nothing pressed: the central instance missed'}
             <span className="faint"> · {STRIP.actGloss}</span>
           </span>
         </li>

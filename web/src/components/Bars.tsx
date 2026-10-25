@@ -1,6 +1,6 @@
 import { type Bar, pct, words } from '../data/readings'
 
-/** A probability as a bar, with an optional mark where it becomes a yes (a sense speaks at 0.5). */
+/** A probability as a bar, with an optional mark where it becomes a yes (a sense sends a message at 0.5). */
 export function Meter({
   value,
   mark,

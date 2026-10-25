@@ -171,7 +171,7 @@ function Values({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
       </div>
       {section && (
         <details className="saw">
-          <summary>The channel, verbatim</summary>
+          <summary>The values channel, exactly as sent</summary>
           <EvidenceText text={`[values]\n${section.body}`} name={values.instance} testId="values-text" />
         </details>
       )}

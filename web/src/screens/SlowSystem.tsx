@@ -82,7 +82,11 @@ export function SlowSystem({ bundle, tick, tickIndex }: { bundle: EpisodeBundle;
                 id="reflectors"
                 aside={<span className="panel-aside">{SLOW.afterDecision(placed.tickIndex + 1)}</span>}
               >
-                <CycleHead cycle={selected} tickIndex={placed.tickIndex} />
+                <CycleHead
+                  cycle={selected}
+                  tickIndex={placed.tickIndex}
+                  cadence={boundsOf(bundle.meta).system2_cadence ?? 20}
+                />
                 <Reflectors cycle={selected} yesAt={boundsOf(bundle.meta).yes_at} />
               </Panel>
               <Panel id="system2-central">
@@ -157,7 +161,7 @@ function Versions({
                 {entry.tickIndex !== null
                   ? `from decision ${entry.tickIndex + 1}`
                   : entry.status === 'queued'
-                    ? 'takes effect at the next episode’s first tick'
+                    ? 'takes effect at the start of the next episode'
                     : ''}
                 {proposer ? ` · ${SLOW.proposedBy(words(proposer))}` : ''}
                 {choice !== undefined ? ` · ${SLOW.choseAt(pct(choice))}` : ''}
@@ -208,21 +212,24 @@ function CycleList({
   )
 }
 
-function CycleHead({ cycle, tickIndex }: { cycle: ReflectionTrace; tickIndex: number }) {
+function CycleHead({ cycle, tickIndex, cadence }: { cycle: ReflectionTrace; tickIndex: number; cadence: number }) {
+  const started =
+    cycle.trigger === 'episode_end' ? 'started because the episode ended' : `started after ${cadence} new decisions`
   return (
     <div className="cycle-head" data-testid="cycle-head" data-cycle={cycle.cycle_id}>
       <p>
-        <strong>{words(cycle.cycle_id)}</strong>, on configuration version {cycle.configuration_version}, at System 2’s
-        decision {cycle.decision} ({cycle.trigger === 'episode_end' ? 'the episode ended' : 'every few decisions'}
-        ): <span className={`outcome outcome-${cycle.outcome}`}>{outcomeWords(cycle.outcome)}</span>.{' '}
+        <strong>{words(cycle.cycle_id)}</strong>, {started}, when System 2 had counted {cycle.decision} decisions, on
+        configuration version {cycle.configuration_version}. Outcome:{' '}
+        <span className={`outcome outcome-${cycle.outcome}`}>{outcomeWords(cycle.outcome)}</span>.{' '}
         <button type="button" className="link" onClick={() => setTickIndex(tickIndex)}>
           {SLOW.showDecision}
         </button>
       </p>
       {(cycle.windows ?? []).length > 0 && (
         <p className="small muted">
-          {SLOW.windowsTitle}: {(cycle.windows ?? []).map((w) => `${w.label} (${w.decisions} held)`).join(' · ')}
-          {cycle.calls !== undefined && ` · ${cycle.calls} calls`}
+          {SLOW.windowsTitle}:{' '}
+          {(cycle.windows ?? []).map((w) => `${w.label} (${w.decisions} decisions held)`).join(' · ')}
+          {cycle.calls !== undefined && ` · ${cycle.calls} d1-ultra calls`}
           {cycle.usage?.cost !== undefined && `, $${cycle.usage.cost.toFixed(5)}`}
         </p>
       )}
@@ -365,7 +372,7 @@ function System2Central({ cycle }: { cycle: ReflectionTrace }) {
             <>
               <p className="chips-label">
                 {SLOW.choiceTitle}: <span className="mono">{cycle.choice}</span>
-                {cycle.tie ? ` (a tie with ${(cycle.tied ?? []).join(', ')}, broken by order)` : ''}
+                {cycle.tie ? ` (a tie with ${(cycle.tied ?? []).join(', ')}, broken by taking the first option)` : ''}
               </p>
               <BarList
                 bars={bars(central.change_probabilities, central.change)}
@@ -488,7 +495,7 @@ function HistoryTest({ test, bundle }: { test: HistoryTestResult; bundle: Episod
                     <td>
                       <strong>{m.label}</strong>{' '}
                       <span className="small muted">
-                        on {m.stratum} ticks: {m.rule}
+                        on {m.stratum} decisions: {m.rule}
                       </span>
                     </td>
                     <td className="num">{fmt(m.old)}</td>
@@ -520,7 +527,7 @@ function HistoryTest({ test, bundle }: { test: HistoryTestResult; bundle: Episod
             )}
             {test.calls !== undefined && (
               <li>
-                {test.calls} calls{test.usage?.cost !== undefined ? `, $${test.usage.cost.toFixed(5)}` : ''}
+                {test.calls} d1-ultra calls{test.usage?.cost !== undefined ? `, $${test.usage.cost.toFixed(5)}` : ''}
               </li>
             )}
           </ul>
@@ -557,7 +564,7 @@ function Trial({
             ? SLOW.trial.inFlight(at.trial.decisions, at.trial.of)
             : started.detail
           : cycle.applied?.queued
-            ? `${changeWords(cycle.applied.change)}: queued; its trial starts when it takes effect.`
+            ? `${changeWords(cycle.applied.change)}: queued. Its trial starts when the change takes effect.`
             : SLOW.trial.noTrial}
       </p>
     )
@@ -567,8 +574,8 @@ function Trial({
   return (
     <div className="trial-view">
       <p>
-        <strong>{changeWords(trial.change)}</strong>, version {trial.previous_version} → {trial.version}, from decision{' '}
-        {trial.started_tick + 1}:{' '}
+        <strong>{changeWords(trial.change)}</strong>, version {trial.previous_version} → {trial.version}, in effect from
+        decision {trial.started_tick + 1}:{' '}
         <span className={`status-chip ${trial.verdict ?? ''}`} data-testid="trial-verdict" data-verdict={trial.verdict}>
           {trial.verdict ?? 'no verdict'}
         </span>{' '}
@@ -650,7 +657,7 @@ function Ledger({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
   return (
     <div className="ledger">
       <p className="small muted">
-        The ledger after {ledger.episodes ?? 0} episode{ledger.episodes === 1 ? '' : 's'} on this run folder; paid off
+        The ledger after {ledger.episodes ?? 0} episode{ledger.episodes === 1 ? '' : 's'} in this run folder. Paid off
         means the decision’s {ledger.return_steps ?? return_steps}-step return (discount{' '}
         {ledger.return_gamma ?? return_gamma}) was positive.
       </p>
@@ -758,7 +765,7 @@ function CountCells({ c }: { c: Counts }) {
       <td className="num">
         {c.overruled_paid} {over !== null && <span className="muted">({pct(over)})</span>}
       </td>
-      <td className="num" title="mean strength when the decision paid off / when it did not">
+      <td className="num" title="mean strength on decisions that paid off / on decisions that did not">
         {fmt(strong)} / {fmt(weak)}
       </td>
     </>

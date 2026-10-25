@@ -41,6 +41,7 @@ export function Panel({
           aria-controls={bodyId}
           onClick={() => setOpen(!open)}
           title={open ? 'Hide the explanation' : 'Explain this panel'}
+          aria-label={open ? 'Hide the explanation' : `Explain: ${explainer.title}`}
         >
           {open ? 'Hide' : '?'}
         </button>

@@ -34,19 +34,19 @@ export function outcomeWords(outcome: ReflectionTrace['outcome']): string {
     case 'no_proposal':
       return 'no reflector proposed a change'
     case 'central_missed':
-      return 'System 2’s central missed, so nothing changed'
+      return 'System 2’s central instance missed, so nothing changed'
     case 'none_chosen':
-      return 'System 2’s central chose no change'
+      return 'System 2’s central instance chose no change'
     case 'test_waiting':
-      return 'the history test waits: too few stored ticks or calls'
+      return 'the history test is waiting: too few stored decisions, or too few calls left in this cycle'
     case 'test_failed':
       return 'the history test rejected the change'
     case 'queued':
-      return 'queued for the next tick boundary'
+      return 'queued: it takes effect at the start of the next decision'
     case 'macro_requested':
-      return 'a new macro was asked of the slow path'
+      return 'a new macro was requested from the slow path'
     case 'macro_not_enqueued':
-      return 'the slow path could not take the request'
+      return 'the slow path was busy or switched off, so no macro was requested'
   }
 }
 
@@ -60,7 +60,7 @@ export function changeWords(change: string | null | undefined): string {
     case 'narrow':
       return `stop showing ${a} the ${b} channel`
     case 'macro':
-      return `ask for a new macro for the ${a} sense’s problem`
+      return `request a new macro for the ${a} sense’s problem`
     case 'retire':
       return `retire the macro ${words(a)}`
     case 'strategy':
@@ -72,7 +72,7 @@ export function changeWords(change: string | null | undefined): string {
     case 'none':
       return 'no change'
     case 'keep':
-      return 'keep things as they are'
+      return 'keep the configuration as it is'
     default:
       return words(change)
   }
@@ -151,9 +151,17 @@ export function verdictOf(
 
 /** Each quality metric: its words and the stratum it is read on. */
 export const METRICS: Record<string, { label: string; stratum: TestTick['stratum']; rule: string }> = {
-  alarm_recall: { label: 'alarm recall', stratum: 'bad', rule: 'spoke for an action other than the executed one' },
-  good_agreement: { label: 'good agreement', stratum: 'good', rule: 'silent, or recommended the executed action' },
-  quiet: { label: 'quiet', stratum: 'rest', rule: 'silent' },
+  alarm_recall: {
+    label: 'alarm recall',
+    stratum: 'bad',
+    rule: 'sent a message recommending an action other than the one executed',
+  },
+  good_agreement: {
+    label: 'good agreement',
+    stratum: 'good',
+    rule: 'sent no message, or recommended the executed action',
+  },
+  quiet: { label: 'quiet', stratum: 'rest', rule: 'sent no message' },
   agreement_on_good: { label: 'agreement on good ticks', stratum: 'good', rule: 'chose the executed action' },
   disagreement_on_bad: { label: 'disagreement on bad ticks', stratum: 'bad', rule: 'chose another action' },
 }
@@ -207,7 +215,7 @@ export const TRIAL_ROWS: Array<{ key: keyof TrialRow; label: string; digits: num
   { key: 'damage_per_decision', label: 'damage taken per decision', digits: 2 },
   { key: 'kills', label: 'kills', digits: 0 },
   { key: 'deaths', label: 'deaths', digits: 0 },
-  { key: 'missed_ticks', label: 'missed ticks', digits: 0 },
+  { key: 'missed_ticks', label: 'missed decisions (no keys pressed)', digits: 0 },
   { key: 'followed', label: 'followed messages', digits: 0 },
   { key: 'paid_off', label: 'of which paid off', digits: 0 },
   { key: 'paid_off_rate', label: 'paid-off rate', digits: 2 },
