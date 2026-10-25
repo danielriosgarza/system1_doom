@@ -3,12 +3,19 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { EpisodeMeta, MetricsRow, ProposalTrace, TickTrace, TrustFile } from '../schema/bundle'
 import {
+  D1_WEIGHT,
   MODULES,
+  MODULE_TEMPERATURE,
   admissions,
   aimBandHalfWidth,
   closestToAsking,
   contextBuckets,
   contextWords,
+  d1Arbiter,
+  d1GateWords,
+  d1Modules,
+  d1Pressure,
+  d1Words,
   describeStep,
   encodeAction,
   explainPick,
@@ -20,6 +27,7 @@ import {
   gateBlend,
   gateLevel,
   moduleVoteParts,
+  moduleD1Part,
   motorSteps,
   nStepReturns,
   pressureForArbiter,
@@ -220,7 +228,12 @@ describe('the hierarchy', () => {
 
 describe('exploration pressure', () => {
   const EPISODES = fileURLToPath(new URL('../../public/episodes/', import.meta.url))
-  const BUNDLES = ['deadly_corridor-heuristics-9', 'deadly_corridor-learned-9']
+  const BUNDLES = [
+    'deadly_corridor-heuristics-9',
+    'deadly_corridor-learned-9',
+    'deadly_corridor-heuristics-11',
+    'deadly_corridor-learned-d1-11',
+  ]
   const read = async (name: string) =>
     parseJsonl<TickTrace>(await readFile(`${EPISODES}${name}/ticks.jsonl`, 'utf8'), name)
 
@@ -441,6 +454,9 @@ describe('the command that makes a recording again', async () => {
     expect(exportCommand(await meta('deadly_corridor-learned-9'))).toBe(
       'python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --model latest --out web/public/episodes/deadly_corridor-learned-9',
     )
+    expect(exportCommand(await meta('deadly_corridor-learned-d1-11'))).toBe(
+      'python -m system1_doom.export --scenario deadly_corridor.cfg --seed 11 --model latest --out web/public/episodes/deadly_corridor-learned-d1-11 --d1 --d1-sync',
+    )
   })
 
   it('adds only the flags that differ from the defaults', async () => {
@@ -488,6 +504,9 @@ describe('the command that makes a recording again', async () => {
         max_ticks: 90,
       }),
     ).toBe(`${plain} --deterministic --d1 --no-slow-path --max-ticks 90 --pace 0 --episodes 3`)
+    expect(serveCommand({ ...config, d1: true, d1_sync: true })).toBe(`${plain} --d1 --d1-sync`)
+    // serve refuses --d1-sync without --d1, so a status that says so has no flag to show.
+    expect(serveCommand({ ...config, d1_sync: true })).toBe(plain)
   })
 
   it('tells an episode still being played from a finished one', async () => {
@@ -511,5 +530,94 @@ describe('the command that makes a recording again', async () => {
   it('shows the recording time in UTC', () => {
     expect(utcStamp('2026-10-24T11:52:30.200613+00:00')).toBe('24 Oct 2026, 11:52 UTC')
     expect(utcStamp('not a time')).toBe('not a time')
+  })
+})
+
+describe("d1-ultra's advice", async () => {
+  const D1 = fileURLToPath(new URL('../../public/episodes/deadly_corridor-learned-d1-11/', import.meta.url))
+  const d1Ticks = parseJsonl<TickTrace>(await readFile(`${D1}ticks.jsonl`, 'utf8'), 'ticks.jsonl')
+  const d1Proposals = parseJsonl<ProposalTrace>(await readFile(`${D1}proposals.jsonl`, 'utf8'), 'proposals.jsonl')
+  const d1Meta = JSON.parse(await readFile(`${D1}episode.json`, 'utf8')) as EpisodeMeta
+  const d1At = (n: number) => d1Ticks.find((t) => t.tick === n) as TickTrace
+
+  it("splits each module's bar into d1's part and the module's own softmax, which its utilities reproduce", () => {
+    let checked = 0
+    for (const tick of d1Ticks) {
+      for (const m of d1Modules(tick)) {
+        const out = tick.module_outputs[m]
+        if (!out) continue
+        const u = out.utility_blended ?? {}
+        const top = Math.max(...Object.values(u))
+        const exps = Object.fromEntries(
+          Object.entries(u).map(([a, v]) => [a, Math.exp((v - top) / MODULE_TEMPERATURE)]),
+        )
+        const sum = Object.values(exps).reduce((s, v) => s + v, 0)
+        for (const action of tick.available_actions) {
+          const part = moduleD1Part(out, action)
+          expect(part.fromD1 + part.local).toBeCloseTo(out.probabilities?.[action] ?? NaN, 6)
+          expect(part.own).toBeCloseTo((exps[action] ?? NaN) / sum, 3)
+        }
+        // The weight follows the gap between the module's own two best utilities.
+        const [first = 0, second = 0] = Object.values(u).sort((a, b) => b - a)
+        expect(out.d1_weight).toBe(first - second >= D1_WEIGHT.gap ? D1_WEIGHT.settled : D1_WEIGHT.open)
+        checked += 1
+      }
+    }
+    expect(checked).toBeGreaterThan(100)
+    // Without an answer the bar is the module's own.
+    const own = moduleD1Part(at(0).module_outputs.survival as TickTrace['module_outputs'][string], 'shoot')
+    expect(own).toMatchObject({ fromD1: 0, w: 0 })
+  })
+
+  it("ranks d1's answer to the arbiter and adds the bonus the trace recorded", () => {
+    const answered = d1Ticks.filter((t) => d1Arbiter(t))
+    expect(answered.length).toBeGreaterThan(30)
+    for (const tick of answered) {
+      const reading = d1Arbiter(tick)
+      if (!reading) continue
+      reading.ranked.slice(1).forEach((r, i) => expect(reading.ranked[i]?.p).toBeGreaterThanOrEqual(r.p))
+      expect(reading.ranked[reading.pickRank]?.action).toBe(tick.selected_action)
+      for (const r of reading.ranked) {
+        const recorded = tick.arbiter?.component_breakdown?.[r.action]?.d1_bonus
+        if (recorded !== undefined) expect(r.bonus).toBeCloseTo(recorded, 3)
+      }
+    }
+    expect(d1Arbiter(at(0))).toBeNull()
+  })
+
+  it('says what d1 advised in words, and why a tick had no answer', () => {
+    const tick = d1At(5)
+    const words = d1Words(tick, d1Meta)
+    expect(words).toContain(
+      `For the arbiter it favoured ${(d1Arbiter(tick)?.ranked[0]?.action ?? '').replaceAll('_', ' ')}`,
+    )
+    expect(words).toContain('All five modules mixed its answer in.')
+    expect(words).toContain(`After the action it put exploration at ${(d1Pressure(tick) ?? NaN).toFixed(2)}.`)
+    expect(d1Words(at(0), meta)).toBe('Off in this recording.')
+    const silent: TickTrace = { ...tick, d1_arbiter_distribution: {}, module_outputs: at(0).module_outputs }
+    expect(d1Words(silent, d1Meta)).toMatch(/^No answer this tick: the call failed or ran out of time/)
+  })
+
+  it('explains the d1 stage of the gate from the probability and the rule', () => {
+    expect(d1GateWords(0.62, true)).toBe('0.62 is at least 0.4, so this stage passed.')
+    expect(d1GateWords(0.3, true)).toMatch(/but d1 rated its tactics at least 0\.85/)
+    const [first, second] = d1Proposals
+    expect(first?.admission_decision).toBe(false)
+    expect(d1GateWords(first?.d1_admission_probability ?? NaN, false)).toMatch(/^0\.38 is under 0\.4, .* rejected/)
+    expect(d1GateWords(second?.d1_admission_probability ?? NaN, false)).toBe(
+      '0.15 is under 0.2, which rejects a macro whatever else d1 says.',
+    )
+  })
+
+  it('marks a macro the gate turned away on the timeline and in the hierarchy', () => {
+    const events = tickEvents(d1At(41), admissions(d1Proposals))
+    expect(events.filter((e) => e.kind === 'rejection').map((e) => e.label)).toEqual([
+      expect.stringMatching(/^rejected .* at the gate$/),
+    ])
+    expect(events.map((e) => e.kind)).not.toContain('admission')
+    // The hierarchy stops the gate at the stage that failed.
+    const gate = towerLevels(d1At(41), d1Meta, d1Proposals).find((l) => l.id === 'gate')
+    expect(gate).toMatchObject({ choice: 'rejected', choiceLabel: 'rejected evasive burst 1 at d1' })
+    expect(gate?.candidates.map((c) => c.id)).toEqual(['parse', 'legality', 'sandbox', 'd1'])
   })
 })
