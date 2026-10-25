@@ -6,7 +6,10 @@
 d1-ultra makes every decision (it needs LIQUID_API_KEY); the five value networks learn between
 episodes from what it played, and serve the `values` evidence channel. Training is therefore a d1
 cost too: about six calls per decision. The run folder also keeps the relevance ledger
-(`relevance.json`), which every episode updates.
+(`relevance.json`), which every episode updates, and, with System 2 on (the default; `--no-system2`
+switches it off), the configuration as System 2 changed it (`configuration.json`, saved at every change
+and episode end; `--configuration` starts from it), System 2's state (`system2.json`) and its records
+(`reflections.jsonl`). Evaluation plays with System 2 off, so its episodes stay identical.
 """
 
 from __future__ import annotations
@@ -38,7 +41,8 @@ BEST_WINDOW = 20
 
 
 class RunStore:
-    """Files of one run: value networks, experience, admitted macros, the relevance ledger, metrics, and charts."""
+    """Files of one run: value networks, experience, admitted macros, the relevance ledger, the configuration,
+    System 2's state, metrics, and charts."""
 
     def __init__(self, run_dir: Union[str, Path]) -> None:
         self.root = Path(run_dir)
@@ -50,11 +54,16 @@ class RunStore:
         self.metrics = self.root / "metrics.jsonl"
         self.curves = self.root / "learning_curves.png"
         self.relevance = self.root / "relevance.json"
+        self.configuration = self.root / "configuration.json"
+        self.system2 = self.root / "system2.json"
 
     def reset(self) -> None:
-        for path in (self.checkpoint, self.best, self.replay, self.macros, self.metrics, self.curves, self.relevance):
+        for path in (
+            self.checkpoint, self.best, self.replay, self.macros, self.metrics, self.curves, self.relevance,
+            self.configuration, self.system2,
+        ):
             path.unlink(missing_ok=True)
-        for name in ("ticks.jsonl", "proposals.jsonl", "history.jsonl"):
+        for name in ("ticks.jsonl", "proposals.jsonl", "history.jsonl", "reflections.jsonl"):
             (self.root / name).unlink(missing_ok=True)
 
     def load_metrics(self) -> List[Dict[str, Any]]:
@@ -281,6 +290,8 @@ def build_parser() -> argparse.ArgumentParser:
     level.add_argument("--explore", dest="level", action="store_const", const="explore", help="Play at the explore level")
     level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Play at the exploit level (default)")
     parser.add_argument("--codex", action="store_true", help="Let the slow Codex worker propose new macros")
+    parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
+    parser.add_argument("--configuration", default=None, help="A configuration.json to start from (e.g. the run folder's)")
     parser.add_argument(
         "--evaluate",
         type=int,
@@ -336,10 +347,14 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
     cfg = ControllerConfig(
         call_budget_sec=args.call_budget,
         seed=args.seed or 0,
+        configuration_path=args.configuration,
         exploration_level=args.level,
         enable_slow_llm=args.codex,
         log_dir=str(store.root),
         relevance_path=str(store.relevance),
+        enable_system2=not args.no_system2,
+        configuration_out=str(store.configuration),
+        system2_state_path=str(store.system2),
         record_experience=True,
     )
     try:

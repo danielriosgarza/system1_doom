@@ -107,6 +107,7 @@ def session(tmp_path_factory) -> Dict[str, Any]:
             if hub.held.is_set() and not middle:
                 middle["meta"] = _get(port, "/episodes/live-1/episode.json")
                 middle["ticks"] = _get(port, "/episodes/live-1/ticks.jsonl")
+                middle["reflections"] = _get(port, "/episodes/live-1/reflections.jsonl")
                 middle["tick"] = tick
                 hub.release.set()
         elif kind == "end":
@@ -151,7 +152,12 @@ def test_each_episode_streams_start_ticks_proposals_on_change_and_end(session):
     for name, events in by_name.items():
         kinds = [kind for kind, _, _ in events]
         assert kinds[0] == "start" and kinds[-1] == "end" and kinds.count("start") == kinds.count("end") == 1, name
-        assert set(kinds[1:-1]) <= {"tick", "proposals"}
+        assert set(kinds[1:-1]) <= {"tick", "proposals", "reflection"}
+        # System 2's end-of-episode cycle is published before the episode ends, and its bundle holds the same records.
+        reflections = [data["record"] for kind, data, _ in events if kind == "reflection"]
+        on_disk = (session["config"].out / name / "reflections.jsonl").read_text().splitlines()
+        assert [json.loads(line) for line in on_disk] == reflections and reflections[-1]["record"] == "cycle", name
+        assert reflections[-1]["trigger"] == "episode_end" and events[-1][1]["meta"]["system2"]["cycles"] == 1
         ticks = [data["trace"]["tick"] for kind, data, _ in events if kind == "tick"]
         assert 1 <= len(ticks) <= 5 and ticks == list(range(len(ticks))), name
         ids = [event_id for kind, _, event_id in events if kind == "tick"]
@@ -185,6 +191,8 @@ def test_the_episode_in_progress_is_served_from_memory(session):
     assert status == 200 and headers["Content-Type"] == "application/x-ndjson"
     ticks = [TickTrace.model_validate_json(line) for line in body.decode("utf-8").splitlines()]
     assert [t.tick for t in ticks] == [0, 1]
+    status, headers, body = session["middle"]["reflections"]
+    assert status == 200 and headers["Cache-Control"] == "no-store" and body == b""  # no cycle in two decisions
 
 
 def test_a_finished_episode_is_a_valid_bundle(session):
@@ -211,6 +219,9 @@ def test_the_flags_reach_the_status_and_serving_needs_the_key(monkeypatch, capsy
     status = serve.LiveHub(config).status()["config"]
     assert status["decider"] == "d1-ultra" and status["networks"] == "best" and status["exploration_level"] == "explore"
     assert "d1_sync" not in status and "deterministic" not in status and "model" not in status
+    assert status["system2"] is True and config.configuration is None
+    off = serve.config_from_args(serve.build_parser().parse_args(["--no-system2", "--configuration", "runs/x/configuration.json"]))
+    assert off.system2 is False and off.configuration == Path("runs/x/configuration.json")
     monkeypatch.setattr(serve, "load_api_key", lambda: None)
     assert serve.main(["--port", "0"]) == 2 and "LIQUID_API_KEY" in capsys.readouterr().err
 

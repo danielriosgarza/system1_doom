@@ -23,7 +23,12 @@ On one origin:
     /episodes/<name>/...      a shipped recording
     /episodes/live-<k>/...    a live episode: the one in progress from memory, finished ones from disk
     /live/status.json         what is playing and what has been played (404 means no live mode)
-    /live/events              server-sent events: hello, start, tick, proposals, end, stopped
+    /live/events              server-sent events: hello, start, tick, proposals, reflection, end, stopped
+
+System 2 is on unless `--no-system2`. Each of its records (a cycle, a trial verdict, a note) is published
+as a `reflection` event as it is logged, and the episode in progress serves its `reflections.jsonl` from
+memory like the other files. An episode's files are finished only once System 2's end-of-episode cycle
+has, so that cycle's record belongs to the episode that ended.
 
 Publishing never waits for a viewer: publishing a tick is a queue put, a viewer whose queue is full
 is dropped, and pacing is a sleep after a tick, never inside it.
@@ -68,10 +73,12 @@ from system1_doom.export import (
     play_episode,
 )
 from system1_doom.logger import TRACE_SCHEMA_VERSION, ProposalTrace, TickTrace
+from system1_doom.reflection import REFLECTIONS_FILE
+from system1_doom.system2 import Record
 from system1_doom.train import RunStore, default_run_dir
 
 LIVE_NAME = re.compile(r"^live-(\d+)$")
-LIVE_FILES = ("episode.json", "ticks.jsonl", "proposals.jsonl")
+LIVE_FILES = ("episode.json", "ticks.jsonl", "proposals.jsonl", REFLECTIONS_FILE)
 KEEPALIVE_SEC = 15.0
 CLIENT_QUEUE_SIZE = 1024
 ZERO_RESULT: Dict[str, Any] = {
@@ -103,6 +110,8 @@ class ServeConfig:
     exploration_level: Optional[ExplorationLevel] = None
     codex: bool = False
     slow_path: bool = True
+    system2: bool = True
+    configuration: Optional[Path] = None
     episodes: Optional[int] = None
     pace: float = 0.23
     rest: float = 3.0
@@ -126,6 +135,7 @@ class ServeConfig:
             "exploration_level": self.exploration_level,
             "codex": self.codex,
             "slow_path": self.slow_path,
+            "system2": self.system2,
             "max_ticks": self.max_ticks,
             "pace_sec": self.pace,
             "episodes": self.episodes,
@@ -168,6 +178,7 @@ class LiveHub:
         self._first_tick: Optional[int] = None
         self._last_tick: Optional[int] = None
         self._proposals: List[str] = []
+        self._reflections: List[str] = []
         self._episodes: List[BundleIndexEntry] = []
 
     # The play loop's side.
@@ -175,7 +186,7 @@ class LiveHub:
     def start_episode(self, name: str, meta: EpisodeMeta) -> None:
         with self._lock:
             self._current, self._meta, self._actions = name, meta, dict(meta.actions)
-            self._ticks, self._proposals = [], []
+            self._ticks, self._proposals, self._reflections = [], [], []
             self._first_tick = self._last_tick = None
             self._publish("start", json.dumps({"name": name, "meta": meta.model_dump(mode="json")}))
 
@@ -197,13 +208,22 @@ class LiveHub:
             data = f'{{"name":{json.dumps(name)},"proposals":[{",".join(lines)}],"actions":{json.dumps(catalog)}}}'
             self._publish("proposals", data)
 
+    def add_reflection(self, record: Record) -> None:
+        """One of System 2's records, from its thread: kept for the episode in progress and published."""
+        line = record.model_dump_json()
+        with self._lock:
+            name = self._current
+            if name is not None:
+                self._reflections.append(line)
+            self._publish("reflection", f'{{"name":{json.dumps(name)},"record":{line}}}')
+
     def end_episode(self, name: str, meta: EpisodeMeta) -> BundleIndexEntry:
         entry = index_entry(name, meta)
         data = json.dumps({"name": name, "meta": meta.model_dump(mode="json"), "entry": entry.model_dump()})
         with self._lock:
             self._episodes.insert(0, entry)
             self._current, self._meta = None, None
-            self._ticks, self._proposals, self._actions = [], [], {}
+            self._ticks, self._proposals, self._reflections, self._actions = [], [], [], {}
             self._first_tick = self._last_tick = None
             self._publish("end", data)
         return entry
@@ -271,7 +291,7 @@ class LiveHub:
         with self._lock:
             if name != self._current or self._meta is None:
                 return None
-            ticks, proposals = list(self._ticks), list(self._proposals)
+            ticks, proposals, reflections = list(self._ticks), list(self._proposals), list(self._reflections)
             meta = self._meta.model_copy(
                 update={
                     "tick_count": len(ticks),
@@ -282,7 +302,7 @@ class LiveHub:
             )
         if file_name == "episode.json":
             return meta.model_dump_json(indent=2).encode("utf-8")
-        lines = ticks if file_name == "ticks.jsonl" else proposals
+        lines = {"ticks.jsonl": ticks, "proposals.jsonl": proposals, REFLECTIONS_FILE: reflections}[file_name]
         return "".join(line + "\n" for line in lines).encode("utf-8")
 
 
@@ -477,7 +497,10 @@ def play(config: ServeConfig, hub: LiveHub, stop: threading.Event, log: bool = F
         config.exploration_level,
         config.transport,
         config.api_key,
+        config.system2,
+        config.configuration,
     )
+    player.ctrl.add_reflection_listener(hub.add_reflection)
     try:
         k = 0
         while not stop.is_set() and (config.episodes is None or k < config.episodes):
@@ -509,6 +532,8 @@ def build_parser() -> argparse.ArgumentParser:
     level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Start at the exploit level (default)")
     parser.add_argument("--codex", action="store_true", help="Let the slow path call the Codex CLI instead of templates")
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
+    parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
+    parser.add_argument("--configuration", default=None, help="A configuration.json to start from (default: the design's)")
     parser.add_argument("--episodes", type=int, default=None, help="Episodes to play (default: until Ctrl+C)")
     parser.add_argument(
         "--pace", type=float, default=0.23, help="Least wall time per tick in seconds (default 0.23: 8 frames at 35 fps; 0 runs flat out)"
@@ -537,6 +562,8 @@ def config_from_args(args: argparse.Namespace) -> ServeConfig:
         exploration_level=args.level,
         codex=args.codex,
         slow_path=not args.no_slow_path,
+        system2=not args.no_system2,
+        configuration=Path(args.configuration) if args.configuration else None,
         episodes=args.episodes,
         pace=max(0.0, args.pace),
         rest=max(0.0, args.rest),

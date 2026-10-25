@@ -45,3 +45,22 @@ def test_play_starts_from_a_configuration_file(tmp_path, capsys):
     assert summary["configuration_version"] == 2
     (trace,) = [TickTrace.model_validate_json(line) for line in (tmp_path / "logs" / "ticks.jsonl").read_text().splitlines()]
     assert trace.active_strategy == "strat_corridor_advance" and trace.configuration_version == 2
+
+
+def test_play_runs_system2_unless_switched_off(tmp_path, capsys):
+    from tests.fake_d1 import is_system2
+
+    fake = FakeD1(shoot_when_aimed)
+    argv = ["--scenario", "basic.cfg", "--ticks", "3", "--run-dir", str(tmp_path / "run"), "--disable-slow-llm"]
+    assert cli.main(argv + ["--log-dir", str(tmp_path / "logs")], transport=fake) == 0
+    summary = json.loads(capsys.readouterr().out)
+    (result,) = summary["results"]
+    # The episode's end starts a System 2 cycle; its calls are in the instance counters, not the episode's cost.
+    assert result["system2"]["enabled"] and summary["reflections_log"] == str(tmp_path / "logs" / "reflections.jsonl")
+    assert (tmp_path / "logs" / "reflections.jsonl").read_text().count('"record":"cycle"') == 1
+    assert any(is_system2(name) for name in summary["instances"]) and (tmp_path / "run" / "configuration.json").is_file()
+    fake = FakeD1(shoot_when_aimed)
+    assert cli.main(argv + ["--no-system2", "--log-dir", str(tmp_path / "off")], transport=fake) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["results"][0]["system2"]["enabled"] is False and summary["reflections_log"] is None
+    assert not any(is_system2(name) for name, _ in fake.calls) and not (tmp_path / "off" / "reflections.jsonl").exists()

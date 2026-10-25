@@ -2,6 +2,7 @@
 
     python -m system1_doom.export --scenario deadly_corridor.cfg --episodes 1 --seed 7
     python -m system1_doom.export --scenario deadly_corridor.cfg --seed 7 --networks best --out bundles/x
+    python -m system1_doom.export --scenario basic.cfg --episodes 2 --no-system2
     python -m system1_doom.export --check bundles/x
     python -m system1_doom.export --index bundles
     python -m system1_doom.export --schema bundle.schema.json
@@ -15,11 +16,20 @@ per episode (schema version 2):
     history.jsonl     one TickRecord per tick: the tick stored whole, re-renderable under any scope
     relevance.json    the relevance ledger after the episode (RelevanceLedger)
     proposals.jsonl   one ProposalTrace per slow-path proposal, final state
+    reflections.jsonl System 2's records while the episode was played: a ReflectionTrace per cycle, a
+                      TrialVerdictTrace per verdict (it names the cycle that made the change, which may
+                      be in an earlier episode), a System2Note per moment between; empty when none
     frames/00042.jpg  the 320x240 JPEG d1-ultra was shown at tick 42
     frames/end.jpg    the screen after the last action
     metrics.jsonl, evaluation.json, macros.json   copied from the run folder when present
                       (MetricsRow per line, EvaluationSummary, a list of ActionSpec)
     trust.json        the loaded checkpoint's experience counts, when value networks were loaded (TrustFile)
+
+System 2 is on unless `--no-system2`: it reads the run folder's history as the episodes are played, may
+change the configuration between ticks (each change a trial, `configuration_start` and `configuration_end`
+show where the episode began and ended), and saves `configuration.json` and `system2.json` in the run
+folder; `--configuration` starts from a saved configuration. `episode.json` counts its cycles, history
+tests and trials (`system2`).
 
 An episode that ended with `connection_lost` (three central misses in a row) is written so it can be
 inspected, but it is not shippable: export exits 1, `--check` reports it and `--index` leaves it out.
@@ -58,6 +68,15 @@ from system1_doom.d1_client import InstanceCounters, TransportFn, load_api_key
 from system1_doom.features import encode_action
 from system1_doom.history import HISTORY_FILE, TickRecord
 from system1_doom.logger import TRACE_SCHEMA_VERSION, ProposalTrace, TickTrace
+from system1_doom.reflection import (
+    REFLECTIONS_FILE,
+    ReflectionTrace,
+    System2EpisodeSummary,
+    System2Note,
+    TrialVerdictTrace,
+    load_reflections,
+    summarize,
+)
 from system1_doom.relevance import RelevanceLedger, save_ledger
 from system1_doom.state import WorldState
 from system1_doom.train import RunStore, default_run_dir
@@ -74,6 +93,8 @@ NOT_SHIPPABLE = "connection_lost"
 
 FRAME_QUALITY = 80
 COPIED_RUN_FILES = ("metrics.jsonl", "evaluation.json", "macros.json")
+# How long finishing a bundle waits for System 2's cycle or verdict in flight, so its record lands in this bundle.
+SYSTEM2_WAIT_SEC = 120.0
 # `macros.json` is `RunStore.save_macros`: the macros admitted during training, as action specs.
 MacroList = TypeAdapter(List[ActionSpec])
 
@@ -172,6 +193,9 @@ class EpisodeMeta(BaseModel):
     cost: EpisodeCost
     misses: EpisodeMisses
     instances: Dict[str, InstanceCounters] = Field(default_factory=dict, description="Call counters per instance over the episode")
+    system2: Optional[System2EpisodeSummary] = Field(
+        default=None, description="What System 2 did while the episode was played, counted from reflections.jsonl; None in older bundles"
+    )
     first_tick: int
     last_tick: int
     tick_count: int
@@ -387,17 +411,23 @@ def build_player(
     exploration_level: Optional[ExplorationLevel] = None,
     transport: Optional[TransportFn] = None,
     api_key: Optional[str] = None,
+    system2: bool = True,
+    configuration_path: Optional[Path] = None,
 ) -> Player:
     """The bridge and controller a bundle is played with, writing its frames and logs into `out`."""
     env = RecordingBridge(frames_dir=out / "frames", scenario=scenario, window_visible=False, seed=seed)
     cfg = ControllerConfig(
         call_budget_sec=call_budget_sec,
         seed=seed,
+        configuration_path=str(configuration_path) if configuration_path else None,
         exploration_level=exploration_level,
         enable_slow_llm=slow_path,
         use_codex_cli=codex,
         log_dir=str(out),
         relevance_path=str(store.relevance),
+        enable_system2=system2,
+        configuration_out=str(store.configuration),
+        system2_state_path=str(store.system2),
         record_frames=True,
     )
     try:
@@ -423,7 +453,7 @@ def play_episode(
 
 def copy_run_files(player: Player, out: Path) -> Tuple[List[str], Optional[CheckpointInfo]]:
     """Copy the run folder's files and write `trust.json`; returns the bundle's file list and the checkpoint."""
-    files = ["episode.json", "ticks.jsonl", HISTORY_FILE, RELEVANCE_FILE, "proposals.jsonl"]
+    files = ["episode.json", "ticks.jsonl", HISTORY_FILE, RELEVANCE_FILE, "proposals.jsonl", REFLECTIONS_FILE]
     if player.store.root.is_dir():
         for file_name in COPIED_RUN_FILES:
             source = player.store.root / file_name
@@ -468,6 +498,7 @@ def episode_meta(
     files: List[str],
     checkpoint: Optional[CheckpointInfo],
     end_frame: Optional[str] = None,
+    system2: Optional[System2EpisodeSummary] = None,
 ) -> EpisodeMeta:
     """`episode.json` for an episode played by `player`; the action catalog is the vocabulary as it is now."""
     ctrl = player.ctrl
@@ -489,6 +520,7 @@ def episode_meta(
         cost=EpisodeCost(**result.get("cost", {})),
         misses=EpisodeMisses(**result.get("misses", {})),
         instances=by_instance,
+        system2=system2 if system2 is not None else System2EpisodeSummary(enabled=player.cfg.enable_system2),
         first_tick=traces[0].tick if traces else 0,
         last_tick=traces[-1].tick if traces else 0,
         tick_count=len(traces),
@@ -511,7 +543,9 @@ def finish_bundle(
     files: List[str],
     checkpoint: Optional[CheckpointInfo],
 ) -> EpisodeMeta:
-    """Write the final proposals, the ledger, the end frame and `episode.json` for an episode just played into `out`."""
+    """Write the final proposals, the ledger, System 2's records, the end frame and `episode.json` for an episode just played into `out`."""
+    # System 2's end-of-episode cycle (or a verdict) still in flight belongs to this episode: let it finish first.
+    player.ctrl.wait_system2(SYSTEM2_WAIT_SEC)
     # record_macro_performance appends a fresh copy of a proposal each time its macro runs; keep the final ones.
     (out / "proposals.jsonl").write_text(
         "".join(p.model_dump_json() + "\n" for p in player.ctrl.logger.proposal_traces), encoding="utf-8"
@@ -519,11 +553,14 @@ def finish_bundle(
     save_ledger(player.ctrl.ledger, out / RELEVANCE_FILE)
     if not (out / HISTORY_FILE).is_file():
         (out / HISTORY_FILE).write_text("", encoding="utf-8")
+    if not (out / REFLECTIONS_FILE).is_file():
+        (out / REFLECTIONS_FILE).write_text("", encoding="utf-8")
+    system2 = summarize(load_reflections((out / REFLECTIONS_FILE).read_text(encoding="utf-8")), enabled=player.cfg.enable_system2)
     end_frame = None
     if player.keeper.last is not None:
         _jpeg(player.keeper.last, out / "frames" / "end.jpg")
         end_frame = "frames/end.jpg"
-    meta = episode_meta(player, name, title, seed, result, traces, files, checkpoint, end_frame)
+    meta = episode_meta(player, name, title, seed, result, traces, files, checkpoint, end_frame, system2)
     (out / "episode.json").write_text(meta.model_dump_json(indent=2), encoding="utf-8")
     return meta
 
@@ -543,6 +580,8 @@ def record_bundle(
     exploration_level: Optional[ExplorationLevel] = None,
     transport: Optional[TransportFn] = None,
     api_key: Optional[str] = None,
+    system2: bool = True,
+    configuration_path: Optional[Path] = None,
 ) -> EpisodeMeta:
     """Play one seeded episode with d1-ultra deciding and write it as a bundle in `out`."""
     store = RunStore(run_dir or default_run_dir(scenario))
@@ -550,7 +589,7 @@ def record_bundle(
     _prepare_out_dir(out)
     player = build_player(
         scenario, seed, out, networks, store, learner, model_path, max_ticks, slow_path, codex,
-        call_budget_sec, exploration_level, transport, api_key,
+        call_budget_sec, exploration_level, transport, api_key, system2, configuration_path,
     )
     try:
         result, traces = play_episode(player, seed)
@@ -594,6 +633,34 @@ def _check_tick(tick: TickTrace, bundle: Path, meta: EpisodeMeta) -> List[str]:
     return problems
 
 
+def _check_reflections(path: Path, meta: EpisodeMeta) -> List[str]:
+    """Every line of reflections.jsonl is one of System 2's records, and episode.json counts them right."""
+    problems: List[str] = []
+    records = []
+    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
+        if not line.strip():
+            continue
+        try:
+            records.extend(load_reflections(line))
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"{REFLECTIONS_FILE} line {i + 1}: {exc}")
+    low, high = meta.configuration_start.version, meta.configuration_end.version
+    for record in records:
+        if isinstance(record, ReflectionTrace):
+            made = len(record.reflectors) + (record.central is not None) + (record.history_test.calls if record.history_test else 0)
+            if record.calls != made:
+                problems.append(f"{REFLECTIONS_FILE}: {record.cycle_id} counts {record.calls} calls; its reflectors, central and test made {made}")
+            if record.calls > meta.configuration_start.bounds.system2_calls_per_cycle:
+                problems.append(f"{REFLECTIONS_FILE}: {record.cycle_id} made {record.calls} calls, over the bound")
+            if not low <= record.configuration_version <= high:
+                problems.append(f"{REFLECTIONS_FILE}: {record.cycle_id} ran at configuration version {record.configuration_version}, outside {low}..{high}")
+    if meta.system2 is not None and not problems:
+        counted = summarize(records, enabled=meta.system2.enabled)
+        if counted != meta.system2:
+            problems.append(f"episode.json system2 {meta.system2.model_dump()} does not match {REFLECTIONS_FILE} {counted.model_dump()}")
+    return problems
+
+
 def check_bundle(bundle: Path) -> List[str]:
     """Validate a bundle against the trace models; returns a list of problems (empty when it is valid)."""
     problems: List[str] = []
@@ -629,6 +696,8 @@ def check_bundle(bundle: Path) -> List[str]:
     for required in (HISTORY_FILE, RELEVANCE_FILE):
         if required not in meta.files:
             problems.append(f"episode.json does not list {required}")
+    if meta.system2 is not None and REFLECTIONS_FILE not in meta.files:
+        problems.append(f"episode.json counts System 2's records but does not list {REFLECTIONS_FILE}")
     for file_name in meta.files:
         path = bundle / file_name
         if not path.is_file():
@@ -651,6 +720,8 @@ def check_bundle(bundle: Path) -> List[str]:
                 records = [TickRecord.model_validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
                 if len(records) != meta.tick_count:
                     problems.append(f"{HISTORY_FILE} has {len(records)} ticks, episode.json says {meta.tick_count}")
+            elif file_name == REFLECTIONS_FILE:
+                problems.extend(_check_reflections(path, meta))
         except Exception as exc:  # noqa: BLE001
             problems.append(f"{file_name}: {exc}")
     return problems
@@ -705,6 +776,9 @@ def bundle_json_schema() -> Dict[str, Any]:
         EvaluationSummary,
         TrustFile,
         ActionSpec,
+        ReflectionTrace,
+        TrialVerdictTrace,
+        System2Note,
     )
     _, schema = models_json_schema(
         [(m, "serialization") for m in models],
@@ -736,6 +810,8 @@ def build_parser() -> argparse.ArgumentParser:
     level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Start at the exploit level (default)")
     parser.add_argument("--codex", action="store_true", help="Let the slow path call the Codex CLI instead of templates")
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
+    parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
+    parser.add_argument("--configuration", default=None, help="A configuration.json to start from (default: the design's)")
     parser.add_argument("--check", metavar="BUNDLE", default=None, help="Validate a bundle and exit")
     parser.add_argument("--index", metavar="DIR", default=None, help="Write DIR/index.json listing its bundles and exit")
     parser.add_argument("--schema", metavar="OUT.json", default=None, help="Write the bundle JSON Schema and exit")
@@ -794,14 +870,23 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
                 exploration_level=args.level,
                 transport=transport,
                 api_key=api_key,
+                system2=not args.no_system2,
+                configuration_path=Path(args.configuration) if args.configuration else None,
             )
         except (FileNotFoundError, FileExistsError) as exc:
             print(exc, file=sys.stderr)
             return 2
         status = "cleared" if meta.result.cleared else ("died" if meta.result.died else "survived")
+        system2 = meta.system2
+        reflections = (
+            f", System 2: {system2.cycles} cycles, {system2.tests} tests, {system2.trials_started} trials, {system2.calls} calls, ${system2.usd:.4f}"
+            if system2 is not None and system2.enabled
+            else ""
+        )
         print(
             f"{out}: {meta.tick_count} ticks, reward {meta.result.reward:.1f}, {status}, "
-            f"{meta.cost.calls} calls, ${meta.cost.usd:.4f}, {meta.misses.missed_ticks} missed ticks"
+            f"{meta.cost.calls} calls, ${meta.cost.usd:.4f}, {meta.misses.missed_ticks} missed ticks, "
+            f"configuration version {meta.configuration_start.version} -> {meta.configuration_end.version}{reflections}"
         )
         if meta.result.finished_reason == NOT_SHIPPABLE:
             print(f"{out}: the connection to d1-ultra was lost (three central misses in a row); not shippable.", file=sys.stderr)

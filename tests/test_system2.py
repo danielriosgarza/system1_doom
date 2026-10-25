@@ -3,6 +3,7 @@ trial and its verdicts, the safety bound, exact reverts, misses, ties, the call 
 on a synthetic history with the fake d1-ultra, then end to end on ViZDoom."""
 
 import re
+import threading
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -484,6 +485,38 @@ def test_end_to_end_a_widen_is_tested_applied_at_a_tick_boundary_and_kept(tmp_pa
     logged = load_reflections((tmp_path / "logs" / "reflections.jsonl").read_text())
     assert [r.record for r in logged] == [r.record for r in records]
     assert not any(t.slow_path_request for t in traces)
+
+
+def test_end_to_end_served_bundles_carry_the_cycles_and_the_last_ends_at_configuration_version_2(tmp_path):
+    from system1_doom import export, serve
+
+    stop = threading.Event()
+
+    class UntilTheVerdict(serve.LiveHub):
+        def add_reflection(self, record):
+            super().add_reflection(record)
+            if record.record == "verdict":
+                stop.set()
+
+    config = serve.ServeConfig(
+        scenario="basic.cfg", seed=11, run_dir=tmp_path / "run", max_ticks=200, episodes=25, pace=0.0, rest=0.0,
+        slow_path=False, out=tmp_path / "live", transport=FakeD1(survival_until_pickups), api_key="liquid_test_key",
+    )
+    serve.prepare_live_dir(config.out)
+    serve.play(config, UntilTheVerdict(config), stop)
+    bundles = sorted(config.out.iterdir(), key=lambda p: int(p.name.split("-")[1]))
+    metas = [export.EpisodeMeta.model_validate_json((b / "episode.json").read_text()) for b in bundles]
+    assert stop.is_set() and len(bundles) < 25
+    for bundle in bundles:
+        assert export.check_bundle(bundle) == [], bundle.name
+    assert metas[0].configuration_start.version == 1 and metas[-1].configuration_end.version == 2
+    records = [r for b in bundles for r in load_reflections((b / "reflections.jsonl").read_text())]
+    queued = [r for r in records if isinstance(r, ReflectionTrace) and r.outcome == "queued"]
+    assert [r.choice for r in queued] == ["widen:survival:pickups"] and queued[0].history_test.passed
+    (verdict,) = [r for r in records if isinstance(r, TrialVerdictTrace)]
+    assert verdict.cycle_id == queued[0].cycle_id and verdict.trial.verdict == "keep"
+    assert sum(m.system2.trials_started for m in metas) == 1 and sum(m.system2.kept for m in metas) == 1
+    assert Configuration.load(tmp_path / "run" / "configuration.json").version == 2
 
 
 def test_system2_is_off_unless_asked_for(tmp_path):
