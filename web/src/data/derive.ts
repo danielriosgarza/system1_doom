@@ -1509,7 +1509,7 @@ export function d1Words(tick: TickTrace, meta: EpisodeMeta): string {
   const pressure = d1Pressure(tick)
   if (pressure !== null) {
     parts.push(
-      `After the action it rated exploration at ${fmt(pressure, 2)}, half the say in the pressure steering and the next tick use.`,
+      `After the action it rated exploration at ${fmt(pressure, 2)}, half the say in the pressure that steering and the next tick use.`,
     )
   }
   return parts.join(' ')

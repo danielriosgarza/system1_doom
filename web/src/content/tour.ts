@@ -90,7 +90,7 @@ function opinions({ tick, meta }: TourContext): string[] {
       meta.brains.learned_networks
         ? `The hatched part of each bar is the networks' share, ${pct(lambda)} here: trust they earned by trying these actions in this kind of situation.`
         : 'No networks are loaded, so every bar is the hand-written heuristic.'
-    }${advised > 0 ? ` The dotted part is d1-ultra's advice, mixed into ${advised === list.length ? 'every' : `${advised} of the`} module${advised === 1 ? '' : 's'}.` : ''}`,
+    }${advised > 0 ? ` The dotted part is d1-ultra's advice, mixed into ${advised === list.length ? 'every module' : advised === 1 ? 'one of the modules' : `${advised} of the modules`}.` : ''}`,
   ]
 }
 
