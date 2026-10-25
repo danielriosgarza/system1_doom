@@ -55,6 +55,7 @@ class Observation(BaseModel):
     visible_pickups: Tuple[PickupObservation, ...] = ()
     recent_incoming_damage: float = 0.0
     recent_outgoing_damage: float = 0.0
+    recent_hits: int = 0
     recent_kills: int = 0
     movement_state: str = "stationary"
     recent_actions: Tuple[str, ...] = ()

@@ -1,27 +1,34 @@
-"""Record episodes as self-contained bundles for the web app, and check or describe the bundle format.
+"""Record episodes played by d1-ultra as self-contained bundles, and check or describe the bundle format.
 
     python -m system1_doom.export --scenario deadly_corridor.cfg --episodes 1 --seed 7
-    python -m system1_doom.export --scenario deadly_corridor.cfg --seed 7 --model best --out web/public/episodes/x
-    python -m system1_doom.export --scenario deadly_corridor.cfg --seed 11 --model latest --d1 --d1-sync --out web/public/episodes/y
-    python -m system1_doom.export --check web/public/episodes/x
-    python -m system1_doom.export --index web/public/episodes
-    python -m system1_doom.export --schema web/schema/bundle.schema.json
+    python -m system1_doom.export --scenario deadly_corridor.cfg --seed 7 --networks best --out bundles/x
+    python -m system1_doom.export --check bundles/x
+    python -m system1_doom.export --index bundles
+    python -m system1_doom.export --schema bundle.schema.json
 
-A bundle is one folder per episode:
+Recording needs LIQUID_API_KEY: every decision is made by d1-ultra instances. A bundle is one folder
+per episode (schema version 2):
 
-    episode.json      what was played, with which brains, and how it ended (EpisodeMeta)
-    ticks.jsonl       one TickTrace per control tick
+    episode.json      what was played, the decider, the configuration at start and end, the cost,
+                      the misses and how it ended (EpisodeMeta)
+    ticks.jsonl       one TickTrace per tick: the six instances with their verbatim evidence and answers
+    history.jsonl     one TickRecord per tick: the tick stored whole, re-renderable under any scope
+    relevance.json    the relevance ledger after the episode (RelevanceLedger)
     proposals.jsonl   one ProposalTrace per slow-path proposal, final state
-    frames/00042.jpg  the 320x240 screen the controller saw when it decided tick 42
+    frames/00042.jpg  the 320x240 JPEG d1-ultra was shown at tick 42
     frames/end.jpg    the screen after the last action
     metrics.jsonl, evaluation.json, macros.json   copied from the run folder when present
                       (MetricsRow per line, EvaluationSummary, a list of ActionSpec)
-    trust.json        the loaded checkpoint's experience counts, when a model was loaded (TrustFile)
+    trust.json        the loaded checkpoint's experience counts, when value networks were loaded (TrustFile)
+
+An episode that ended with `connection_lost` (three central misses in a row) is written so it can be
+inspected, but it is not shippable: export exits 1, `--check` reports it and `--index` leaves it out.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import importlib.metadata
@@ -37,9 +44,21 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.json_schema import models_json_schema
 
 from system1_doom.actions import ActionSpec
-from system1_doom.controller import BUILTIN_ACTION_IDS, ControllerConfig, DoomDecisionController
+from system1_doom.configuration import CENTRAL_NAME, SENSE_NAMES, Configuration, ExplorationLevel
+from system1_doom.controller import (
+    BUILTIN_ACTION_IDS,
+    NO_KEY_MESSAGE,
+    ControllerConfig,
+    DoomDecisionController,
+    EpisodeCost,
+    EpisodeMisses,
+    FinishedReason,
+)
+from system1_doom.d1_client import InstanceCounters, TransportFn, load_api_key
 from system1_doom.features import encode_action
+from system1_doom.history import HISTORY_FILE, TickRecord
 from system1_doom.logger import TRACE_SCHEMA_VERSION, ProposalTrace, TickTrace
+from system1_doom.relevance import RelevanceLedger, save_ledger
 from system1_doom.state import WorldState
 from system1_doom.train import RunStore, default_run_dir
 from system1_doom.vizdoom_env import ViZDoomBridge
@@ -47,13 +66,13 @@ from system1_doom.vizdoom_env import ViZDoomBridge
 if TYPE_CHECKING:
     from system1_doom.learning import Learner
 
-Model = Literal["heuristics", "best", "latest"]
+# Which value networks serve the `values` evidence channel: none, the best or the latest checkpoint.
+Networks = Literal["none", "best", "latest"]
+DECIDER = "d1-ultra"
+RELEVANCE_FILE = "relevance.json"
+NOT_SHIPPABLE = "connection_lost"
 
 FRAME_QUALITY = 80
-TICK_BUDGET_SEC = 0.04
-# Under --d1-sync a tick waits for d1-ultra over the network, so its budget must outlast a round trip
-# (the reduced and critical thresholds are absolute, 12 ms and 4 ms, so every tick stays in full mode).
-D1_SYNC_TICK_BUDGET_SEC = 5.0
 COPIED_RUN_FILES = ("metrics.jsonl", "evaluation.json", "macros.json")
 # `macros.json` is `RunStore.save_macros`: the macros admitted during training, as action specs.
 MacroList = TypeAdapter(List[ActionSpec])
@@ -92,24 +111,13 @@ class CheckpointInfo(BaseModel):
     best_score: Optional[float] = None
 
 
-class BrainsInfo(BaseModel):
-    """Which deciders were switched on for this episode."""
-
-    model_config = ConfigDict(frozen=True)
-
-    heuristics: bool = True
-    learned_networks: bool
-    d1_ultra: bool
-    slow_path: Literal["off", "templates", "codex"]
-
-
 class PlayConfigInfo(BaseModel):
+    """How the episode was played; the configuration itself is recorded whole beside it."""
+
     model_config = ConfigDict(frozen=True)
 
-    execution_mode: str
-    tick_budget_sec: float
-    deterministic_arbiter: bool
-    exploration_floor: float
+    call_budget_sec: float
+    seed: int = Field(description="System 1's generator seed, for draws under the explore level")
     max_ticks: int
 
 
@@ -126,10 +134,11 @@ class EpisodeResult(BaseModel):
     finished: bool
     cleared: bool
     died: bool
+    finished_reason: Optional[FinishedReason] = Field(
+        default=None, description="episode_end, max_ticks, stopped, or connection_lost (not shippable); None while in progress"
+    )
     transitions: int = 0
-    explored_steps: int = 0
-    network_share: float = 0.0
-    actions: List[str] = Field(default_factory=list)
+    actions: List[str] = Field(default_factory=list, description="The executed action per tick; 'missed' where the central missed")
 
 
 class FramesInfo(BaseModel):
@@ -152,18 +161,23 @@ class EpisodeMeta(BaseModel):
     title: str
     scenario: str
     seed: int
-    model: Model
+    decider: Literal["d1-ultra"] = Field(default=DECIDER, description="Every decision is made by d1-ultra instances")
+    value_networks: Networks = Field(description="Which value networks served the values evidence channel")
     checkpoint: Optional[CheckpointInfo] = None
-    brains: BrainsInfo
+    slow_path: Literal["off", "templates", "codex"]
     config: PlayConfigInfo
+    configuration_start: Configuration
+    configuration_end: Configuration
     result: EpisodeResult
+    cost: EpisodeCost
+    misses: EpisodeMisses
+    instances: Dict[str, InstanceCounters] = Field(default_factory=dict, description="Call counters per instance over the episode")
     first_tick: int
     last_tick: int
     tick_count: int
     buttons: List[str]
     frames: FramesInfo
     actions: Dict[str, ActionInfo]
-    modules: Dict[str, str]
     files: List[str]
     package_version: str = Field(default_factory=_package_version)
     recorded_at: str
@@ -186,9 +200,12 @@ class MetricsRow(BaseModel):
     died: bool
     transitions: int
     replay_size: int
-    network_share: float
-    exploration_floor: float
-    explored_steps: int = 0
+    network_share: float = 0.0
+    exploration_floor: Optional[float] = Field(default=None, description="Rows written before d1-ultra decided")
+    explored_steps: Optional[int] = Field(default=None, description="Rows written before d1-ultra decided")
+    finished_reason: Optional[str] = None
+    missed_ticks: int = 0
+    cost_usd: float = 0.0
     losses: Dict[str, float] = Field(default_factory=dict, description="Mean loss per network over the episode's gradient steps")
     macros: int = 0
     episode_sec: float = 0.0
@@ -211,14 +228,16 @@ class EvaluationScores(BaseModel):
 
 
 class EvaluationSummary(BaseModel):
-    """`evaluation.json`: `train.evaluate`, the same seeded episodes played greedily by each brain."""
+    """`evaluation.json`: `train.evaluate`, the same seeded episodes played by d1-ultra with no, the latest
+    and the best value networks as evidence (`heuristics` is a file written before d1-ultra decided)."""
 
     model_config = ConfigDict(frozen=True)
 
     scenario: str
     episodes: int
     trained_episodes: int = 0
-    heuristics: EvaluationScores
+    none: Optional[EvaluationScores] = None
+    heuristics: Optional[EvaluationScores] = None
     latest: Optional[EvaluationScores] = None
     best: Optional[EvaluationScores] = None
 
@@ -241,7 +260,7 @@ class BundleIndexEntry(BaseModel):
     name: str
     title: str
     scenario: str
-    model: Model
+    value_networks: Networks
     seed: int
     cleared: bool
     died: bool
@@ -260,7 +279,7 @@ def _jpeg(screen_buffer: np.ndarray, path: Path) -> None:
 
 
 class RecordingBridge(ViZDoomBridge):
-    """A ViZDoom bridge that saves the screen each world state was built from, named by its tick.
+    """A ViZDoom bridge that saves the JPEG each world state carries (the image d1-ultra is shown), by tick.
 
     Saving at acquisition, not after the motor burst, keeps the frame aligned with the enemy and
     pickup boxes in the trace's state snapshot.
@@ -282,9 +301,9 @@ class RecordingBridge(ViZDoomBridge):
 
     def acquire_world_state(self, strategy_refs: Tuple[str, ...] = ()) -> WorldState:
         world_state = super().acquire_world_state(strategy_refs=strategy_refs)
-        state = self.game.get_state()
-        if state is not None and state.screen_buffer is not None:
-            _jpeg(state.screen_buffer, self.frames_dir / f"{world_state.observation.tick:05d}.jpg")
+        frame = world_state.observation.frame_jpeg_b64
+        if frame:
+            (self.frames_dir / f"{world_state.observation.tick:05d}.jpg").write_bytes(base64.b64decode(frame))
         return world_state
 
 
@@ -312,18 +331,19 @@ def _action_catalog(ctrl: DoomDecisionController) -> Dict[str, ActionInfo]:
             execution_cost=round(a.execution_cost, 4),
             encoding=[round(float(v), 4) for v in encode_action(a)],
         )
-        for a in ctrl.vocabulary.all_actions()
+        for a in ctrl.known_actions()
     }
 
 
-def _load_model(store: RunStore, model: Model) -> Tuple[Optional["Learner"], Optional[Path]]:
-    if model == "heuristics":
+def load_networks(store: RunStore, networks: Networks) -> Tuple[Optional["Learner"], Optional[Path]]:
+    """The value networks for the values channel: none, or the best or latest checkpoint of the run."""
+    if networks == "none":
         return None, None
     from system1_doom.learning import Learner
 
-    path = store.best if model == "best" else store.checkpoint
+    path = store.best if networks == "best" else store.checkpoint
     if not path.is_file():
-        raise FileNotFoundError(f"No {path.name} in {store.root}; train first or use --model heuristics.")
+        raise FileNotFoundError(f"No {path.name} in {store.root}; train first or use --networks none.")
     return Learner.load(path), path
 
 
@@ -337,10 +357,10 @@ def _prepare_out_dir(out: Path) -> None:
 
 @dataclass
 class Player:
-    """Everything that plays episodes, built once: the run folder, the brain, the bridge and the controller."""
+    """Everything that plays episodes, built once: the run folder, the networks, the bridge and the controller."""
 
     scenario: str
-    model: Model
+    networks: Networks
     max_ticks: int
     slow_path: bool
     store: RunStore
@@ -356,44 +376,39 @@ def build_player(
     scenario: str,
     seed: int,
     out: Path,
-    model: Model,
+    networks: Networks,
     store: RunStore,
     learner: Optional["Learner"],
     model_path: Optional[Path],
     max_ticks: int = 500,
-    d1: bool = False,
     slow_path: bool = True,
     codex: bool = False,
-    deterministic: bool = False,
-    d1_sync: bool = False,
+    call_budget_sec: Optional[float] = None,
+    exploration_level: Optional[ExplorationLevel] = None,
+    transport: Optional[TransportFn] = None,
+    api_key: Optional[str] = None,
 ) -> Player:
-    """The bridge and controller a bundle is played with, writing its frames and logs into `out`.
-
-    `d1_sync` waits for d1-ultra's answers each tick instead of reading them from a cache (`sync_d1`).
-    """
-    env = RecordingBridge(
-        frames_dir=out / "frames",
-        scenario=scenario,
-        window_visible=False,
-        include_jpeg_frame=d1,
-        seed=seed,
-    )
+    """The bridge and controller a bundle is played with, writing its frames and logs into `out`."""
+    env = RecordingBridge(frames_dir=out / "frames", scenario=scenario, window_visible=False, seed=seed)
     cfg = ControllerConfig(
-        execution_mode="sync_d1" if d1_sync else "async_cached",
-        enable_d1_ultra=d1,
+        call_budget_sec=call_budget_sec,
+        seed=seed,
+        exploration_level=exploration_level,
         enable_slow_llm=slow_path,
         use_codex_cli=codex,
-        tick_budget_sec=D1_SYNC_TICK_BUDGET_SEC if d1_sync else TICK_BUDGET_SEC,
         log_dir=str(out),
-        deterministic_arbiter=deterministic,
-        exploration_floor=0.0,
+        relevance_path=str(store.relevance),
         record_frames=True,
     )
-    ctrl = DoomDecisionController(env=env, config=cfg, learner=learner)
+    try:
+        ctrl = DoomDecisionController(env=env, config=cfg, learner=learner, transport=transport, api_key=api_key)
+    except Exception:
+        env.close()
+        raise
     keeper = LastFrameKeeper()
     ctrl.recorder = keeper  # type: ignore[assignment]
     ctrl.restore_macros(store.load_macros())
-    return Player(scenario, model, max_ticks, slow_path, store, learner, model_path, env, cfg, ctrl, keeper)
+    return Player(scenario, networks, max_ticks, slow_path, store, learner, model_path, env, cfg, ctrl, keeper)
 
 
 def play_episode(
@@ -408,7 +423,7 @@ def play_episode(
 
 def copy_run_files(player: Player, out: Path) -> Tuple[List[str], Optional[CheckpointInfo]]:
     """Copy the run folder's files and write `trust.json`; returns the bundle's file list and the checkpoint."""
-    files = ["episode.json", "ticks.jsonl", "proposals.jsonl"]
+    files = ["episode.json", "ticks.jsonl", HISTORY_FILE, RELEVANCE_FILE, "proposals.jsonl"]
     if player.store.root.is_dir():
         for file_name in COPIED_RUN_FILES:
             source = player.store.root / file_name
@@ -437,9 +452,10 @@ def copy_run_files(player: Player, out: Path) -> Tuple[List[str], Optional[Check
     return files, checkpoint
 
 
-def default_title(scenario: str, model: Model, seed: int) -> str:
+def default_title(scenario: str, networks: Networks, seed: int) -> str:
     stem = Path(scenario).stem
-    return f"{stem.replace('_', ' ')}, {'heuristics only' if model == 'heuristics' else model + ' checkpoint'}, seed {seed}"
+    evidence = "no value networks" if networks == "none" else f"{networks} value networks"
+    return f"{stem.replace('_', ' ')}, d1-ultra with {evidence}, seed {seed}"
 
 
 def episode_meta(
@@ -454,34 +470,31 @@ def episode_meta(
     end_frame: Optional[str] = None,
 ) -> EpisodeMeta:
     """`episode.json` for an episode played by `player`; the action catalog is the vocabulary as it is now."""
-    ctrl, cfg = player.ctrl, player.cfg
+    ctrl = player.ctrl
+    start = result.get("configuration_start", ctrl.configuration)
+    end = result.get("configuration_end", ctrl.configuration)
+    by_instance = {name: InstanceCounters.model_validate(c) for name, c in result.get("instances", {}).items()}
     return EpisodeMeta(
         name=name,
         title=title,
         scenario=player.scenario,
         seed=seed,
-        model=player.model,
+        value_networks=player.networks,
         checkpoint=checkpoint,
-        brains=BrainsInfo(
-            learned_networks=player.learner is not None,
-            d1_ultra=ctrl.d1_client.enabled,
-            slow_path="off" if not player.slow_path else ("codex" if ctrl.llm_worker.use_codex_cli else "templates"),
-        ),
-        config=PlayConfigInfo(
-            execution_mode=cfg.execution_mode,
-            tick_budget_sec=cfg.tick_budget_sec,
-            deterministic_arbiter=cfg.deterministic_arbiter,
-            exploration_floor=cfg.exploration_floor,
-            max_ticks=player.max_ticks,
-        ),
-        result=EpisodeResult(**result),
+        slow_path="off" if not player.slow_path else ("codex" if ctrl.llm_worker.use_codex_cli else "templates"),
+        config=PlayConfigInfo(call_budget_sec=start.bounds.call_budget_sec, seed=player.cfg.seed, max_ticks=player.max_ticks),
+        configuration_start=start,
+        configuration_end=end,
+        result=EpisodeResult(**{k: v for k, v in result.items() if k in EpisodeResult.model_fields}),
+        cost=EpisodeCost(**result.get("cost", {})),
+        misses=EpisodeMisses(**result.get("misses", {})),
+        instances=by_instance,
         first_tick=traces[0].tick if traces else 0,
         last_tick=traces[-1].tick if traces else 0,
         tick_count=len(traces),
         buttons=list(player.env.button_names),
         frames=FramesInfo(end_frame=end_frame),
         actions=_action_catalog(ctrl),
-        modules={n: m.question_prompt for n, m in ctrl.module_evaluator.modules.items()},
         files=files,
         recorded_at=datetime.now(timezone.utc).isoformat(),
     )
@@ -498,11 +511,14 @@ def finish_bundle(
     files: List[str],
     checkpoint: Optional[CheckpointInfo],
 ) -> EpisodeMeta:
-    """Write the final proposals, the end frame and `episode.json` for an episode just played into `out`."""
+    """Write the final proposals, the ledger, the end frame and `episode.json` for an episode just played into `out`."""
     # record_macro_performance appends a fresh copy of a proposal each time its macro runs; keep the final ones.
     (out / "proposals.jsonl").write_text(
         "".join(p.model_dump_json() + "\n" for p in player.ctrl.logger.proposal_traces), encoding="utf-8"
     )
+    save_ledger(player.ctrl.ledger, out / RELEVANCE_FILE)
+    if not (out / HISTORY_FILE).is_file():
+        (out / HISTORY_FILE).write_text("", encoding="utf-8")
     end_frame = None
     if player.keeper.last is not None:
         _jpeg(player.keeper.last, out / "frames" / "end.jpg")
@@ -516,23 +532,25 @@ def record_bundle(
     scenario: str,
     seed: int,
     out: Path,
-    model: Model = "heuristics",
+    networks: Networks = "none",
     run_dir: Optional[Path] = None,
     max_ticks: int = 500,
-    d1: bool = False,
     slow_path: bool = True,
     codex: bool = False,
-    deterministic: bool = False,
     name: Optional[str] = None,
     title: Optional[str] = None,
-    d1_sync: bool = False,
+    call_budget_sec: Optional[float] = None,
+    exploration_level: Optional[ExplorationLevel] = None,
+    transport: Optional[TransportFn] = None,
+    api_key: Optional[str] = None,
 ) -> EpisodeMeta:
-    """Play one seeded episode and write it as a bundle in `out`."""
+    """Play one seeded episode with d1-ultra deciding and write it as a bundle in `out`."""
     store = RunStore(run_dir or default_run_dir(scenario))
-    learner, model_path = _load_model(store, model)
+    learner, model_path = load_networks(store, networks)
     _prepare_out_dir(out)
     player = build_player(
-        scenario, seed, out, model, store, learner, model_path, max_ticks, d1, slow_path, codex, deterministic, d1_sync
+        scenario, seed, out, networks, store, learner, model_path, max_ticks, slow_path, codex,
+        call_budget_sec, exploration_level, transport, api_key,
     )
     try:
         result, traces = play_episode(player, seed)
@@ -543,7 +561,7 @@ def record_bundle(
         player,
         out,
         name or out.name,
-        title or default_title(scenario, model, seed),
+        title or default_title(scenario, networks, seed),
         seed,
         result,
         traces,
@@ -552,15 +570,45 @@ def record_bundle(
     )
 
 
+def _check_tick(tick: TickTrace, bundle: Path, meta: EpisodeMeta) -> List[str]:
+    problems: List[str] = []
+    expected = list(SENSE_NAMES) + [CENTRAL_NAME]
+    if list(tick.instances) != expected:
+        problems.append(f"tick {tick.tick}: instances {list(tick.instances)}, expected {expected}")
+    for name, result in tick.instances.items():
+        if not result.evidence:
+            problems.append(f"tick {tick.tick}: {name} has no evidence text")
+        if result.image_ref is not None and not (bundle / result.image_ref).is_file():
+            problems.append(f"tick {tick.tick}: {name}'s image {result.image_ref} is missing")
+    if tick.pick.kind == "missed":
+        if tick.executed_action is not None:
+            problems.append(f"tick {tick.tick}: the central missed but {tick.executed_action} was executed")
+    elif tick.executed_action != tick.pick.action or tick.executed_action not in tick.available_actions:
+        problems.append(f"tick {tick.tick}: executed {tick.executed_action}, but the pick was {tick.pick.action}")
+    low, high = meta.configuration_start.version, meta.configuration_end.version
+    if not low <= tick.configuration_version <= high:
+        problems.append(f"tick {tick.tick}: configuration version {tick.configuration_version} outside {low}..{high}")
+    frame = bundle / meta.frames.dir / f"{tick.tick:05d}.jpg"
+    if not frame.is_file():
+        problems.append(f"missing frame {frame.relative_to(bundle)}")
+    return problems
+
+
 def check_bundle(bundle: Path) -> List[str]:
     """Validate a bundle against the trace models; returns a list of problems (empty when it is valid)."""
     problems: List[str] = []
     try:
-        meta = EpisodeMeta.model_validate_json((bundle / "episode.json").read_text(encoding="utf-8"))
+        raw = json.loads((bundle / "episode.json").read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - every failure becomes a reported problem
         return [f"episode.json: {exc}"]
-    if meta.schema_version != TRACE_SCHEMA_VERSION:
-        problems.append(f"episode.json: schema_version {meta.schema_version}, expected {TRACE_SCHEMA_VERSION}")
+    if isinstance(raw, dict) and raw.get("schema_version") != TRACE_SCHEMA_VERSION:
+        return [f"episode.json: schema_version {raw.get('schema_version')}, expected {TRACE_SCHEMA_VERSION}"]
+    try:
+        meta = EpisodeMeta.model_validate(raw)
+    except Exception as exc:  # noqa: BLE001
+        return [f"episode.json: {exc}"]
+    if meta.result.finished_reason == NOT_SHIPPABLE:
+        problems.append("episode.json: the episode ended with connection_lost (three central misses in a row); not shippable")
     ticks: List[TickTrace] = []
     for i, line in enumerate((bundle / "ticks.jsonl").read_text(encoding="utf-8").splitlines()):
         try:
@@ -570,11 +618,7 @@ def check_bundle(bundle: Path) -> List[str]:
     if len(ticks) != meta.tick_count:
         problems.append(f"ticks.jsonl has {len(ticks)} ticks, episode.json says {meta.tick_count}")
     for tick in ticks:
-        frame = bundle / meta.frames.dir / f"{tick.tick:05d}.jpg"
-        if not frame.is_file():
-            problems.append(f"missing frame {frame.relative_to(bundle)}")
-        if tick.state is None or tick.arbiter is None or tick.outcome is None:
-            problems.append(f"tick {tick.tick}: missing state, arbiter or outcome detail")
+        problems.extend(_check_tick(tick, bundle, meta))
     proposals_path = bundle / "proposals.jsonl"
     if proposals_path.is_file():
         for i, line in enumerate(proposals_path.read_text(encoding="utf-8").splitlines()):
@@ -582,6 +626,9 @@ def check_bundle(bundle: Path) -> List[str]:
                 ProposalTrace.model_validate_json(line)
             except Exception as exc:  # noqa: BLE001
                 problems.append(f"proposals.jsonl line {i + 1}: {exc}")
+    for required in (HISTORY_FILE, RELEVANCE_FILE):
+        if required not in meta.files:
+            problems.append(f"episode.json does not list {required}")
     for file_name in meta.files:
         path = bundle / file_name
         if not path.is_file():
@@ -598,6 +645,12 @@ def check_bundle(bundle: Path) -> List[str]:
                 TrustFile.model_validate_json(path.read_text(encoding="utf-8"))
             elif file_name == "macros.json":
                 MacroList.validate_json(path.read_text(encoding="utf-8"))
+            elif file_name == RELEVANCE_FILE:
+                RelevanceLedger.model_validate_json(path.read_text(encoding="utf-8"))
+            elif file_name == HISTORY_FILE:
+                records = [TickRecord.model_validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+                if len(records) != meta.tick_count:
+                    problems.append(f"{HISTORY_FILE} has {len(records)} ticks, episode.json says {meta.tick_count}")
         except Exception as exc:  # noqa: BLE001
             problems.append(f"{file_name}: {exc}")
     return problems
@@ -609,7 +662,7 @@ def index_entry(name: str, meta: EpisodeMeta) -> BundleIndexEntry:
         name=name,
         title=meta.title,
         scenario=meta.scenario,
-        model=meta.model,
+        value_networks=meta.value_networks,
         seed=meta.seed,
         cleared=meta.result.cleared,
         died=meta.result.died,
@@ -619,13 +672,19 @@ def index_entry(name: str, meta: EpisodeMeta) -> BundleIndexEntry:
 
 
 def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
-    """Write `index.json` listing every bundle under `episodes_dir`, heuristics first."""
+    """Write `index.json` listing every shippable schema-2 bundle under `episodes_dir`, by scenario,
+    networks and seed. Bundles of another schema version, and episodes that lost the connection, are left out."""
     entries = []
     for meta_path in sorted(episodes_dir.glob("*/episode.json")):
-        meta = EpisodeMeta.model_validate_json(meta_path.read_text(encoding="utf-8"))
+        raw = json.loads(meta_path.read_text(encoding="utf-8"))
+        if raw.get("schema_version") != TRACE_SCHEMA_VERSION:
+            continue
+        meta = EpisodeMeta.model_validate(raw)
+        if meta.result.finished_reason == NOT_SHIPPABLE:
+            continue
         entries.append(index_entry(meta_path.parent.name, meta))
-    order = {"heuristics": 0, "best": 1, "latest": 2}
-    entries.sort(key=lambda e: (e.scenario, order[e.model], e.seed))
+    order = {"none": 0, "best": 1, "latest": 2}
+    entries.sort(key=lambda e: (e.scenario, order[e.value_networks], e.seed))
     (episodes_dir / "index.json").write_text(
         json.dumps({"schema_version": TRACE_SCHEMA_VERSION, "episodes": [e.model_dump() for e in entries]}, indent=2),
         encoding="utf-8",
@@ -635,7 +694,18 @@ def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
 
 def bundle_json_schema() -> Dict[str, Any]:
     """One JSON Schema document whose $defs hold every record a bundle contains."""
-    models = (EpisodeMeta, TickTrace, ProposalTrace, BundleIndexEntry, MetricsRow, EvaluationSummary, TrustFile, ActionSpec)
+    models = (
+        EpisodeMeta,
+        TickTrace,
+        TickRecord,
+        RelevanceLedger,
+        ProposalTrace,
+        BundleIndexEntry,
+        MetricsRow,
+        EvaluationSummary,
+        TrustFile,
+        ActionSpec,
+    )
     _, schema = models_json_schema(
         [(m, "serialization") for m in models],
         title="system1_doom episode bundle",
@@ -647,39 +717,35 @@ def bundle_json_schema() -> Dict[str, Any]:
     return schema
 
 
-D1_SYNC_HELP = (
-    f"With --d1: wait for d1-ultra's answers every tick (execution mode sync_d1, tick budget "
-    f"{D1_SYNC_TICK_BUDGET_SEC:g} s) instead of reading earlier answers from a cache"
-)
-
-
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Record controller episodes as bundles for the web app")
+    parser = argparse.ArgumentParser(description="Record episodes played by d1-ultra as bundles for the web app")
     parser.add_argument("--scenario", default="deadly_corridor.cfg", help="ViZDoom scenario config filename")
     parser.add_argument("--episodes", type=int, default=1, help="Episodes to record, seeds seed, seed+1, ...")
-    parser.add_argument("--seed", type=int, default=7, help="Seed of the first episode")
-    parser.add_argument("--model", choices=["heuristics", "best", "latest"], default="heuristics")
-    parser.add_argument("--run-dir", default=None, help="Run folder with trained models (default: runs/<scenario name>)")
-    parser.add_argument("--out", default=None, help="Bundle folder (default: bundles/<scenario>-<model>-<seed>)")
+    parser.add_argument("--seed", type=int, default=7, help="Seed of the first episode (also System 1's draw seed)")
+    parser.add_argument(
+        "--networks", choices=["none", "best", "latest"], default="none", help="Value networks for the values evidence channel"
+    )
+    parser.add_argument("--run-dir", default=None, help="Run folder with trained networks (default: runs/<scenario name>)")
+    parser.add_argument("--out", default=None, help="Bundle folder (default: bundles/<scenario>-<networks>-<seed>)")
     parser.add_argument("--name", default=None, help="Bundle name shown in the app (default: the folder name)")
     parser.add_argument("--title", default=None, help="Episode title shown in the app")
     parser.add_argument("--max-ticks", type=int, default=500, help="Decision cap per episode")
-    parser.add_argument("--d1", action="store_true", help="Use Liquid AI d1-ultra (needs LIQUID_API_KEY)")
-    parser.add_argument("--d1-sync", action="store_true", help=D1_SYNC_HELP)
+    parser.add_argument("--call-budget", type=float, default=None, help="Per-call budget in seconds for each d1-ultra call (default 5)")
+    level = parser.add_mutually_exclusive_group()
+    level.add_argument("--explore", dest="level", action="store_const", const="explore", help="Start at the explore level")
+    level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Start at the exploit level (default)")
     parser.add_argument("--codex", action="store_true", help="Let the slow path call the Codex CLI instead of templates")
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
-    parser.add_argument("--deterministic", action="store_true", help="Always take the arbiter's top-scored action")
     parser.add_argument("--check", metavar="BUNDLE", default=None, help="Validate a bundle and exit")
     parser.add_argument("--index", metavar="DIR", default=None, help="Write DIR/index.json listing its bundles and exit")
     parser.add_argument("--schema", metavar="OUT.json", default=None, help="Write the bundle JSON Schema and exit")
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] = None) -> int:
+    """`transport` answers d1-ultra calls in tests; real recordings need LIQUID_API_KEY."""
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.d1_sync and not args.d1:
-        parser.error("--d1-sync needs --d1")
     if args.schema:
         out = Path(args.schema)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -696,11 +762,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         entries = write_index(Path(args.index))
         print(f"Indexed {len(entries)} bundle(s) in {Path(args.index) / 'index.json'}")
         return 0
+    api_key = load_api_key()
+    if not api_key:
+        if transport is None:
+            print(NO_KEY_MESSAGE, file=sys.stderr)
+            return 2
+        api_key = "test-transport"
 
     stem = Path(args.scenario).stem
+    status_code = 0
     for i in range(args.episodes):
         seed = args.seed + i
-        default_out = Path("bundles") / f"{stem}-{args.model}-{seed}"
+        default_out = Path("bundles") / f"{stem}-{args.networks}-{seed}"
         if args.out is None:
             out = default_out
         else:
@@ -710,23 +783,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 scenario=args.scenario,
                 seed=seed,
                 out=out,
-                model=args.model,
+                networks=args.networks,
                 run_dir=Path(args.run_dir) if args.run_dir else None,
                 max_ticks=args.max_ticks,
-                d1=args.d1,
                 slow_path=not args.no_slow_path,
                 codex=args.codex,
-                deterministic=args.deterministic,
                 name=args.name if args.episodes == 1 else None,
                 title=args.title if args.episodes == 1 else None,
-                d1_sync=args.d1_sync,
+                call_budget_sec=args.call_budget,
+                exploration_level=args.level,
+                transport=transport,
+                api_key=api_key,
             )
         except (FileNotFoundError, FileExistsError) as exc:
             print(exc, file=sys.stderr)
             return 2
         status = "cleared" if meta.result.cleared else ("died" if meta.result.died else "survived")
-        print(f"{out}: {meta.tick_count} ticks, reward {meta.result.reward:.1f}, {status}")
-    return 0
+        print(
+            f"{out}: {meta.tick_count} ticks, reward {meta.result.reward:.1f}, {status}, "
+            f"{meta.cost.calls} calls, ${meta.cost.usd:.4f}, {meta.misses.missed_ticks} missed ticks"
+        )
+        if meta.result.finished_reason == NOT_SHIPPABLE:
+            print(f"{out}: the connection to d1-ultra was lost (three central misses in a row); not shippable.", file=sys.stderr)
+            status_code = 1
+    return status_code
 
 
 if __name__ == "__main__":

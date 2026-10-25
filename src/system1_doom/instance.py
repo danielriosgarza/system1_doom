@@ -1,0 +1,239 @@
+"""An instance: one d1-ultra call with its own scope of evidence and its own finite questions.
+
+Design spec, sections 4 and 5. An `InstanceSpec` is data: a name, a kind (`sense`, `central`, `admit`),
+a scope, the concern its instructions name, and (for a sense) its reason vocabulary. Running an
+instance builds exactly one payload:
+
+- `state` is the rendered scope text, and nothing else;
+- the questions are the kind's finite questions: a sense asks `speak` (noul), `action` (a choice over
+  the legal menu) and `reason` (a choice over its reasons); the central asks `choose` (a choice over
+  the legal menu); the admit instance asks `admit` (noul) over a proposal and its sandbox summary;
+- the choice criteria for `action` and `choose` are exactly the legal menu, in menu order, id ->
+  description; projections and values appear in the state text when in scope, never in the criteria;
+- `images` carries the screen only when `frame` is in scope.
+
+The instructions name the instance, its concern and that it sees only the evidence given; they never
+say how to weigh anything. The answer is recorded in full. A call that times out, fails, names an action
+outside the menu, or returns malformed probabilities (negative, or not summing to 1 within the bound's
+tolerance) is a miss, kept with its raw answer and never repaired.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from system1_doom.configuration import CentralConfig, SenseConfig, reason_words
+from system1_doom.d1_client import (
+    ChoiceQuestion,
+    D1CallResult,
+    D1UltraClient,
+    MissReason,
+    NoulQuestion,
+    QuestionSpec,
+    Usage,
+)
+from system1_doom.evidence import EvidenceInputs, MenuItem, render_scope
+
+InstanceKind = Literal["sense", "central", "admit"]
+
+ADMIT_CONCERN = "whether a proposed macro-action is a safe, finite and useful addition to the legal menu"
+
+
+class InstanceSpec(BaseModel):
+    """What an instance is: data, from the configuration."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    kind: InstanceKind
+    scope: Tuple[str, ...] = ()
+    concern: str
+    reasons: Tuple[str, ...] = ()
+
+
+def sense_spec(name: str, config: SenseConfig) -> InstanceSpec:
+    return InstanceSpec(name=name, kind="sense", scope=config.scope, concern=config.concern, reasons=config.reasons)
+
+
+def central_spec(config: CentralConfig, scope: Optional[Sequence[str]] = None) -> InstanceSpec:
+    return InstanceSpec(name="central", kind="central", scope=tuple(scope if scope is not None else config.scope), concern=config.concern)
+
+
+ADMIT_SPEC = InstanceSpec(name="admit", kind="admit", scope=(), concern=ADMIT_CONCERN)
+
+
+class InstanceResult(BaseModel):
+    """Everything one instance call produced, as the trace and the history keep it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    kind: InstanceKind
+    scope: Tuple[str, ...] = ()
+    evidence: str = Field(description="The state text exactly as sent")
+    image_ref: Optional[str] = Field(default=None, description="The screen sent as the call's image, when frame was in scope")
+    answers: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="Every answer in full, as returned")
+    speak: Optional[float] = Field(default=None, description="A sense's speak probability")
+    spoke: bool = False
+    strength: Optional[float] = Field(default=None, description="A sense's strength: its speak probability, unscaled")
+    action: Optional[str] = Field(default=None, description="The action d1 gave the highest probability (first in menu order on a tie)")
+    action_probabilities: Dict[str, float] = Field(default_factory=dict)
+    reason: Optional[str] = None
+    reason_probabilities: Dict[str, float] = Field(default_factory=dict)
+    admit: Optional[float] = Field(default=None, description="The admit instance's probability")
+    missed: bool = False
+    miss_reason: Optional[MissReason] = None
+    error: Optional[str] = None
+    raw_answer: Optional[Any] = Field(default=None, description="The answer as returned, when it was malformed or off the menu")
+    latency_ms: float = 0.0
+    retries: int = 0
+    usage: Usage = Field(default_factory=Usage)
+
+
+def _preamble(spec: InstanceSpec) -> str:
+    who = {
+        "sense": f"You are the {spec.name} sense of a Doom agent",
+        "central": "You are the central action chooser of a Doom agent",
+        "admit": "You are the admission instance of a Doom agent",
+    }[spec.kind]
+    return f"{who}; your concern is {spec.concern}. You see only the evidence given."
+
+
+def menu_criteria(menu: Sequence[MenuItem]) -> Dict[str, str]:
+    """The criteria of an action choice: exactly the legal menu, in menu order, id -> description."""
+    return {item.id: item.description for item in menu}
+
+
+def build_questions(spec: InstanceSpec, menu: Sequence[MenuItem] = ()) -> Dict[str, QuestionSpec]:
+    """The finite questions of an instance of this kind."""
+    pre = _preamble(spec)
+    if spec.kind == "sense":
+        return {
+            "speak": NoulQuestion(instructions=f"{pre} Must the action chooser hear from you before the next decision?"),
+            "action": ChoiceQuestion(instructions=f"{pre} Which legal action do you recommend now?", criteria=menu_criteria(menu)),
+            "reason": ChoiceQuestion(
+                instructions=f"{pre} Which reason best describes why?",
+                criteria={r: reason_words(r) for r in spec.reasons},
+            ),
+        }
+    if spec.kind == "central":
+        return {
+            "choose": ChoiceQuestion(instructions=f"{pre} Choose the action the agent executes now.", criteria=menu_criteria(menu))
+        }
+    return {"admit": NoulQuestion(instructions=f"{pre} Should this proposed macro-action enter the agent's legal menu?")}
+
+
+class _Miss(Exception):
+    def __init__(self, reason: MissReason, message: str, raw: Any) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.raw = raw
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def read_noul(answers: Dict[str, Dict[str, Any]], name: str) -> float:
+    answer = answers.get(name)
+    value = answer.get("noul") if isinstance(answer, dict) else None
+    if not _is_number(value) or not 0.0 <= float(value) <= 1.0:
+        raise _Miss("malformed", f"{name}: no probability in [0, 1]", answer)
+    return float(value)
+
+
+def read_choice(
+    answers: Dict[str, Dict[str, Any]], name: str, allowed: Sequence[str], tolerance: float, outside: MissReason
+) -> Tuple[str, Dict[str, float]]:
+    """The top option and the distribution of a choice answer, or a miss. Ties go to the first allowed option."""
+    answer = answers.get(name)
+    if not isinstance(answer, dict) or not isinstance(answer.get("probabilities"), dict):
+        raise _Miss("malformed", f"{name}: no probabilities", answer)
+    probs = answer["probabilities"]
+    choice = answer.get("choice")
+    strays = [k for k in probs if k not in allowed]
+    if (choice is not None and choice not in allowed) or strays:
+        raise _Miss(outside, f"{name}: {choice if choice not in allowed else strays} is not among the options", answer)
+    if not all(_is_number(v) for v in probs.values()):
+        raise _Miss("malformed", f"{name}: a probability is not a number", answer)
+    if any(float(v) < 0.0 for v in probs.values()):
+        raise _Miss("malformed", f"{name}: a negative probability", answer)
+    total = sum(float(v) for v in probs.values())
+    if abs(total - 1.0) > tolerance:
+        raise _Miss("malformed", f"{name}: probabilities sum to {total:.4f}", answer)
+    distribution = {k: float(probs.get(k, 0.0)) for k in allowed}
+    best = max(distribution.values())
+    top = next(k for k in allowed if distribution[k] == best)
+    return top, distribution
+
+
+def _image(frame_b64: Optional[str]) -> Optional[List[str]]:
+    return [f"data:image/jpeg;base64,{frame_b64}"] if frame_b64 else None
+
+
+def run_instance(
+    client: D1UltraClient,
+    spec: InstanceSpec,
+    inputs: EvidenceInputs,
+    *,
+    frame_b64: Optional[str] = None,
+    budget: float = 5.0,
+    yes_at: float = 0.5,
+    tolerance: float = 0.02,
+) -> InstanceResult:
+    """Run a sense or the central: render its scope, ask its questions in one call, read the answers."""
+    rendered = render_scope(inputs, spec.scope)
+    questions = build_questions(spec, inputs.menu)
+    images = _image(frame_b64) if rendered.image_ref is not None else None
+    call = client.call(spec.name, rendered.text, questions, images=images, budget=budget)
+    base = dict(
+        name=spec.name,
+        kind=spec.kind,
+        scope=rendered.scope,
+        evidence=rendered.text,
+        image_ref=rendered.image_ref if images else None,
+        latency_ms=call.latency_ms,
+        retries=call.retries,
+        usage=call.usage,
+    )
+    if not call.answered or call.response is None:
+        return InstanceResult(**base, missed=True, miss_reason=call.miss_reason, error=call.error)
+    answers = call.response.raw_answers
+    menu_ids = inputs.menu_ids()
+    try:
+        if spec.kind == "sense":
+            speak = read_noul(answers, "speak")
+            action, action_probs = read_choice(answers, "action", menu_ids, tolerance, "off_menu")
+            reason, reason_probs = read_choice(answers, "reason", spec.reasons, tolerance, "malformed")
+            return InstanceResult(
+                **base,
+                answers=answers,
+                speak=speak,
+                spoke=speak >= yes_at,
+                strength=speak,
+                action=action,
+                action_probabilities=action_probs,
+                reason=reason,
+                reason_probabilities=reason_probs,
+            )
+        action, action_probs = read_choice(answers, "choose", menu_ids, tolerance, "off_menu")
+        return InstanceResult(**base, answers=answers, action=action, action_probabilities=action_probs)
+    except _Miss as miss:
+        client.note_miss(spec.name, miss.reason)
+        return InstanceResult(**base, answers=answers, missed=True, miss_reason=miss.reason, error=str(miss), raw_answer=miss.raw)
+
+
+def run_admit(client: D1UltraClient, evidence: str, *, budget: float = 5.0, spec: InstanceSpec = ADMIT_SPEC) -> InstanceResult:
+    """Run the admit instance on a proposal and its sandbox summary: one call, one `admit` noul."""
+    call: D1CallResult = client.call(spec.name, evidence, build_questions(spec), budget=budget)
+    base = dict(name=spec.name, kind=spec.kind, scope=(), evidence=evidence, latency_ms=call.latency_ms, retries=call.retries, usage=call.usage)
+    if not call.answered or call.response is None:
+        return InstanceResult(**base, missed=True, miss_reason=call.miss_reason, error=call.error)
+    answers = call.response.raw_answers
+    try:
+        return InstanceResult(**base, answers=answers, admit=read_noul(answers, "admit"))
+    except _Miss as miss:
+        client.note_miss(spec.name, miss.reason)
+        return InstanceResult(**base, answers=answers, missed=True, miss_reason=miss.reason, error=str(miss), raw_answer=miss.raw)

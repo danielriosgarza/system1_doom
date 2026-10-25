@@ -9,6 +9,7 @@ import pytest
 
 from system1_doom import export, llm_worker, serve
 from system1_doom.logger import TickTrace
+from tests.fake_d1 import FakeD1, default_policy
 
 RECORDINGS = Path(__file__).resolve().parents[1] / "web" / "public" / "episodes"
 
@@ -70,7 +71,6 @@ def session(tmp_path_factory) -> Dict[str, Any]:
         seed=3,
         run_dir=root / "no_run",
         max_ticks=5,
-        deterministic=True,
         episodes=2,
         pace=0.0,
         rest=0.0,
@@ -78,6 +78,8 @@ def session(tmp_path_factory) -> Dict[str, Any]:
         out=root / "live",
         app=root / "no_app",
         recordings=RECORDINGS,
+        transport=FakeD1(default_policy),
+        api_key="liquid_test_key",
     )
     serve.prepare_live_dir(config.out)
     hub = GatedHub(config)
@@ -157,7 +159,13 @@ def test_each_episode_streams_start_ticks_proposals_on_change_and_end(session):
         lists = [[]] + [data["proposals"] for kind, data, _ in events if kind == "proposals"]
         assert all(a != b for a, b in zip(lists, lists[1:])), "a proposals event repeated the list"
         start, end = events[0][1]["meta"], events[-1][1]["meta"]
-        assert start["tick_count"] == 0 and start["result"]["finished"] is False
+        assert start["tick_count"] == 0 and start["result"]["finished"] is False and start["result"]["finished_reason"] is None
+        assert start["schema_version"] == end["schema_version"] == 2 and end["decider"] == "d1-ultra"
+        # Live events carry version 2 ticks: six instances each.
+        for kind, data, _ in events:
+            if kind == "tick":
+                trace = TickTrace.model_validate(data["trace"])
+                assert list(trace.instances) == ["survival", "combat", "navigation", "resource", "goal", "central"]
         assert end["tick_count"] == len(ticks) and end["last_tick"] == ticks[-1]
         assert events[-1][1]["entry"]["name"] == name and events[-1][1]["entry"]["ticks"] == len(ticks)
     assert by_name["live-2"][0][1]["meta"]["seed"] == by_name["live-1"][0][1]["meta"]["seed"] + 1
@@ -190,27 +198,27 @@ def test_a_finished_episode_is_a_valid_bundle(session):
 
 def test_status_lists_the_finished_episodes_and_the_shipped_index_is_untouched(session):
     status = session["status"]
-    assert status["schema_version"] == 1 and status["running"] is False and status["current"] is None
+    assert status["schema_version"] == 2 and status["running"] is False and status["current"] is None
     assert [e["name"] for e in status["episodes"]] == ["live-2", "live-1"]
     assert status["config"]["scenario"] == "basic.cfg" and status["config"]["episodes"] == 2
     code, _, body = session["index"]
     assert code == 200 and body == (RECORDINGS / "index.json").read_bytes()
 
 
-def test_d1_sync_reaches_the_status_and_needs_d1(capsys):
-    config = serve.config_from_args(serve.build_parser().parse_args(["--d1", "--d1-sync"]))
-    assert config.d1 and config.d1_sync
-    assert serve.LiveHub(config).status()["config"]["d1_sync"] is True
-    assert serve.LiveHub(serve.ServeConfig()).status()["config"]["d1_sync"] is False
-    with pytest.raises(SystemExit) as exc:
-        serve.main(["--d1-sync"])
-    assert exc.value.code == 2 and "--d1-sync needs --d1" in capsys.readouterr().err
+def test_the_flags_reach_the_status_and_serving_needs_the_key(monkeypatch, capsys):
+    config = serve.config_from_args(serve.build_parser().parse_args(["--networks", "best", "--explore", "--call-budget", "3"]))
+    assert (config.networks, config.exploration_level, config.call_budget_sec) == ("best", "explore", 3.0)
+    status = serve.LiveHub(config).status()["config"]
+    assert status["decider"] == "d1-ultra" and status["networks"] == "best" and status["exploration_level"] == "explore"
+    assert "d1_sync" not in status and "deterministic" not in status and "model" not in status
+    monkeypatch.setattr(serve, "load_api_key", lambda: None)
+    assert serve.main(["--port", "0"]) == 2 and "LIQUID_API_KEY" in capsys.readouterr().err
 
 
 def test_stopping_finishes_the_episode_with_finished_false(tmp_path):
     config = serve.ServeConfig(
-        scenario="basic.cfg", seed=3, run_dir=tmp_path / "no_run", max_ticks=5, deterministic=True,
-        pace=0.0, rest=0.0, out=tmp_path / "live",
+        scenario="basic.cfg", seed=3, run_dir=tmp_path / "no_run", max_ticks=5,
+        pace=0.0, rest=0.0, out=tmp_path / "live", transport=FakeD1(default_policy), api_key="liquid_test_key",
     )
     stop = threading.Event()
 
@@ -224,7 +232,7 @@ def test_stopping_finishes_the_episode_with_finished_false(tmp_path):
     hub = StoppingHub(config)
     serve.play(config, hub, stop)
     meta = export.EpisodeMeta.model_validate_json((config.out / "live-1" / "episode.json").read_text())
-    assert meta.tick_count == 2 and meta.result.finished is False
+    assert meta.tick_count == 2 and meta.result.finished is False and meta.result.finished_reason == "stopped"
     assert export.check_bundle(config.out / "live-1") == []
     assert sorted(p.name for p in config.out.iterdir()) == ["live-1"]
     assert hub.status()["running"] is False
@@ -246,14 +254,37 @@ def test_the_out_folder_is_cleared_only_of_earlier_episodes(tmp_path):
         serve.prepare_live_dir(out)
 
 
-def test_a_macro_admitted_mid_episode_reaches_the_catalog_with_its_proposal(tmp_path):
-    # Deadly corridor, seed 9, heuristics: the slow path admits evasive_burst_1 at tick 18.
+def _capture_player(monkeypatch) -> Dict[str, Any]:
+    """Keep the player `serve.play` builds, so a test can ask its controller for a macro mid-episode."""
+    captured: Dict[str, Any] = {}
+    build = serve.build_player
+
+    def capturing(*args: Any, **kwargs: Any) -> export.Player:
+        captured["player"] = build(*args, **kwargs)
+        return captured["player"]
+
+    monkeypatch.setattr(serve, "build_player", capturing)
+    return captured
+
+
+def test_a_macro_admitted_mid_episode_reaches_the_catalog_with_its_proposal(tmp_path, monkeypatch):
+    captured = _capture_player(monkeypatch)
     config = serve.ServeConfig(
-        scenario="deadly_corridor.cfg", seed=9, run_dir=tmp_path / "no_run", max_ticks=25, deterministic=True,
-        episodes=1, pace=0.0, rest=0.0, out=tmp_path / "live",
+        scenario="deadly_corridor.cfg", seed=9, run_dir=tmp_path / "no_run", max_ticks=12,
+        episodes=1, pace=0.0, rest=0.0, out=tmp_path / "live", transport=FakeD1(default_policy), api_key="liquid_test_key",
     )
+
+    class AskingHub(serve.LiveHub):
+        def add_tick(self, name: str, trace: TickTrace) -> None:
+            super().add_tick(name, trace)
+            if trace.tick == 1:
+                assert captured["player"].ctrl.request_expansion("test", "Need a sweeping macro.")
+                deadline = time.monotonic() + 5.0
+                while captured["player"].ctrl.llm_worker.is_busy() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+
     serve.prepare_live_dir(config.out)
-    hub = serve.LiveHub(config)
+    hub = AskingHub(config)
     client, _ = hub.connect()
     serve.play(config, hub, threading.Event())
     events = []
@@ -267,14 +298,19 @@ def test_a_macro_admitted_mid_episode_reaches_the_catalog_with_its_proposal(tmp_
         admitted = {p["admitted_action_id"] for p in data["proposals"] if p["admission_decision"]}
         assert admitted <= set(data["actions"])
     end = next(data for kind, data in events if kind == "end")
-    assert "evasive_burst_1" in end["meta"]["actions"]
+    assert "sweep_and_collect_1" in end["meta"]["actions"]
+    assert [m["id"] for m in end["meta"]["configuration_end"]["admitted_macros"]] == ["sweep_and_collect_1"]
+    assert end["meta"]["configuration_end"]["version"] == 2 and end["meta"]["configuration_start"]["version"] == 1
+    ticks = [data["trace"] for kind, data in events if kind == "tick"]
+    assert {t["configuration_version"] for t in ticks} == {1, 2}
     on_disk = [json.loads(line) for line in (config.out / "live-1" / "proposals.jsonl").read_text().splitlines()]
-    assert on_disk == proposals[-1]["proposals"]
+    assert on_disk == proposals[-1]["proposals"] and on_disk[0]["admit_instance"]["admit"] == 0.8
     assert [kind for kind, _ in events][-2:] == ["end", "stopped"]
+    assert export.check_bundle(config.out / "live-1") == []
 
 
 def test_a_slow_path_answer_still_in_flight_at_the_end_is_logged_in_its_own_episode(tmp_path, monkeypatch):
-    # The run above cut after tick 17, where survival asks for a macro, with the answer taking half a second.
+    captured = _capture_player(monkeypatch)
     template = llm_worker.SlowLLMWorker._fallback_template_proposal
 
     def slow_template(self, req, seq_num):
@@ -283,11 +319,18 @@ def test_a_slow_path_answer_still_in_flight_at_the_end_is_logged_in_its_own_epis
 
     monkeypatch.setattr(llm_worker.SlowLLMWorker, "_fallback_template_proposal", slow_template)
     config = serve.ServeConfig(
-        scenario="deadly_corridor.cfg", seed=9, run_dir=tmp_path / "no_run", max_ticks=18, deterministic=True,
-        episodes=1, pace=0.0, rest=0.0, out=tmp_path / "live",
+        scenario="deadly_corridor.cfg", seed=9, run_dir=tmp_path / "no_run", max_ticks=3,
+        episodes=1, pace=0.0, rest=0.0, out=tmp_path / "live", transport=FakeD1(default_policy), api_key="liquid_test_key",
     )
+
+    class AskingHub(serve.LiveHub):
+        def add_tick(self, name: str, trace: TickTrace) -> None:
+            super().add_tick(name, trace)
+            if trace.tick == 2:
+                assert captured["player"].ctrl.request_expansion("combat", "Need an evasive macro.")
+
     serve.prepare_live_dir(config.out)
-    serve.play(config, serve.LiveHub(config), threading.Event())
+    serve.play(config, AskingHub(config), threading.Event())
     on_disk = [json.loads(line) for line in (config.out / "live-1" / "proposals.jsonl").read_text().splitlines()]
     assert [p["admitted_action_id"] for p in on_disk] == ["evasive_burst_1"]
     assert export.check_bundle(config.out / "live-1") == []

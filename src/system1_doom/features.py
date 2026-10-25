@@ -1,8 +1,8 @@
-"""Fixed-size numeric encodings of world states and actions for the learned modules.
+"""Fixed-size numeric encodings of world states and actions for the value networks, and their rewards.
 
-The encodings are scenario-agnostic. Actions are described by their primitive
-composition rather than by identity, so a newly admitted macro-action can be
-scored by the networks the moment it enters the vocabulary.
+The encodings are scenario-agnostic. Actions are described by their primitive composition rather
+than by identity, so a newly admitted macro-action gets predictions in the values channel the moment
+it enters the menu. `n_step_returns` is the return both the networks and the relevance ledger use.
 """
 
 from __future__ import annotations
@@ -105,8 +105,25 @@ def encode_actions(actions: Sequence[ActionSpec]) -> np.ndarray:
     return np.stack([encode_action(a) for a in actions]).astype(np.float32)
 
 
+def n_step_returns(rewards: np.ndarray, gamma: float, n: int) -> np.ndarray:
+    """Discounted sum of the next `n` rewards for every step, truncated at episode end.
+
+    The learner's targets and the relevance ledger's "paid off" both use it, so it lives here, free of torch.
+    """
+    steps = rewards.shape[0]
+    returns = np.zeros_like(rewards, dtype=np.float32)
+    for t in range(steps):
+        horizon = rewards[t : min(steps, t + n)]
+        discounts = gamma ** np.arange(horizon.shape[0], dtype=np.float32)
+        if rewards.ndim == 1:
+            returns[t] = (horizon * discounts).sum()
+        else:
+            returns[t] = (horizon * discounts[:, None]).sum(axis=0)
+    return returns
+
+
 def module_rewards(result: Any) -> np.ndarray:
-    """Per-module reward for one executed decision, ordered like MODULE_NAMES."""
+    """Each value network's reward for one executed decision, ordered like MODULE_NAMES."""
     died = 1.0 if getattr(result, "died", False) else 0.0
     return np.asarray(
         [

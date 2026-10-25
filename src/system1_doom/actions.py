@@ -317,6 +317,9 @@ DEFAULT_MACROS: Tuple[ActionSpec, ...] = (
 )
 
 
+BUILTIN_IDS = frozenset(a.id for a in DEFAULT_PRIMITIVES + DEFAULT_MACROS)
+
+
 class ActionVocabulary:
     """Thread-safe finite vocabulary of primitive actions and admitted macro-actions."""
 
@@ -343,3 +346,9 @@ class ActionVocabulary:
         if not spec.is_macro:
             raise ValueError("Only macro-actions can be dynamically admitted into the vocabulary.")
         self._actions[spec.id] = spec
+
+    def retire_macro(self, action_id: str) -> None:
+        """Remove an admitted macro; built-in actions cannot be retired."""
+        if action_id in BUILTIN_IDS:
+            raise ValueError(f"'{action_id}' is a built-in action and cannot be retired.")
+        self._actions.pop(action_id, None)

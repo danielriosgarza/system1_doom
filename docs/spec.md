@@ -1,5 +1,11 @@
 # Doom Decision Controller — Implementation Spec
 
+> **Status (2026-10-25).** This is the original spec, kept as the statement of intent. Its §21
+> invariant holds unchanged. Since [the d1-ultra design](superpowers/specs/2026-10-25-d1-decision-maker-design.md), every decision is made by a d1-ultra instance, and the
+> parts below that weighed, scored or picked an action by hand (the module heuristics, the final
+> arbiter's score, the exploration formula, the strategy meta-decision, the admission thresholds) are
+> removed. Notes like this one mark each section the design changed; `DOCUMENTATION.md` describes the code.
+
 ## 1. Objective
 
 Build an intelligent Doom controller in which **all control logic is expressed as explicit, bounded decisions**.
@@ -44,6 +50,11 @@ No component may contain an unrestricted reasoning loop that directly controls t
 ---
 
 ## 3. Runtime Architecture
+
+> **Now:** the five boxes are d1-ultra *senses*, each seeing only its scope of evidence and deciding
+> whether to send a message; the Final Arbiter and Action Selector are one *central* d1-ultra
+> instance that hears the messages and chooses the action. The fast path waits for d1-ultra inside a
+> per-call budget instead of never calling a model; a missed answer is recorded, never filled in.
 
 ```text
                          +---------------------+
@@ -193,6 +204,11 @@ An action that cannot be reduced to a bounded executable procedure is invalid.
 
 ## 6. Standard Decision Module Contract
 
+> **Now:** the contract is the instance: one d1-ultra call whose state is its scope's rendered
+> evidence and whose questions are finite (`speak`, `action` over the legal menu, `reason` for a
+> sense; `choose` over the menu for the central). `DecisionInput`/`DecisionOutput` are gone with
+> `modules.py`.
+
 All decision modules follow the same interface.
 
 ### Input
@@ -226,6 +242,9 @@ It only produces a decision over candidates.
 ---
 
 ## 7. Initial Modules
+
+> **Now:** the same five questions are the five senses' concerns; no sense has a hand-written
+> heuristic. What each one sees is its scope in the configuration.
 
 The first implementation should use five modules.
 
@@ -313,6 +332,9 @@ The purpose is not perfect world simulation. It is to provide enough short-horiz
 
 ## 9. Final Arbiter
 
+> **Now:** removed. The central d1-ultra instance outputs the one finite decision over the legal
+> menu; there is no hand-written score, bonus, penalty or temperature.
+
 The arbiter receives:
 
 ```text
@@ -341,6 +363,11 @@ The arbiter itself must be implemented as a bounded decision model, not hand-wri
 ---
 
 ## 10. Exploration
+
+> **Now:** the pressure formula and sampler temperature are removed. Exploration is one explicit
+> variable in the configuration, the level `exploit` or `explore`; under `explore` the central's
+> action is drawn from d1-ultra's own distribution with a seeded generator. Visit counts remain, as
+> the `novelty` evidence channel. Deciding the level belongs to System 2 in the design.
 
 Exploration should be explicit and state-dependent.
 
@@ -374,6 +401,9 @@ Temperature may be used by the final action sampler, but it should be controlled
 
 ## 11. Strategy Archive
 
+> **Now:** the archive stays, as evidence (the `archive` channel). The four-way strategy decision
+> below is removed; which strategy is active is part of the configuration, for System 2 to decide.
+
 Maintain a bounded archive of distinct strategies or macro-action patterns.
 
 Each entry may contain:
@@ -403,6 +433,10 @@ request new strategy proposal
 ---
 
 ## 12. LLM Slow Path
+
+> **Now:** decision modules no longer emit expansion requests. The controller's
+> `request_expansion` is the entry point; in the design, System 2's menu reflector decides when a
+> new move is needed.
 
 The LLM is never part of the synchronous control loop.
 
@@ -437,6 +471,10 @@ The LLM must not return the next real-time game action.
 
 ## 13. LLM Proposal Admission
 
+> **Now:** parse, legality and the sandbox stay as bounds; the decision to admit is an admit
+> instance's d1-ultra yes or no, with no thresholds of the code's own. An admitted macro joins the
+> configuration at the next tick boundary.
+
 Every LLM proposal passes through a deterministic/decidable admission pipeline.
 
 ```text
@@ -457,6 +495,11 @@ No free-form text reaches the executor.
 ---
 
 ## 14. Timing Model
+
+> **Now:** there are no budget tiers and no cached or reactive decisions. Each d1-ultra call has a
+> per-call budget (5 s by default); a sense that misses it is silent, a central that misses it holds
+> no keys for the decision's frames, and three central misses in a row end the episode as
+> `connection_lost`.
 
 The real-time controller must be designed around strict budgets.
 
@@ -485,6 +528,9 @@ An unavailable slow-path result must have zero impact on the ability to continue
 ---
 
 ## 15. Concurrency
+
+> **Now:** the five senses are parallel d1-ultra calls over the same snapshot, on a pool of six with
+> the central; late answers are misses, never cached for later use. The slow path has its own pool.
 
 The implementation should treat modules as independent workers over the same state snapshot.
 
@@ -519,6 +565,10 @@ Late results are discarded or cached for later use.
 
 ## 16. Learning
 
+> **Now:** the five value networks keep learning between episodes, and their predictions are shown to
+> the instances as the `values` channel; a relevance ledger keeps each sense's track record as the
+> `relevance` channel. Nothing learned is multiplied into a decision.
+
 The architecture should allow modules to improve independently.
 
 A module may be implemented using:
@@ -536,6 +586,10 @@ All learned outputs should ultimately be converted into finite decisions or prob
 ---
 
 ## 17. Logging
+
+> **Now:** the per-tick trace (schema version 2) records, for each of the six instances, its scope,
+> the verbatim evidence, every answer, timing and usage, plus the messages, the pick and the
+> executed primitives; every tick is also stored whole in `history.jsonl`.
 
 Every tick should produce a compact decision trace:
 
@@ -568,6 +622,9 @@ The purpose is to make every action explainable as a sequence of explicit decisi
 ---
 
 ## 18. First Prototype
+
+> **Now:** items 4 to 6 are the five senses, the central instance and the configuration's exploration
+> level; the rest stands.
 
 The first version should deliberately remain small.
 
@@ -604,6 +661,10 @@ Do not require:
 ---
 
 ## 20. Acceptance Criteria
+
+> **Now:** “the LLM” here is the slow path's generator; Doom still runs with it disabled. d1-ultra is
+> the decision maker and is required to play. Every executed action traces to the central's finite
+> choice; module replacement is replaced by changing an instance's scope in the configuration.
 
 The prototype is architecturally successful when:
 

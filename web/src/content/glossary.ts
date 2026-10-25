@@ -60,7 +60,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'The one decider per tick. It turns the five opinions, the projections, exploration, the archive’s strategy and d1-ultra’s advice into one pick, with every term of the score written down.',
     see: [{ screen: 'tick', panel: 'arbiter' }, { screen: 'hierarchy' }],
-    code: 'arbiter.py · FinalArbiter.arbitrate',
+    code: 'system1.py · System1.tick',
     now: ({ tick }) => explainPick(tick).headline,
   },
   {
@@ -70,7 +70,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'How much time the tick’s budget allows: 40 ms by default, 5 s in a recording that waits for d1-ultra. Full runs everything, reduced drops the projections, and critical repeats the cached action with stand-in module outputs.',
     see: [{ screen: 'tick', panel: 'arbiter', label: 'The inspector → One decision (the “out of time” rule)' }],
-    code: 'controller.py · DoomDecisionController._select_budget_mode',
+    code: 'configuration.py · Bounds.call_budget_sec',
     now: ({ tick }) => `This tick ran in ${tick.budget_mode} mode.`,
   },
   {
@@ -80,7 +80,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'The arbiter’s shortcut: when one module is nearly certain (probability at least 0.9, utility at least 5, a lead of at least 4), its choice stands without the full comparison.',
     see: [{ screen: 'tick', panel: 'arbiter' }],
-    code: 'arbiter.py · FinalArbiter.arbitrate',
+    code: 'system1.py · pick_action',
     now: ({ tick }) =>
       tick.arbiter?.pick_rule === 'committed'
         ? `Committed this tick, by the ${tick.arbiter.committed_by} module.`
@@ -119,7 +119,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'A flat chance, used only in training, that the arbiter takes a random legal action instead of its pick: 0.6 at the first episode, falling in a straight line to 0.05 by episode 100, then flat. Zero in a recording.',
     see: [{ screen: 'learning', panel: 'curves' }],
-    code: 'train.py · exploration_schedule',
+    code: 'configuration.py · Configuration.exploration_level',
     now: ({ meta }) =>
       meta.config.exploration_floor > 0
         ? `${fmt(meta.config.exploration_floor, 2)} in this recording.`
@@ -132,7 +132,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'How inclined the arbiter is to try something other than its best guess: four readings of the situation, each worth up to 0.25, damped after success and clamped between 0.02 and 1. Temperature = 0.10 + pressure sets how flat its draw is. The arbiter of a tick uses the pressure left by the tick before.',
     see: [{ screen: 'hierarchy', label: 'The chain (the gauge)' }],
-    code: 'exploration.py · ExplorationController',
+    code: 'configuration.py · Configuration.exploration_level',
     now: ({ ticks, index }) => {
       const reading = pressureReading(pressureForArbiter(ticks, index))
       return `This tick’s arbiter read pressure ${fmt(reading.recorded, 2)}, so temperature ${fmt(reading.temperature, 2)}.`
@@ -145,7 +145,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'A small network (hidden 32) that estimates from the state how much following each module pays off. The arbiter blends its proposal with the hand-written module weights: used = normalise((1 − g) · table + g · gate), where g is the gate share.',
     see: [{ screen: 'learning', panel: 'gateview' }],
-    code: 'learning.py · Learner.gate_weights, arbiter.py · FinalArbiter._module_context_weights',
+    code: 'learning.py · LEGACY_GATE_KEYS, Learner.load',
     now: ({ tick, meta }) =>
       meta.brains.learned_networks
         ? `g = ${fmt(tick.arbiter?.gate_share ?? 0, 2)} this tick: the gate’s weights have ${pct(tick.arbiter?.gate_share ?? 0)} of the say.`
@@ -174,7 +174,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'One of five small deciders, survival, combat, navigation, resource and goal, each answering its own question over the same menu, with its own memory and its own reward.',
     see: [{ screen: 'tick', panel: 'modules' }],
-    code: 'modules.py · DecisionModule',
+    code: 'senses.py · sense_specs, run_senses',
   },
   {
     id: 'network-share',
@@ -328,7 +328,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'The rules each module and the arbiter use with no training: the module weight table, the utilities, the preconditions. The heuristics-only recording is these alone.',
     see: [{ screen: 'learning', panel: 'headtohead' }],
-    code: 'modules.py · DecisionModule',
+    code: 'actions.py · PreconditionSpec, simulator.py · ProjectedOutcome',
   },
   {
     id: 'learned-networks',
@@ -396,7 +396,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     meaning:
       'How the arbiter settled: greedy (the top score wins), sampled (the top two within 0.08 and pressure at least 0.45, so it drew from the softmax at the temperature), committed, explored (the floor), or out of time (the cached action repeated).',
     see: [{ screen: 'tick', panel: 'arbiter' }],
-    code: 'arbiter.py · FinalArbiter.arbitrate',
+    code: 'system1.py · pick_action',
     now: ({ tick }) => {
       const rule = tick.arbiter?.pick_rule
       return rule ? `This tick the rule was ${PICK_RULES[rule] ?? rule}.` : 'This trace has no pick rule.'

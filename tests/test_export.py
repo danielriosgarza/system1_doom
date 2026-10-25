@@ -1,24 +1,29 @@
+"""Bundles of episodes d1-ultra played: schema version 2, every file, `--check`, `--schema`, `--index`."""
+
 import json
 from pathlib import Path
 
 import jsonschema
 import pytest
 
-from system1_doom import d1_client, export
+from system1_doom import export
 from system1_doom.actions import ActionVocabulary
-from system1_doom.admission import ProposalAdmissionPipeline
-from system1_doom.archive import StrategyArchive
-from system1_doom.logger import TickTrace
-from system1_doom.simulator import BoundedSimulator
+from system1_doom.history import load_history, rerender_instance
+from system1_doom.logger import TRACE_SCHEMA_VERSION, TickTrace
+from system1_doom.relevance import RelevanceLedger
+from tests.fake_d1 import FakeD1, shoot_when_aimed
 from tests.test_state_and_actions import make_sample_world_state
-from tests.test_visualizer import make_dummy_trace
+
+RECORDINGS = Path(__file__).resolve().parents[1] / "web" / "public" / "episodes"
+INSTANCES = ["survival", "combat", "navigation", "resource", "goal", "central"]
 
 
 @pytest.fixture(scope="module")
 def bundle(tmp_path_factory) -> Path:
-    out = tmp_path_factory.mktemp("bundles") / "basic-heuristics-3"
+    out = tmp_path_factory.mktemp("bundles") / "basic-none-3"
     export.record_bundle(
-        scenario="basic.cfg", seed=3, out=out, run_dir=out.parent / "no_run", max_ticks=5, deterministic=True
+        scenario="basic.cfg", seed=3, out=out, run_dir=out.parent / "no_run", max_ticks=5,
+        transport=FakeD1(shoot_when_aimed), api_key="liquid_test_key",
     )
     return out
 
@@ -30,15 +35,24 @@ def _ticks(bundle: Path) -> list:
 def test_export_writes_every_file_and_a_frame_per_tick(bundle):
     meta = json.loads((bundle / "episode.json").read_text())
     ticks = _ticks(bundle)
-    assert meta["schema_version"] == 1 and meta["model"] == "heuristics" and meta["checkpoint"] is None
-    assert meta["brains"] == {"heuristics": True, "learned_networks": False, "d1_ultra": False, "slow_path": "templates"}
+    assert meta["schema_version"] == 2 == TRACE_SCHEMA_VERSION
+    assert meta["decider"] == "d1-ultra" and meta["value_networks"] == "none" and meta["checkpoint"] is None
+    assert meta["slow_path"] == "templates" and "brains" not in meta and "model" not in meta and "modules" not in meta
     assert 1 <= len(ticks) == meta["tick_count"] <= 5
+    assert {"episode.json", "ticks.jsonl", "history.jsonl", "relevance.json", "proposals.jsonl"} <= set(meta["files"])
+    assert "reflections.jsonl" not in meta["files"]
     for name in meta["files"]:
         assert (bundle / name).is_file(), name
     for tick in ticks:
         assert (bundle / "frames" / f"{tick['tick']:05d}.jpg").is_file()
         assert tick["state"]["tick"] == tick["tick"]
-    assert set(meta["actions"]) >= {"shoot", "weave_fire"} and set(meta["modules"]) == set(ticks[0]["module_outputs"])
+    assert meta["configuration_start"]["version"] == meta["configuration_end"]["version"] == 1
+    assert meta["configuration_start"]["senses"]["combat"]["scope"] == ["threats", "outgoing", "vitals", "frame", "projections", "menu"]
+    assert meta["cost"]["calls"] == 6 * len(ticks) and meta["cost"]["usd"] > 0 and meta["cost"]["input_tokens"] > 0
+    assert meta["misses"] == {"total": 0, "missed_ticks": 0, "by_instance": {}}
+    assert set(meta["instances"]) == set(INSTANCES) and meta["instances"]["central"]["calls"] == len(ticks)
+    assert meta["result"]["finished_reason"] in ("episode_end", "max_ticks") and meta["config"]["call_budget_sec"] == 5.0
+    assert set(meta["actions"]) >= {"shoot", "weave_fire"}
     assert export.check_bundle(bundle) == []
 
 
@@ -51,49 +65,46 @@ def test_pruned_and_available_actions_partition_the_vocabulary(bundle):
         assert all(reason for reason in tick["pruned_actions"].values())
 
 
-def test_arbiter_breakdown_adds_up_to_each_score(bundle):
+def test_each_tick_holds_six_instances_their_evidence_and_the_pick(bundle):
     for tick in _ticks(bundle):
-        arbiter = tick["arbiter"]
-        assert set(arbiter["action_scores"]) == set(tick["available_actions"])
-        for action_id, parts in arbiter["component_breakdown"].items():
-            assert parts["total_score"] == pytest.approx(arbiter["action_scores"][action_id], abs=1e-3)
-            total = (
-                parts["expected_value"]
-                + parts["exploration_bonus"]
-                + parts["novelty_bonus"]
-                - parts["risk_penalty"]
-                - parts["execution_cost"]
-            )
-            assert total == pytest.approx(parts["total_score"], abs=1e-3)
-        if arbiter["pick_rule"] == "greedy":
-            assert tick["selected_action"] == max(arbiter["action_scores"], key=arbiter["action_scores"].get)
-
-
-def test_module_anatomy_and_outcome_are_recorded(bundle):
-    for tick in _ticks(bundle):
-        for module in tick["module_outputs"].values():
-            # Heuristics only: no learned utilities, so the blend is the heuristic itself.
-            assert module["utility_learned"] == {} and module["trust"] == {}
-            assert module["utility_blended"] == module["utility_heuristic"]
-            assert set(module["probabilities"]) == set(tick["available_actions"])
-            assert set(module["memory"]) == {"consecutive_damage_ticks", "repeated_failures", "consecutive_stalls", "plateau_ticks"}
+        assert list(tick["instances"]) == INSTANCES
+        assert tick["executed_action"] == tick["pick"]["action"] and tick["pick"]["kind"] == "top"
+        assert tick["configuration_version"] == 1 and tick["exploration_level"] == "exploit"
+        combat = tick["instances"]["combat"]
+        assert combat["image_ref"] == f"frames/{tick['tick']:05d}.jpg" and (bundle / combat["image_ref"]).is_file()
+        assert tick["instances"]["survival"]["image_ref"] is None
+        for name, instance in tick["instances"].items():
+            assert instance["evidence"] and set(instance["answers"]) == ({"choose"} if name == "central" else {"speak", "action", "reason"})
         outcome = tick["outcome"]
         assert outcome["reward"] == pytest.approx(tick["reward_outcome"], abs=1e-3)
         assert set(outcome["module_rewards"]) == {"survival", "combat", "navigation", "resource", "goal"}
-        assert outcome["module_rewards"]["goal"] == pytest.approx(outcome["reward"], abs=1e-3)
-        terms = tick["exploration_state"]["terms"]
-        assert {"uncertainty", "failures", "plateau", "novelty", "progress_damper", "risk_damper", "winning_damper"} <= set(terms)
-        assert tick["steering"]["active_after"] == tick["active_strategy"]
+        for removed in ("module_outputs", "arbiter", "arbiter_distribution", "budget_mode", "exploration_state", "used_d1_ultra", "learning", "d1_arbiter_distribution", "steering"):
+            assert removed not in tick, removed
+
+
+def test_the_bundles_history_rerenders_what_each_instance_saw(bundle):
+    records = load_history(bundle / "history.jsonl")
+    ticks = [TickTrace.model_validate(t) for t in _ticks(bundle)]
+    assert [r.tick for r in records] == [t.tick for t in ticks]
+    for record, trace in zip(records, ticks):
+        for name in INSTANCES:
+            assert rerender_instance(record, name).text == trace.instances[name].evidence, (trace.tick, name)
+    RelevanceLedger.model_validate_json((bundle / "relevance.json").read_text())
 
 
 def test_schema_dump_validates_a_recorded_trace(bundle, tmp_path):
     out = tmp_path / "bundle.schema.json"
     assert export.main(["--schema", str(out)]) == 0
     schema = json.loads(out.read_text())
-    trace = _ticks(bundle)[0]
-    jsonschema.validate(trace, {"$defs": schema["$defs"], "$ref": "#/$defs/TickTrace"})
-    meta = json.loads((bundle / "episode.json").read_text())
-    jsonschema.validate(meta, {"$defs": schema["$defs"], "$ref": "#/$defs/EpisodeMeta"})
+    assert "schema_version 2" in schema["description"]
+
+    def valid(document, name):
+        jsonschema.validate(document, {"$defs": schema["$defs"], "$ref": f"#/$defs/{name}"})
+
+    valid(_ticks(bundle)[0], "TickTrace")
+    valid(json.loads((bundle / "episode.json").read_text()), "EpisodeMeta")
+    valid(json.loads((bundle / "history.jsonl").read_text().splitlines()[0]), "TickRecord")
+    valid(json.loads((bundle / "relevance.json").read_text()), "RelevanceLedger")
 
 
 def test_copied_run_files_validate_against_their_models(tmp_path):
@@ -102,23 +113,30 @@ def test_copied_run_files_validate_against_their_models(tmp_path):
     from system1_doom import train
 
     run_dir = tmp_path / "run"
-    assert train.main(
-        ["--scenario", "basic.cfg", "--max-ticks", "5", "--run-dir", str(run_dir), "--seed", "3", "--train-steps", "2", "--episodes", "2"]
-    ) == 0
-    train.evaluate("basic.cfg", train.RunStore(run_dir), episodes=1, max_ticks=3)
+    fake = FakeD1(shoot_when_aimed)
+    argv = ["--scenario", "basic.cfg", "--max-ticks", "4", "--run-dir", str(run_dir), "--seed", "3", "--train-steps", "2", "--episodes", "2"]
+    assert train.main(argv, transport=fake) == 0
+    train.evaluate("basic.cfg", train.RunStore(run_dir), episodes=1, max_ticks=3, transport=fake, api_key="liquid_test_key")
     out = tmp_path / "basic-latest-3"
-    meta = export.record_bundle(scenario="basic.cfg", seed=3, out=out, model="latest", run_dir=run_dir, max_ticks=3)
+    meta = export.record_bundle(
+        scenario="basic.cfg", seed=3, out=out, networks="latest", run_dir=run_dir, max_ticks=3,
+        transport=fake, api_key="liquid_test_key",
+    )
 
+    assert meta.value_networks == "latest" and meta.checkpoint is not None
     assert {"metrics.jsonl", "evaluation.json", "macros.json", "trust.json"} <= set(meta.files)
     rows = [export.MetricsRow.model_validate_json(line) for line in (out / "metrics.jsonl").read_text().splitlines()]
-    assert [row.episode for row in rows] == [1, 2]
+    assert [row.episode for row in rows] == [1, 2] and all(row.cost_usd > 0 and row.d1_calls > 0 for row in rows)
     evaluation = export.EvaluationSummary.model_validate_json((out / "evaluation.json").read_text())
-    assert evaluation.trained_episodes == 2 and evaluation.latest is not None
+    assert evaluation.trained_episodes == 2 and evaluation.none is not None and evaluation.latest is not None
     trust = export.TrustFile.model_validate_json((out / "trust.json").read_text())
     assert trust.episodes == 2 and trust.trust_count == 25.0
     assert sum(trust.context_counts.values()) == sum(trust.action_counts.values()) == sum(row.transitions for row in rows)
     assert export.MacroList.validate_json((out / "macros.json").read_text()) == []
+    assert "learned from past play" in json.loads((out / "ticks.jsonl").read_text().splitlines()[0])["instances"]["goal"]["evidence"]
     assert export.check_bundle(out) == []
+    # The run folder's ledger grew with every episode played there: two trained, one recorded.
+    assert RelevanceLedger.model_validate_json((run_dir / "relevance.json").read_text()).episodes == 3
 
     schema = export.bundle_json_schema()
     jsonschema.validate(json.loads((out / "trust.json").read_text()), {"$defs": schema["$defs"], "$ref": "#/$defs/TrustFile"})
@@ -127,19 +145,43 @@ def test_copied_run_files_validate_against_their_models(tmp_path):
     )
 
 
-def test_index_lists_bundles(bundle):
+def test_index_lists_shippable_schema_2_bundles(bundle):
     entries = export.write_index(bundle.parent)
     assert [e.name for e in entries] == [bundle.name]
-    assert json.loads((bundle.parent / "index.json").read_text())["episodes"][0]["model"] == "heuristics"
+    index = json.loads((bundle.parent / "index.json").read_text())
+    assert index["schema_version"] == 2 and index["episodes"][0]["value_networks"] == "none"
 
 
-def test_traces_written_before_the_anatomy_fields_still_parse():
-    legacy = json.loads(make_dummy_trace(2).model_dump_json())
-    for key in ("state", "pruned_actions", "arbiter", "projection_chain", "steering", "outcome", "slow_path_request", "budget_sec", "timing_ms"):
-        legacy.pop(key)
-    trace = TickTrace.model_validate(legacy)
-    assert trace.state is None and trace.pruned_actions == {}
-    assert trace.module_outputs["combat"]["top_action"] == "peek_and_fire"
+def test_an_episode_that_lost_the_connection_is_written_but_not_shippable(tmp_path, capsys):
+    fake = FakeD1(shoot_when_aimed).fail("central", [0, 1, 2], "raise")
+    out = tmp_path / "eps" / "lost"
+    code = export.main(
+        ["--scenario", "basic.cfg", "--seed", "3", "--max-ticks", "10", "--run-dir", str(tmp_path / "no_run"), "--out", str(out)],
+        transport=fake,
+    )
+    assert code == 1 and "not shippable" in capsys.readouterr().err
+    meta = export.EpisodeMeta.model_validate_json((out / "episode.json").read_text())
+    assert meta.result.finished_reason == "connection_lost" and meta.tick_count == 3 and meta.misses.missed_ticks == 3
+    assert meta.result.actions == ["missed"] * 3
+    problems = export.check_bundle(out)
+    assert len(problems) == 1 and "connection_lost" in problems[0]
+    assert export.main(["--check", str(out)]) == 1
+    assert export.write_index(out.parent) == []
+
+
+@pytest.mark.skipif(not (RECORDINGS / "index.json").is_file(), reason="no shipped recordings")
+def test_a_bundle_of_another_schema_version_is_reported_and_left_out_of_an_index(tmp_path):
+    shipped = next(p.parent for p in sorted(RECORDINGS.glob("*/episode.json")))
+    problems = export.check_bundle(shipped)
+    assert problems == [f"episode.json: schema_version 1, expected {TRACE_SCHEMA_VERSION}"]
+
+
+def test_export_fails_fast_without_the_key(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(export, "load_api_key", lambda: None)
+    assert export.main(["--scenario", "basic.cfg", "--out", str(tmp_path / "x")]) == 2
+    assert "LIQUID_API_KEY" in capsys.readouterr().err and not (tmp_path / "x").exists()
+    # --check, --index and --schema read files only and need no key.
+    assert export.main(["--schema", str(tmp_path / "s.json")]) == 0
 
 
 def test_failing_condition_names_the_precondition_is_satisfied_rejects():
@@ -152,75 +194,3 @@ def test_failing_condition_names_the_precondition_is_satisfied_rejects():
         for action in vocabulary.all_actions():
             failing = action.preconditions.failing_condition(state)
             assert (failing is None) == action.preconditions.is_satisfied(state), (action.id, failing)
-
-
-def test_admission_records_each_stage():
-    vocabulary = ActionVocabulary.default()
-    pipeline = ProposalAdmissionPipeline(vocabulary=vocabulary, archive=StrategyArchive(), simulator=BoundedSimulator())
-    state = make_sample_world_state()
-    good = json.dumps(
-        {
-            "id": "zigzag_fire",
-            "description": "Strafe and fire both ways",
-            "maximum_duration": 4,
-            "termination_condition": "sequence_completed",
-            "primitive_expansion": ["strafe_left", "shoot", "strafe_right", "shoot"],
-        }
-    )
-    admitted = pipeline.evaluate_and_admit(good, state)
-    assert admitted.admitted
-    assert [(s.stage, s.passed, s.skipped) for s in admitted.stage_results] == [
-        ("parse", True, False),
-        ("legality", True, False),
-        ("sandbox", True, False),
-        ("d1", True, True),
-        ("admit", True, False),
-    ]
-    rejected = pipeline.evaluate_and_admit(good.replace("strafe_right", "noclip"), state)
-    assert not rejected.admitted
-    assert [(s.stage, s.passed) for s in rejected.stage_results] == [("parse", True), ("legality", False)]
-
-
-def _fake_d1(url: str, headers: dict, payload: dict, timeout: float) -> dict:
-    """Answers every question d1-ultra is asked: the first choice at 0.6, a middling score, a 0.5 noul."""
-    answers = {}
-    for key, question in payload["questions"].items():
-        if question["type"] == "choice":
-            ids = list(question["criteria"])
-            rest = 0.4 / max(1, len(ids) - 1)
-            probabilities = {a: (0.6 if i == 0 else rest) for i, a in enumerate(ids)}
-            answers[key] = {"type": "choice", "choice": ids[0], "probabilities": probabilities, "confidence": 0.6}
-        elif question["type"] == "score":
-            answers[key] = {"type": "score", "score": 1.0, "probabilities": {"0": 0.2, "1": 0.6, "2": 0.2}}
-        else:
-            answers[key] = {"type": "noul", "noul": 0.5}
-    return {"model": "d1-ultra", "answers": answers}
-
-
-def test_d1_sync_waits_for_d1_at_every_tick(tmp_path, monkeypatch):
-    monkeypatch.setenv("LIQUID_API_KEY", "liquid_test_key")
-    monkeypatch.setattr(d1_client, "_default_requests_transport", _fake_d1)
-    out = tmp_path / "basic-heuristics-d1-3"
-    meta = export.record_bundle(
-        scenario="basic.cfg", seed=3, out=out, run_dir=tmp_path / "no_run", max_ticks=5, d1=True, d1_sync=True,
-        deterministic=True,
-    )
-    assert meta.brains.d1_ultra
-    assert meta.config.execution_mode == "sync_d1" and meta.config.tick_budget_sec == export.D1_SYNC_TICK_BUDGET_SEC
-    ticks = _ticks(out)
-    assert ticks
-    for tick in ticks:
-        # The budget never drops out of full mode, so every tick asks the modules', arbiter's and exploration's questions.
-        assert tick["budget_mode"] == "full" and tick["used_d1_ultra"]
-        first = tick["available_actions"][0]
-        assert max(tick["d1_arbiter_distribution"], key=tick["d1_arbiter_distribution"].get) == first
-        for module in tick["module_outputs"].values():
-            assert module["used_d1_ultra"] and module["d1_top_action"] == first and module["d1_weight"] in (0.25, 0.75)
-        assert tick["exploration_state"]["terms"]["d1_pressure"] == pytest.approx(0.5)
-    assert export.check_bundle(out) == []
-
-
-def test_d1_sync_needs_d1(capsys):
-    with pytest.raises(SystemExit) as exc:
-        export.main(["--d1-sync", "--out", "unused"])
-    assert exc.value.code == 2 and "--d1-sync needs --d1" in capsys.readouterr().err

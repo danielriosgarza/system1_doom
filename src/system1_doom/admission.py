@@ -1,3 +1,17 @@
+"""Admission of a proposed macro-action: bounds first, then d1-ultra's admit instance decides.
+
+A proposal (from the slow worker's Codex call or template) passes three hand-written bounds before any
+instance sees it: it must parse into the typed schema, be legal (a safe id, known primitives only, a
+finite duration that is not a built-in's), and survive a sandbox rollout in the bounded simulator.
+Then the admit instance, one d1-ultra call over the proposal and its sandbox summary, gives one noul:
+the proposal is admitted when that probability is d1's own yes (0.5 or more). There is no quality
+score and no threshold of our own; a missed admit call rejects the proposal, because nothing stands in
+for d1's answer.
+
+An admitted macro does not enter the menu here: the controller adds it to the configuration's admitted
+macros, which take effect at the next tick boundary.
+"""
+
 from __future__ import annotations
 
 import json
@@ -12,8 +26,9 @@ from system1_doom.actions import (
     ActionVocabulary,
     PreconditionSpec,
 )
-from system1_doom.archive import StrategyArchive, StrategyEntry
-from system1_doom.d1_client import D1UltraClient, NoulQuestion, ScoreQuestion
+from system1_doom.archive import StrategyEntry
+from system1_doom.d1_client import D1UltraClient
+from system1_doom.instance import ADMIT_SPEC, InstanceResult, run_admit
 from system1_doom.simulator import BoundedSimulator, ProjectedOutcome
 from system1_doom.state import WorldState
 
@@ -37,7 +52,8 @@ AdmissionStage = Literal["parse", "legality", "sandbox", "d1", "admit"]
 
 
 class AdmissionStageResult(BaseModel):
-    """Outcome of one admission stage (parse, legality, sandbox, d1, admit), for traces."""
+    """Outcome of one admission stage, for traces: parse, legality, sandbox (bounds), d1 (the admit
+    instance's yes or no), admit (the macro handed to the configuration)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -55,10 +71,11 @@ class AdmissionDecisionResult(BaseModel):
     parsed_proposal: Optional[MacroActionProposal] = None
     admitted_action_id: Optional[str] = None
     admitted_strategy_id: Optional[str] = None
+    admitted_action: Optional[ActionSpec] = None
+    admitted_strategy: Optional[StrategyEntry] = None
     sandbox_outcome: Optional[ProjectedOutcome] = None
     d1_admission_probability: Optional[float] = None
-    d1_quality_score: Optional[float] = None
-    used_d1_ultra: bool = False
+    admit_instance: Optional[InstanceResult] = None
     rejection_reason: str = ""
     stage_results: List[AdmissionStageResult] = Field(default_factory=list)
     # Set by the slow worker: which generator wrote the proposal and which module asked for it.
@@ -66,31 +83,53 @@ class AdmissionDecisionResult(BaseModel):
     source_module: Optional[str] = None
 
 
+def admit_evidence(
+    action: ActionSpec, outcome: ProjectedOutcome, problem_description: str, existing_action_ids: List[str]
+) -> str:
+    """The admit instance's state text: the proposal, its sandbox summary, the request, the menu as it is."""
+    pre = action.preconditions.model_dump(exclude_defaults=True)
+    lines = [
+        "[proposal]",
+        f"id {action.id}: {action.description}",
+        f"primitives in order: {', '.join(action.primitive_expansion)}",
+        f"maximum duration {action.maximum_duration} primitives; ends when {action.termination_condition}",
+        f"preconditions: {', '.join(f'{k} {v}' for k, v in sorted(pre.items())) if pre else 'none'}",
+        "",
+        "[sandbox]",
+        "a rough projection from a hand-written simulator, not the game: "
+        f"expected value {outcome.expected_value:+.2f}, damage in {outcome.expected_damage_taken:.1f}, "
+        f"damage out {outcome.expected_damage_dealt:.1f}, survival {outcome.survival_probability:.2f}, "
+        f"progress {outcome.expected_positional_progress:.2f}",
+        "",
+        "[request]",
+        problem_description or "a new macro-action was requested",
+        "",
+        "[menu]",
+        f"the actions that exist now: {', '.join(existing_action_ids)}",
+    ]
+    return "\n".join(lines)
+
+
 class ProposalAdmissionPipeline:
     """
-    Deterministic + d1-ultra admission gate for LLM proposals (Spec Section 13):
-      LLM proposal
-        -> parse into typed schema
-        -> verify referenced primitives exist
-        -> verify finite execution & resource/time bounds
-        -> reject illegal game actions
-        -> sandbox evaluation via BoundedSimulator
-        -> decision: admit / reject (with d1-ultra safety & tactical gate)
+    Admission of a slow-path proposal (Spec Section 13):
+      proposal -> parse into the typed schema -> legality (safe id, known primitives, finite duration,
+      not a built-in) -> sandbox rollout in the bounded simulator -> the admit instance's yes or no.
     """
 
     def __init__(
         self,
         vocabulary: ActionVocabulary,
-        archive: StrategyArchive,
         simulator: BoundedSimulator,
-        d1_client: Optional[D1UltraClient] = None,
-        min_d1_admission_prob: float = 0.40,
+        d1_client: D1UltraClient,
+        call_budget_sec: float = 5.0,
+        yes_at: float = 0.5,
     ) -> None:
         self.vocabulary = vocabulary
-        self.archive = archive
         self.simulator = simulator
         self.d1_client = d1_client
-        self.min_d1_admission_prob = min_d1_admission_prob
+        self.call_budget_sec = call_budget_sec
+        self.yes_at = yes_at
 
     @staticmethod
     def _extract_json_object(raw_text: str) -> Dict[str, Any]:
@@ -198,89 +237,53 @@ class ProposalAdmissionPipeline:
             )
         )
 
-        # Step 4: Bounded d1-ultra admission decision (when d1-ultra client is enabled)
-        d1_prob: Optional[float] = None
-        d1_score: Optional[float] = None
-        used_d1 = False
-        if self.d1_client is not None and self.d1_client.enabled:
-            state_str = (
-                f"{reference_state.to_d1_state_text()}\n"
-                f"Problem Trigger: {problem_description or 'Tactical action expansion requested'}\n"
-                f"Candidate Macro-Action Proposal: id={action_spec.id}, desc={action_spec.description}, "
-                f"expansion={list(action_spec.primitive_expansion)}, max_duration={action_spec.maximum_duration}, "
-                f"termination={action_spec.termination_condition}\n"
-                f"Sandbox Rollout: E[val]={sandbox_outcome.expected_value:+.2f}, "
-                f"dmg_in={sandbox_outcome.expected_damage_taken:.1f}, dmg_out={sandbox_outcome.expected_damage_dealt:.1f}, "
-                f"survival_prob={sandbox_outcome.survival_probability:.2f}"
-            )
-            resp = self.d1_client.decide(
-                state=state_str,
-                questions={
-                    "admit_proposal": NoulQuestion(
-                        instructions=(
-                            "Should this bounded macro-action proposal be admitted into the Doom controller's "
-                            "active action vocabulary as a safe, finite, tactically useful procedure?"
-                        )
-                    ),
-                    "tactical_quality": ScoreQuestion(
-                        instructions="Rate the tactical soundness of this macro-action sequence.",
-                        criteria=[
-                            "Harmful or redundant macro sequence",
-                            "Acceptable bounded tactical macro sequence",
-                            "Strong tactical macro sequence well-suited to the state",
-                        ],
-                    ),
-                },
-                timeout=5.0,
-            )
-            if resp is not None and "admit_proposal" in resp.raw_answers:
-                used_d1 = True
-                d1_prob = resp.noul("admit_proposal").noul
-                if "tactical_quality" in resp.raw_answers:
-                    d1_score = resp.score("tactical_quality").score
-                if d1_prob < self.min_d1_admission_prob and (d1_score is None or d1_score < 0.85 or d1_prob < 0.20):
-                    reason = f"Rejected by d1-ultra admission gate (p={d1_prob:.3f} < {self.min_d1_admission_prob})."
-                    return AdmissionDecisionResult(
-                        admitted=False,
-                        raw_proposal=raw_proposal,
-                        parsed_proposal=proposal,
-                        sandbox_outcome=sandbox_outcome,
-                        d1_admission_probability=d1_prob,
-                        d1_quality_score=d1_score,
-                        used_d1_ultra=True,
-                        rejection_reason=reason,
-                        stage_results=fail("d1", reason),
-                    )
-        if used_d1:
-            stages.append(
-                AdmissionStageResult(stage="d1", passed=True, reason=f"d1-ultra admission probability {d1_prob:.2f}.")
-            )
-        else:
-            stages.append(
-                AdmissionStageResult(stage="d1", passed=True, skipped=True, reason="d1-ultra off or unanswered; gate skipped.")
-            )
-
-        # Step 5: Admit into ActionVocabulary and StrategyArchive
-        self.vocabulary.register_admitted_macro(action_spec)
-        strat_id = proposal.strategy_id or f"strat_{action_spec.id}"
-        self.archive.admit_strategy(
-            StrategyEntry(
-                strategy_id=strat_id,
-                context_signature=reference_state.context_signature(),
-                action_sequence=(action_spec.id,) + action_spec.primitive_expansion[:2],
-                observed_reward=max(0.5, sandbox_outcome.expected_value),
-                success_rate=0.65,
-                failure_modes=(),
-                usage_count=0,
-                novelty_signature=f"llm_admitted:{action_spec.id}",
-            )
+        # Step 4: the admit instance, one d1-ultra call over the proposal and its sandbox summary
+        evidence = admit_evidence(
+            action_spec, sandbox_outcome, problem_description, [a.id for a in self.vocabulary.all_actions()]
         )
+        answer = run_admit(self.d1_client, evidence, budget=self.call_budget_sec, spec=ADMIT_SPEC)
+        if answer.missed or answer.admit is None:
+            reason = f"The admit instance missed ({answer.miss_reason}); nothing stands in for its answer."
+            return AdmissionDecisionResult(
+                admitted=False,
+                raw_proposal=raw_proposal,
+                parsed_proposal=proposal,
+                sandbox_outcome=sandbox_outcome,
+                admit_instance=answer,
+                rejection_reason=reason,
+                stage_results=fail("d1", reason),
+            )
+        if answer.admit < self.yes_at:
+            reason = f"The admit instance said no (p={answer.admit:.3f})."
+            return AdmissionDecisionResult(
+                admitted=False,
+                raw_proposal=raw_proposal,
+                parsed_proposal=proposal,
+                sandbox_outcome=sandbox_outcome,
+                d1_admission_probability=answer.admit,
+                admit_instance=answer,
+                rejection_reason=reason,
+                stage_results=fail("d1", reason),
+            )
+        stages.append(AdmissionStageResult(stage="d1", passed=True, reason=f"The admit instance said yes (p={answer.admit:.3f})."))
 
+        # Step 5: hand the macro and its strategy to the configuration (applied at the next tick boundary)
+        strat_id = proposal.strategy_id or f"strat_{action_spec.id}"
+        strategy = StrategyEntry(
+            strategy_id=strat_id,
+            context_signature=reference_state.context_signature(),
+            action_sequence=(action_spec.id,) + action_spec.primitive_expansion[:2],
+            observed_reward=0.0,
+            success_rate=0.5,
+            failure_modes=(),
+            usage_count=0,
+            novelty_signature=f"llm_admitted:{action_spec.id}",
+        )
         stages.append(
             AdmissionStageResult(
                 stage="admit",
                 passed=True,
-                reason=f"Registered '{action_spec.id}' in the vocabulary and '{strat_id}' in the strategy archive.",
+                reason=f"'{action_spec.id}' joins the configuration's admitted macros at the next tick boundary, with '{strat_id}'.",
             )
         )
         return AdmissionDecisionResult(
@@ -289,9 +292,10 @@ class ProposalAdmissionPipeline:
             parsed_proposal=proposal,
             admitted_action_id=action_spec.id,
             admitted_strategy_id=strat_id,
+            admitted_action=action_spec,
+            admitted_strategy=strategy,
             sandbox_outcome=sandbox_outcome,
-            d1_admission_probability=d1_prob,
-            d1_quality_score=d1_score,
-            used_d1_ultra=used_d1,
+            d1_admission_probability=answer.admit,
+            admit_instance=answer,
             stage_results=stages,
         )
