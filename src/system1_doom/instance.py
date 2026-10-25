@@ -12,10 +12,16 @@ instance builds exactly one payload:
   description; projections and values appear in the state text when in scope, never in the criteria;
 - `images` carries the screen only when `frame` is in scope.
 
+System 2's instances (design spec, section 8) are the same part: a reflector asks `speak` (noul),
+`change` (a choice over the configuration changes the bounds allow) and `reason` (a choice over its
+reasons); System 2's central asks `configure` (a choice over the proposed changes and `none`); the trial
+judge asks `verdict` (`keep` or `revert`). Their questions are built in `reflectors.py` and
+`system2.py`; `run_system2_instance` sends one and reads it here, with the same misses.
+
 The instructions name the instance, its concern and that it sees only the evidence given; they never
 say how to weigh anything. The answer is recorded in full. A call that times out, fails, names an action
-outside the menu, or returns malformed probabilities (negative, or not summing to 1 within the bound's
-tolerance) is a miss, kept with its raw answer and never repaired.
+(or a change) outside its criteria, or returns malformed probabilities (negative, or not summing to 1
+within the bound's tolerance) is a miss, kept with its raw answer and never repaired.
 """
 
 from __future__ import annotations
@@ -36,7 +42,7 @@ from system1_doom.d1_client import (
 )
 from system1_doom.evidence import EvidenceInputs, MenuItem, render_scope
 
-InstanceKind = Literal["sense", "central", "admit"]
+InstanceKind = Literal["sense", "central", "admit", "reflector", "system2_central", "judge"]
 
 ADMIT_CONCERN = "whether a proposed macro-action is a safe, finite and useful addition to the legal menu"
 
@@ -51,6 +57,7 @@ class InstanceSpec(BaseModel):
     scope: Tuple[str, ...] = ()
     concern: str
     reasons: Tuple[str, ...] = ()
+    title: str = Field(default="", description="How a reflector's instructions name it, e.g. 'survival auditor'")
 
 
 def sense_spec(name: str, config: SenseConfig) -> InstanceSpec:
@@ -83,6 +90,10 @@ class InstanceResult(BaseModel):
     reason: Optional[str] = None
     reason_probabilities: Dict[str, float] = Field(default_factory=dict)
     admit: Optional[float] = Field(default=None, description="The admit instance's probability")
+    change: Optional[str] = Field(default=None, description="A reflector's or System 2's central's top change (first in criteria order on a tie)")
+    change_probabilities: Dict[str, float] = Field(default_factory=dict)
+    verdict: Optional[str] = Field(default=None, description="The trial judge's top answer: keep or revert")
+    verdict_probabilities: Dict[str, float] = Field(default_factory=dict)
     missed: bool = False
     miss_reason: Optional[MissReason] = None
     error: Optional[str] = None
@@ -97,8 +108,16 @@ def _preamble(spec: InstanceSpec) -> str:
         "sense": f"You are the {spec.name} sense of a Doom agent",
         "central": "You are the central action chooser of a Doom agent",
         "admit": "You are the admission instance of a Doom agent",
+        "reflector": f"You are the {spec.title or spec.name} of a Doom agent's slow system",
+        "system2_central": "You are the central of a Doom agent's slow system",
+        "judge": "You are the trial judge of a Doom agent's slow system",
     }[spec.kind]
     return f"{who}; your concern is {spec.concern}. You see only the evidence given."
+
+
+def preamble(spec: InstanceSpec) -> str:
+    """The opening of every instruction of `spec`: who it is, its concern, and that it sees only the evidence given."""
+    return _preamble(spec)
 
 
 def menu_criteria(menu: Sequence[MenuItem]) -> Dict[str, str]:
@@ -237,3 +256,55 @@ def run_admit(client: D1UltraClient, evidence: str, *, budget: float = 5.0, spec
     except _Miss as miss:
         client.note_miss(spec.name, miss.reason)
         return InstanceResult(**base, answers=answers, missed=True, miss_reason=miss.reason, error=str(miss), raw_answer=miss.raw)
+
+
+# How each of System 2's questions is read into an `InstanceResult` field, and the miss for an answer
+# outside its criteria (a reason outside the vocabulary is malformed, as for a sense).
+SYSTEM2_CHOICES: Dict[str, Tuple[str, MissReason]] = {
+    "change": ("change", "off_menu"),
+    "configure": ("change", "off_menu"),
+    "verdict": ("verdict", "off_menu"),
+    "reason": ("reason", "malformed"),
+}
+
+
+def run_system2_instance(
+    client: D1UltraClient,
+    spec: InstanceSpec,
+    evidence: str,
+    questions: Dict[str, QuestionSpec],
+    *,
+    budget: float = 5.0,
+    yes_at: float = 0.5,
+    tolerance: float = 0.02,
+) -> InstanceResult:
+    """Run one of System 2's instances: one call with its evidence text and finite questions, read in full.
+
+    `speak` (noul) gives the speak probability and whether it spoke (at `yes_at`, d1's own yes); every
+    choice is read with its distribution, its top option first in criteria order on a tie. A failed call,
+    an answer outside the criteria or a malformed distribution is a miss, and nothing stands in for it.
+    """
+    call = client.call(spec.name, evidence, questions, budget=budget)
+    base = dict(
+        name=spec.name, kind=spec.kind, scope=spec.scope, evidence=evidence,
+        latency_ms=call.latency_ms, retries=call.retries, usage=call.usage,
+    )
+    if not call.answered or call.response is None:
+        return InstanceResult(**base, missed=True, miss_reason=call.miss_reason, error=call.error)
+    answers = call.response.raw_answers
+    fields: Dict[str, Any] = {}
+    try:
+        if "speak" in questions:
+            speak = read_noul(answers, "speak")
+            fields.update(speak=speak, spoke=speak >= yes_at, strength=speak)
+        for name, question in questions.items():
+            if name not in SYSTEM2_CHOICES or not isinstance(question, ChoiceQuestion):
+                continue
+            field, outside = SYSTEM2_CHOICES[name]
+            top, distribution = read_choice(answers, name, list(question.criteria), tolerance, outside)
+            fields[field] = top
+            fields[f"{field}_probabilities"] = distribution
+    except _Miss as miss:
+        client.note_miss(spec.name, miss.reason)
+        return InstanceResult(**base, answers=answers, missed=True, miss_reason=miss.reason, error=str(miss), raw_answer=miss.raw)
+    return InstanceResult(**base, answers=answers, **fields)

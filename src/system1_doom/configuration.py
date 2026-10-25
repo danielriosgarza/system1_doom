@@ -4,13 +4,16 @@ The configuration is what System 2 will own (design spec, section 8): each sense
 reason vocabulary, the central instance's scope, the exploration level, the active strategy, the admitted
 macros, and the bounds every instance works inside. This module is data only: pydantic models, their
 validation, the default configuration from the design's tables, and loading and saving. Nothing here
-decides anything. In this version only an admitted macro changes the configuration during play: the
-controller queues the new version and applies it at the next tick boundary, the hook System 2 will use.
+decides anything. System 2 (`system2.py`) and an admitted macro change the configuration during play:
+the controller queues the new version and applies it at the next tick boundary.
 
 The design's numbers live in `Bounds`, not scattered as literals: the 0.5 at which a sense speaks (d1's
 own yes), the 5 s per-call budget, the pool of 6 calls in flight, the 7-channel scope, the channel caps,
 the 2,000-tick history ring, the 8-decision return with discount 0.9, the 3 consecutive central misses,
-and the 8 frames a decision lasts.
+and the 8 frames a decision lasts; and System 2's: a cycle every 20 decisions, windows of 20 and 100
+decisions and 3 episodes, trials and cooling of 60 decisions, a judge extension of 20, the history test's
+24-tick sample with 4 noise ticks, at most 4 ticks per context, its 0.05 and 0.10 margins, the 0.15
+safety drop on 10 followed messages, and 40 calls per cycle.
 """
 
 from __future__ import annotations
@@ -85,6 +88,22 @@ class Bounds(BaseModel):
     )
     thin_record: int = Field(default=5, ge=1, description="Below this many ticks a relevance mean is shown with its count")
     stall_units: float = Field(default=4.0, ge=0.0, description="A decision that moved less than this is a stall")
+    # System 2 (design spec, sections 8 and 9): its cadence, windows, trials and history test.
+    system2_cadence: int = Field(default=20, ge=1, description="New decisions since the last System 2 cycle that start the next")
+    window_recent: int = Field(default=20, ge=1, description="Decisions in System 2's short window")
+    window_long: int = Field(default=100, ge=1, description="Decisions in System 2's long window")
+    window_episodes: int = Field(default=3, ge=1, description="Episodes in System 2's episode window, and the history test's")
+    trial_decisions: int = Field(default=60, ge=1, description="Decisions a change is observed for before the trial judge")
+    judge_extension: int = Field(default=20, ge=1, description="Decisions a trial is extended by when the judge misses")
+    history_test_noise: int = Field(default=4, ge=0, description="Sampled ticks the old scope is re-asked on, as a noise estimate")
+    history_test_margin: float = Field(default=0.05, ge=0.0, description="How far the new composite must be above the old")
+    history_test_worst_drop: float = Field(default=0.10, ge=0.0, description="No quality metric may be worse than the old by more")
+    history_test_context_cap: int = Field(default=4, ge=1, description="Sampled ticks from any one context signature")
+    history_test_quantile: float = Field(
+        default=0.25, gt=0.0, lt=0.5, description="The bottom and top share of the window's returns: bad and good ticks"
+    )
+    safety_drop: float = Field(default=0.15, ge=0.0, description="A paid-off rate fall that reverts a trial without asking")
+    safety_followed: int = Field(default=10, ge=1, description="Followed messages the safety revert needs during the trial")
 
 
 class SenseConfig(BaseModel):

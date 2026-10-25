@@ -88,3 +88,17 @@ def test_records_by_episode(decided):
     store.append(_record(decided, tick=1, episode_id="a"))
     store.append(_record(decided, tick=1, episode_id="b"))
     assert [r.episode_id for r in store.records("b")] == ["b"] and store.get(1, "a").episode_id == "a"
+
+
+def test_the_ring_keeps_each_records_frame_in_memory_and_drops_it_with_the_record(decided):
+    store = HistoryStore(None, ring=2)
+    first, second, third = (_record(decided, tick=t, episode_id="a") for t in (0, 1, 2))
+    store.append(first, frame_b64="Zmlyc3Q=")
+    store.append(second)
+    assert store.frame(first) == "Zmlyc3Q=" and store.frame(second) is None
+    # The same tick number in another episode is another frame: `frames/<tick>.jpg` on disk would be shared.
+    other = _record(decided, tick=0, episode_id="b")
+    store.append(other, frame_b64="b3RoZXI=")
+    assert store.frame(first) is None and store.frame(other) == "b3RoZXI=" and store.get(0, "b") is other
+    store.append(third, frame_b64="dGhpcmQ=")
+    assert store.frame(other) == "b3RoZXI=" and store.frame(third) == "dGhpcmQ=" and len(store) == 2
