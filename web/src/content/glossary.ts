@@ -33,6 +33,15 @@ export const GLOSSARY: GlossaryEntry[] = [
     code: 'd1_client.py · D1UltraClient',
   },
   {
+    id: 'jev',
+    term: 'Jev',
+    aliases: [],
+    meaning:
+      'TypeSafe’s decision model. It answers the same typed questions as d1-ultra in the same form, so a recording can be played by it instead: every instance of both systems then makes its calls to Jev, with the same evidence and the same questions. The screen goes to it as an image asset, and its cost is counted at its published price per input token, since its usage report names none. Each recording’s card, the top bar and How this recording was made say which model played it.',
+    see: [{ screen: 'reference', panel: 'provenance', label: 'which model played this recording' }],
+    code: 'd1_client.py · Decider',
+  },
+  {
     id: 'system-1',
     term: 'System 1',
     aliases: [],

@@ -1,4 +1,4 @@
-"""Record episodes played by d1-ultra as self-contained bundles, and check or describe the bundle format.
+"""Record episodes played by d1-ultra or Jev as self-contained bundles, and check or describe the bundle format.
 
     python -m system1_doom.export --scenario deadly_corridor.cfg --episodes 1 --seed 7
     python -m system1_doom.export --scenario deadly_corridor.cfg --seed 7 --networks best --out bundles/x
@@ -7,8 +7,8 @@
     python -m system1_doom.export --index bundles
     python -m system1_doom.export --schema bundle.schema.json
 
-Recording needs LIQUID_API_KEY: every decision is made by d1-ultra instances. A bundle is one folder
-per episode (schema version 2):
+Recording needs the decider's key (LIQUID_API_KEY for d1-ultra, TYPESAFE_API_KEY for `--decider jev`):
+every decision is made by its instances. A bundle is one folder per episode (schema version 2):
 
     episode.json      what was played, the decider, the configuration at start and end, the cost,
                       the misses and how it ended (EpisodeMeta)
@@ -305,6 +305,7 @@ class BundleIndexEntry(BaseModel):
     kills: float = 0.0
     configuration_start: int = Field(default=1, description="The configuration version the episode started from")
     configuration_end: int = Field(default=1, description="The configuration version it ended at")
+    decider: DeciderName = Field(default=DECIDER, description="The decision model every decision was made by: d1-ultra, or jev")
 
 
 def _jpeg(screen_buffer: np.ndarray, path: Path) -> None:
@@ -774,6 +775,7 @@ def index_entry(name: str, meta: EpisodeMeta) -> BundleIndexEntry:
         kills=meta.result.kills,
         configuration_start=meta.configuration_start.version,
         configuration_end=meta.configuration_end.version,
+        decider=meta.decider,
     )
 
 

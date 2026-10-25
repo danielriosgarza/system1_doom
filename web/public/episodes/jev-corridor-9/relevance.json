@@ -1,0 +1,272 @@
+{
+  "version": 1,
+  "episodes": 1,
+  "return_steps": 8,
+  "return_gamma": 0.9,
+  "entries": {
+    "combat|hp:healthy|ammo:stocked|enemies:0:none|dmg:clear|pickup:pickup_visible": {
+      "spoke": 6,
+      "followed": 6,
+      "followed_paid": 6,
+      "overruled": 0,
+      "overruled_paid": 0,
+      "strength_paid_sum": 3.4,
+      "strength_paid_n": 6,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "combat|hp:healthy|ammo:stocked|enemies:1:far|dmg:clear|pickup:pickup_visible": {
+      "spoke": 7,
+      "followed": 7,
+      "followed_paid": 7,
+      "overruled": 0,
+      "overruled_paid": 0,
+      "strength_paid_sum": 4.700000000000001,
+      "strength_paid_n": 7,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "combat|hp:healthy|ammo:stocked|enemies:1:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 6,
+      "followed": 6,
+      "followed_paid": 6,
+      "overruled": 0,
+      "overruled_paid": 0,
+      "strength_paid_sum": 4.35,
+      "strength_paid_n": 6,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "combat|hp:healthy|ammo:stocked|enemies:2:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 2,
+      "followed": 2,
+      "followed_paid": 2,
+      "overruled": 0,
+      "overruled_paid": 0,
+      "strength_paid_sum": 1.49,
+      "strength_paid_n": 2,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "combat|hp:healthy|ammo:stocked|enemies:2:mid|dmg:under_fire|pickup:pickup_visible": {
+      "spoke": 1,
+      "followed": 1,
+      "followed_paid": 1,
+      "overruled": 0,
+      "overruled_paid": 0,
+      "strength_paid_sum": 0.79,
+      "strength_paid_n": 1,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "goal|hp:healthy|ammo:stocked|enemies:0:none|dmg:clear|pickup:pickup_visible": {
+      "spoke": 26,
+      "followed": 11,
+      "followed_paid": 11,
+      "overruled": 15,
+      "overruled_paid": 15,
+      "strength_paid_sum": 15.850000000000001,
+      "strength_paid_n": 26,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "goal|hp:healthy|ammo:stocked|enemies:1:far|dmg:clear|pickup:pickup_visible": {
+      "spoke": 7,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 7,
+      "overruled_paid": 7,
+      "strength_paid_sum": 3.9899999999999998,
+      "strength_paid_n": 7,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "goal|hp:healthy|ammo:stocked|enemies:1:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 6,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 6,
+      "overruled_paid": 6,
+      "strength_paid_sum": 3.3200000000000003,
+      "strength_paid_n": 6,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "goal|hp:healthy|ammo:stocked|enemies:2:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 1,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 1,
+      "overruled_paid": 1,
+      "strength_paid_sum": 0.55,
+      "strength_paid_n": 1,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "goal|hp:healthy|ammo:stocked|enemies:2:mid|dmg:under_fire|pickup:pickup_visible": {
+      "spoke": 1,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 1,
+      "overruled_paid": 1,
+      "strength_paid_sum": 0.58,
+      "strength_paid_n": 1,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "navigation|hp:healthy|ammo:stocked|enemies:0:none|dmg:clear|pickup:pickup_visible": {
+      "spoke": 26,
+      "followed": 23,
+      "followed_paid": 23,
+      "overruled": 3,
+      "overruled_paid": 3,
+      "strength_paid_sum": 16.96,
+      "strength_paid_n": 26,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "navigation|hp:healthy|ammo:stocked|enemies:1:far|dmg:clear|pickup:pickup_visible": {
+      "spoke": 7,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 7,
+      "overruled_paid": 7,
+      "strength_paid_sum": 4.02,
+      "strength_paid_n": 7,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "navigation|hp:healthy|ammo:stocked|enemies:1:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 6,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 6,
+      "overruled_paid": 6,
+      "strength_paid_sum": 3.3200000000000003,
+      "strength_paid_n": 6,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "navigation|hp:healthy|ammo:stocked|enemies:2:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 2,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 2,
+      "overruled_paid": 2,
+      "strength_paid_sum": 1.08,
+      "strength_paid_n": 2,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "navigation|hp:healthy|ammo:stocked|enemies:2:mid|dmg:under_fire|pickup:pickup_visible": {
+      "spoke": 1,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 1,
+      "overruled_paid": 1,
+      "strength_paid_sum": 0.59,
+      "strength_paid_n": 1,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "resource|hp:healthy|ammo:stocked|enemies:0:none|dmg:clear|pickup:pickup_visible": {
+      "spoke": 26,
+      "followed": 22,
+      "followed_paid": 22,
+      "overruled": 4,
+      "overruled_paid": 4,
+      "strength_paid_sum": 14.590000000000005,
+      "strength_paid_n": 26,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "resource|hp:healthy|ammo:stocked|enemies:1:far|dmg:clear|pickup:pickup_visible": {
+      "spoke": 7,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 7,
+      "overruled_paid": 7,
+      "strength_paid_sum": 3.9399999999999995,
+      "strength_paid_n": 7,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "resource|hp:healthy|ammo:stocked|enemies:1:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 6,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 6,
+      "overruled_paid": 6,
+      "strength_paid_sum": 3.3100000000000005,
+      "strength_paid_n": 6,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "resource|hp:healthy|ammo:stocked|enemies:2:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 1,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 1,
+      "overruled_paid": 1,
+      "strength_paid_sum": 0.52,
+      "strength_paid_n": 1,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "resource|hp:healthy|ammo:stocked|enemies:2:mid|dmg:under_fire|pickup:pickup_visible": {
+      "spoke": 1,
+      "followed": 0,
+      "followed_paid": 0,
+      "overruled": 1,
+      "overruled_paid": 1,
+      "strength_paid_sum": 0.51,
+      "strength_paid_n": 1,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "survival|hp:healthy|ammo:stocked|enemies:1:far|dmg:clear|pickup:pickup_visible": {
+      "spoke": 7,
+      "followed": 7,
+      "followed_paid": 7,
+      "overruled": 0,
+      "overruled_paid": 0,
+      "strength_paid_sum": 3.92,
+      "strength_paid_n": 7,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "survival|hp:healthy|ammo:stocked|enemies:1:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 6,
+      "followed": 5,
+      "followed_paid": 5,
+      "overruled": 1,
+      "overruled_paid": 1,
+      "strength_paid_sum": 3.2600000000000002,
+      "strength_paid_n": 6,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "survival|hp:healthy|ammo:stocked|enemies:2:mid|dmg:clear|pickup:pickup_visible": {
+      "spoke": 2,
+      "followed": 2,
+      "followed_paid": 2,
+      "overruled": 0,
+      "overruled_paid": 0,
+      "strength_paid_sum": 1.12,
+      "strength_paid_n": 2,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    },
+    "survival|hp:healthy|ammo:stocked|enemies:2:mid|dmg:under_fire|pickup:pickup_visible": {
+      "spoke": 1,
+      "followed": 1,
+      "followed_paid": 1,
+      "overruled": 0,
+      "overruled_paid": 0,
+      "strength_paid_sum": 0.63,
+      "strength_paid_n": 1,
+      "strength_unpaid_sum": 0.0,
+      "strength_unpaid_n": 0
+    }
+  }
+}

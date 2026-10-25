@@ -27,7 +27,7 @@
 
 **Package:** `system1-doom` 0.4.0 · **Python:** ≥ 3.11 · **Source layout:**
 `src/system1_doom/` (32 modules, ≈ 11,500 LOC) · **Tests:** `tests/`
-(25 files, 249 tests, 7 of them live) · **Web explainer:** `web/` (Vite +
+(25 files, 252 tests, 7 of them live) · **Web explainer:** `web/` (Vite +
 React + TypeScript, on trace schema 2; 69 Vitest and 30 Playwright
 tests), online at <https://danielriosgarza.github.io/system1_doom/>
 
@@ -1240,12 +1240,17 @@ the panels that show it and names its code); how this recording was made
 budget, calls and misses, the result, the `export` command that records
 one like it and the `serve` command that plays live); and the keys.
 
-**The recordings.** Three bundles ship in `web/public/episodes/`, every
-decision in them made by d1-ultra on `deadly_corridor.cfg` with the best
-networks as evidence: `corridor-9` and `corridor-11` start from the
+**The recordings.** Five bundles ship in `web/public/episodes/`, all of
+`deadly_corridor.cfg` with the best networks as evidence. Three were
+played by d1-ultra: `corridor-9` and `corridor-11` start from the
 design's version 1 (`--fresh-configuration`), and `corridor-9-v2` replays
 seed 9 from version 2, the configuration System 2 reached and its judge
-kept on the same run folder. Their numbers, and what System 2 did in
+kept on the same run folder. Two were played by Jev (`--decider jev`,
+§8.10): `jev-corridor-9` and `jev-corridor-11`, seeds 9 and 11 from
+version 1, so each stands beside the d1-ultra recording of its seed. The
+index names each recording's decider (`BundleIndexEntry.decider`), and
+the app says it on the recording's card, in the picker, in the top bar
+and wherever it counts calls. Their numbers, and what System 2 did in
 each, are in §15.
 
 **GitHub Pages.** `.github/workflows/pages.yml` builds `web/` and
@@ -1919,20 +1924,23 @@ the end of episode 1 and ran as episode 2 began.
 **The shipped recordings** (2026-10-25, `export --scenario
 deadly_corridor.cfg --networks best`: the run folder's `best.pt` after 7
 training episodes, network share 0.43; the default 5 s budget; the slow
-path on, with templates; System 2 on). Three bundles, 30.2 MB in all,
-which is over the 25 MB a static site should carry: 11.2 MB of
+path on, with templates; System 2 on; the two `jev-` recordings with
+`--decider jev`, otherwise the same). Five bundles, 44.3 MB in all,
+which is over the 25 MB a static site should carry: 17.1 MB of
 `ticks.jsonl` (the six instances' verbatim evidence and answers, about
-23 KB a decision), 12.0 MB of `history.jsonl` (the same decisions as
+23 KB a decision), 18.1 MB of `history.jsonl` (the same decisions as
 System 2's history store keeps them, which the app does not read) and
-5.6 MB of frames. The text files are served compressed (a 4.5 MB
+7.4 MB of frames. The text files are served compressed (a 4.5 MB
 `ticks.jsonl` is 0.5 MB gzipped), so the size weighs on the repository
 more than on a visit.
 
-| Recording | Configuration | Decisions | Result | Mean tick | Calls (System 1 + System 2) | Cost (System 1 + System 2) | Misses | Size |
-|---|---|---:|---|---:|---:|---:|---:|---:|
-| `corridor-9` | 1 → 1 | 59 | cleared, 6 kills (reward 2,280) | 818 ms | 354 + 86 | $0.0139 + $0.0038 | 0 | 4.3 MB |
-| `corridor-11` | 1 → 1 | 179 | cleared, 7 kills (reward 2,277) | 796 ms | 1,074 + 139 | $0.0375 + $0.0053 | 0 | 11.7 MB |
-| `corridor-9-v2` | 2 → 4 | 233 | died, 8 kills (reward 820) | 764 ms | 1,398 + 86 | $0.0448 + $0.0035 | 0 | 14.2 MB |
+| Recording | Decider | Configuration | Decisions | Result | Mean tick | Calls (System 1 + System 2) | Cost (System 1 + System 2) | Misses | Size |
+|---|---|---|---:|---|---:|---:|---:|---:|---:|
+| `corridor-9` | d1-ultra | 1 → 1 | 59 | cleared, 6 kills (reward 2,280) | 818 ms | 354 + 86 | $0.0139 + $0.0038 | 0 | 4.3 MB |
+| `jev-corridor-9` | Jev | 1 → 1 | 42 | cleared, 6 kills (reward 2,279) | 797 ms | 252 + 27 | $0.0150 + $0.0015 | 0 | 2.9 MB |
+| `corridor-11` | d1-ultra | 1 → 1 | 179 | cleared, 7 kills (reward 2,277) | 796 ms | 1,074 + 139 | $0.0375 + $0.0053 | 0 | 11.7 MB |
+| `jev-corridor-11` | Jev | 1 → 3 | 211 | died, 5 kills (reward 843) | 749 ms | 1,266 + 143 | $0.0641 + $0.0067 | 0 | 11.2 MB |
+| `corridor-9-v2` | d1-ultra | 2 → 4 | 233 | died, 8 kills (reward 820) | 764 ms | 1,398 + 86 | $0.0448 + $0.0035 | 0 | 14.2 MB |
 
 `episode.json`'s `cost` counts System 1's six instances and the System 2
 calls made while the episode played, but not the cycle at the episode's
@@ -1996,29 +2004,29 @@ with `train --evaluate` (no, latest and best networks on the same seeds).
 deadly_corridor.cfg --networks best --fresh-configuration`, seeds 9 and
 11, slow path on templates, System 2 on, 5 s budget: the settings of the
 shipped recordings `corridor-9` and `corridor-11`, which d1-ultra played
-and which stand beside them here). Calls, input tokens and cost are
-System 1's (six per decision) with the admit instance's; System 2's own
-are in the last column. Jev's usage block reports no cost, so its cost
-is its input tokens at the published $0.042 per million, which is also
-what d1-ultra's reported cost comes to per token.
+and which stand beside them here; all four ship, in the table above).
+Calls, input tokens and cost are System 1's (six per decision); System
+2's own are in the last column. Jev's usage block reports no cost, so its
+cost is its input tokens at the published $0.042 per million, which is
+also what d1-ultra's reported cost comes to per token.
 
 | Recording | Decider | Decisions | Result | Mean tick (senses / central) | Calls | Misses | Input tokens | Cost | System 2 |
 |---|---|---:|---|---:|---:|---:|---:|---:|---|
-| `corridor-9` | d1-ultra | 59 | cleared, 6 kills, health 70 (reward 2280) | 818 ms (557 / 248) | 402 | 0 | 381,187 | $0.0160 | 3 cycles, 2 history tests, both failed; 86 calls, $0.0038 |
-| `jev-corridor-9` | Jev | 42 | cleared, 6 kills, health 70 (reward 2279) | 797 ms (559 / 226) | 270 | 0 | 379,595 | $0.0159 | 3 cycles, no proposal; 27 calls, $0.0015 |
-| `corridor-11` | d1-ultra | 179 | cleared, 7 kills, health 46 (reward 2277) | 796 ms (517 / 266) | 1,204 | 0 | 1,011,175 | $0.0425 | 9 cycles, 2 history tests, both failed; 139 calls, $0.0053 |
-| `jev-corridor-11` | Jev | 211 | died, 5 kills (reward 843); ended at configuration version 3 with version 4 queued | 749 ms (500 / 237) | 1,371 | 0 | 1,643,786 | $0.0690 | 9 cycles, 1 trial, reverted; 3 history tests, 1 passed; 143 calls, $0.0067 |
+| `corridor-9` | d1-ultra | 59 | cleared, 6 kills, health 70 (reward 2280) | 818 ms (557 / 248) | 354 | 0 | 330,466 | $0.0139 | 3 cycles, 2 history tests, both failed; 86 calls, $0.0038 |
+| `jev-corridor-9` | Jev | 42 | cleared, 6 kills, health 70 (reward 2279) | 797 ms (559 / 226) | 252 | 0 | 356,289 | $0.0150 | 3 cycles, no proposal; 27 calls, $0.0015 |
+| `corridor-11` | d1-ultra | 179 | cleared, 7 kills, health 46 (reward 2277) | 796 ms (517 / 266) | 1,074 | 0 | 891,708 | $0.0375 | 9 cycles, 2 history tests, both failed; 139 calls, $0.0053 |
+| `jev-corridor-11` | Jev | 211 | died, 5 kills (reward 843); ended at configuration version 3 with version 4 queued | 749 ms (500 / 237) | 1,266 | 0 | 1,525,526 | $0.0641 | 9 cycles, 1 trial, reverted; 3 history tests, 1 passed; 143 calls, $0.0067 |
 
 Every call was answered by `jev-1.14.0`, with no miss and no retry in
-1,641 System 1 calls and 170 System 2 calls. A tick takes the same
+1,518 System 1 calls and 170 System 2 calls. A tick takes the same
 0.75–0.8 s: Jev answers the text-only senses in 300–325 ms (d1-ultra
 276–398) and the central in 225–236 ms (d1-ultra 247–266), and the
 combat sense, which carries the screen as a 640×480 asset, in 480–534 ms
 (d1-ultra 309–311 with the 320×240 data URL), so the slowest sense sets
-the tick on both. Jev counts about 45% more input tokens per call (1,200–
-1,400 against 840–950 for the same evidence), and reports output tokens
-(140–170 per call), which are free, so a decision costs about $0.00035
-on Jev against $0.00025 on d1-ultra.
+the tick on both. Jev counts about half as many input tokens again per
+call (1,200–1,400 against 830–930 for the same evidence), and reports
+output tokens (140–170 per call), which are free, so a decision costs
+about $0.00033 on Jev against $0.00023 on d1-ultra.
 
 On seed 9 Jev cleared the corridor in 42 decisions to d1-ultra's 59,
 with the same six kills and the same health, choosing `approach_pickup`
@@ -2045,15 +2053,15 @@ at decision 211. On d1-ultra the same seed's System 2 proposed
 (composite +0.00), so the agent played all 179 decisions on version 1
 and cleared the corridor. One recording per seed says nothing about which
 decider plays better; it says the hierarchy, System 2 included, runs
-unchanged on either, at the same tick, for about a third more per
-decision on Jev, and that the two make different decisions from the same
+unchanged on either, at the same tick, for about 45% more per decision
+on Jev, and that the two make different decisions from the same
 evidence.
 
 ## 16. Testing
 
 ```bash
-python -m pytest                 # 249 tests, 25 files, from the repo root
-python -m pytest -k "not live"   # the 242 that need no key, as CI runs them
+python -m pytest                 # 252 tests, 25 files, from the repo root
+python -m pytest -k "not live"   # the 245 that need no key, as CI runs them
 ```
 
 Every behaviour is exercised without a key through `tests/fake_d1.py`:
@@ -2106,7 +2114,7 @@ minute with them.
 | `test_learning.py` | n-step returns; per-network rewards; running stats; replay round-trip; each value net learns its own signal; episode credit assignment; checkpoint round-trip, overrides and mismatch; a checkpoint with gate weights loads (synthetic, and the shipped one when present) |
 | `test_training.py` | The motor executes an action's own plan; `train` writes the full run folder (with the ledger and history) and resumes; training and evaluation start from the saved configuration (evaluation with System 2 off, saving nothing) and `--fresh` forgets it; admitted macros persist and are re-validated; no exploration schedule; fail fast without the key; the idle burst |
 | `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy; `--decider jev` reaches the summary (`decider`, `models`) and every call goes to TypeSafe; `--decider jev` fails fast naming `TYPESAFE_API_KEY` |
-| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra and is listed in the index; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
+| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra or Jev and is listed in the index with its decider, and the site ships recordings by each decider, the first cleared one d1-ultra's; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
 | `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration`; `--decider jev` reaches the status |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
@@ -2219,6 +2227,7 @@ from both; the Reference screen names them in one line of history.
 | Term | Meaning |
 |---|---|
 | **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions with distributions. Every decision is one of its answers: the five senses, the central and the admit instance are each one call (§8.6, §8.10), and so are System 2's reflectors, its central and the trial judge (§8.16). |
+| **Jev** | TypeSafe's decision model, which answers the same typed questions in the same form at `api.typesafe.ai`; with `--decider jev` every instance of both systems calls it instead of d1-ultra, with the same evidence and questions (§8.10). The screen goes to it as an image asset, and its cost is counted at its published price per input token, since its usage block names none. Two of the shipped recordings were played by it (§15). |
 | **System 1** | The fast system that decides every action, once per tick: five senses, then the central, then Act (`system1.py`, §7, §8.7). It never waits for System 2. |
 | **System 2** | The slow system, on its own thread: it reads the history and changes the configuration one change at a time — reflectors propose, its central chooses one change or none, a scope change must pass the history test, and every change is a trial the judge keeps or reverts (§8.16). |
 | **Instance** | One d1-ultra call with its own scope and its own finite questions (`InstanceSpec`, `run_instance`). Its instructions name its concern and say it sees only the evidence given; they never say how to weigh anything (§8.6). |

@@ -1,10 +1,11 @@
 // Every word on the Watch screen, the landing: the recording plays at the agent's own pace beside the six
-// d1-ultra instances that decided each move.
+// instances that decided each move.
 import type { Pace } from '../data/playback'
+import { type Decider, deciderName, deciderWords } from './decider'
 import type { BundleIndexEntry, EpisodeMeta, TickTrace } from '../schema/bundle'
 
 export const WATCH = {
-  title: 'Every action in this game is chosen by d1-ultra, Liquid AI’s decision model.',
+  title: (decider: Decider) => `Every action in this game is chosen by ${deciderWords(decider)}.`,
   subtitle:
     'At each decision, five instances each answer questions about one part of the game, and a sixth, the central instance, chooses the action from their answers. The rows beside the game show what each of the six instances answered at the decision shown.',
   play: 'Play',
@@ -20,8 +21,8 @@ export const WATCH = {
   again: 'Starting again from the first decision',
   honesty: 'This is a recording, replayed at the speed the agent played: one video frame per decision.',
   honestyLink: 'To watch it decide live, run it on your machine →',
-  liveHonesty:
-    'Live: d1-ultra is playing this episode on this machine now. Each decision appears as soon as it is made.',
+  liveHonesty: (decider: Decider) =>
+    `Live: ${deciderName(decider)} is playing this episode on this machine now. Each decision appears as soon as it is made.`,
   cardsTitle: 'The recordings',
   cardsNote:
     'Click a recording to play it from the start. A recording that starts from a later configuration version shows the changes System 2 made in earlier episodes.',
@@ -54,9 +55,9 @@ export function versionWords(start: number, end: number): string {
   return start === end ? `configuration version ${start}` : `configuration versions ${start} → ${end}`
 }
 
-/** How a recording is named on its card and in the picker: its seed and the configuration it started from. */
-export function recordingName(entry: Pick<BundleIndexEntry, 'seed' | 'configuration_start'>): string {
-  return `Seed ${entry.seed}, from configuration version ${entry.configuration_start ?? 1}`
+/** How a recording is named on its card and in the picker: its seed, the model that decided it and the configuration it started from. */
+export function recordingName(entry: Pick<BundleIndexEntry, 'seed' | 'configuration_start' | 'decider'>): string {
+  return `Seed ${entry.seed}, ${deciderName(entry.decider)}, from configuration version ${entry.configuration_start ?? 1}`
 }
 
 /** The episode was cut off before its end: the decision limit, or stopped by hand. */

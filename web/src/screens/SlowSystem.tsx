@@ -3,6 +3,7 @@ import { BarList, Meter } from '../components/Bars'
 import { EvidenceText } from '../components/Evidence'
 import { Panel } from '../components/Panel'
 import { TermLink } from '../components/TermLink'
+import { type Decider, deciderName, deciderOf } from '../content/decider'
 import { missWords } from '../content/instances'
 import { SLOW, STATUS_WORDS, summaryWords } from '../content/slow'
 import type { EpisodeBundle } from '../data/loader'
@@ -61,7 +62,7 @@ export function SlowSystem({ bundle, tick, tickIndex }: { bundle: EpisodeBundle;
         <p>{SLOW.intro}</p>
         {bundle.meta.system2 && (
           <ul className="facts" data-testid="system2-summary">
-            {summaryWords(bundle.meta.system2).map((w) => (
+            {summaryWords(bundle.meta.system2, deciderOf(bundle.meta)).map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>
@@ -86,6 +87,7 @@ export function SlowSystem({ bundle, tick, tickIndex }: { bundle: EpisodeBundle;
                   cycle={selected}
                   tickIndex={placed.tickIndex}
                   cadence={boundsOf(bundle.meta).system2_cadence ?? 20}
+                  decider={deciderOf(bundle.meta)}
                 />
                 <Reflectors cycle={selected} yesAt={boundsOf(bundle.meta).yes_at} />
               </Panel>
@@ -212,7 +214,17 @@ function CycleList({
   )
 }
 
-function CycleHead({ cycle, tickIndex, cadence }: { cycle: ReflectionTrace; tickIndex: number; cadence: number }) {
+function CycleHead({
+  cycle,
+  tickIndex,
+  cadence,
+  decider,
+}: {
+  cycle: ReflectionTrace
+  tickIndex: number
+  cadence: number
+  decider: Decider
+}) {
   const started =
     cycle.trigger === 'episode_end' ? 'started because the episode ended' : `started after ${cadence} new decisions`
   return (
@@ -229,7 +241,7 @@ function CycleHead({ cycle, tickIndex, cadence }: { cycle: ReflectionTrace; tick
         <p className="small muted">
           {SLOW.windowsTitle}:{' '}
           {(cycle.windows ?? []).map((w) => `${w.label} (${w.decisions} decisions held)`).join(' · ')}
-          {cycle.calls !== undefined && ` · ${cycle.calls} d1-ultra calls`}
+          {cycle.calls !== undefined && ` · ${cycle.calls} ${deciderName(decider)} calls`}
           {cycle.usage?.cost !== undefined && `, $${cycle.usage.cost.toFixed(5)}`}
         </p>
       )}
@@ -527,7 +539,8 @@ function HistoryTest({ test, bundle }: { test: HistoryTestResult; bundle: Episod
             )}
             {test.calls !== undefined && (
               <li>
-                {test.calls} d1-ultra calls{test.usage?.cost !== undefined ? `, $${test.usage.cost.toFixed(5)}` : ''}
+                {test.calls} {deciderName(deciderOf(bundle.meta))} calls
+                {test.usage?.cost !== undefined ? `, $${test.usage.cost.toFixed(5)}` : ''}
               </li>
             )}
           </ul>

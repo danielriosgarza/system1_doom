@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Drawing } from '../components/Drawing'
 import { Panel } from '../components/Panel'
 import { linkTerms } from '../components/Terms'
+import { deciderOf, deciderWords } from '../content/decider'
 import { GLOSSARY, REMOVED_TERMS } from '../content/glossary'
 import { REFERENCE } from '../content/reference'
 import { resultWords } from '../content/watch'
@@ -146,8 +147,10 @@ function Provenance({ bundle }: { bundle: EpisodeBundle }) {
   const P = REFERENCE.provenance
   const start = m.configuration_start.version ?? 1
   const end = m.configuration_end.version ?? start
+  const decider = deciderOf(m)
   const rows: Array<[string, string]> = [
     [P.scenario, m.scenario],
+    [P.decider, deciderWords(decider)],
     [P.seed, String(m.seed)],
     [
       P.networks,
@@ -166,7 +169,7 @@ function Provenance({ bundle }: { bundle: EpisodeBundle }) {
       `${m.recorded_at.slice(0, 16).replace('T', ' ')} UTC${m.package_version ? `, package ${m.package_version}` : ''}`,
     ],
   ]
-  const command = `python -m system1_doom.export --scenario ${m.scenario} --seed ${m.seed} --networks ${m.value_networks} --out web/public/episodes/${bundle.name} --name ${bundle.name}`
+  const command = `python -m system1_doom.export${decider === 'd1-ultra' ? '' : ` --decider ${decider}`} --scenario ${m.scenario} --seed ${m.seed} --networks ${m.value_networks} --out web/public/episodes/${bundle.name} --name ${bundle.name}`
   return (
     <div className="provenance" data-testid="provenance">
       <p>

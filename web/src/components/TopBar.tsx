@@ -1,3 +1,4 @@
+import { deciderName } from '../content/decider'
 import { LIVE_COPY } from '../content/live'
 import { recordingName, resultWords, scenarioWords } from '../content/watch'
 import { type PickerEntry, mergedEpisodes } from '../data/live'
@@ -75,7 +76,7 @@ export function TopBar() {
     <header className={`topbar ${bundle && liveOpen === bundle.name ? 'is-live' : ''}`}>
       <div className="brand">
         <h1>System 1 Doom</h1>
-        <span>every decision made by {bundle?.meta.decider ?? 'd1-ultra'}</span>
+        <span>every decision made by {deciderName(bundle?.meta.decider)}</span>
       </div>
       <nav className="screens" aria-label="Screens">
         {SCREENS.map((s) => (

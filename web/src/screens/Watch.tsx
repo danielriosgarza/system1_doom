@@ -3,6 +3,7 @@ import { RecordingCards } from '../components/RecordingCards'
 import { Stage } from '../components/Stage'
 import { Strip } from '../components/Strip'
 import { useWidth } from '../components/useWidth'
+import { deciderOf } from '../content/decider'
 import { WATCH, counterText } from '../content/watch'
 import type { EpisodeBundle } from '../data/loader'
 import { type Pace, gameSeconds } from '../data/playback'
@@ -111,7 +112,7 @@ export function Watch({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
   return (
     <main className="watch" aria-label="Watch the agent play" ref={top}>
       <header className="watch-head">
-        <h2>{WATCH.title}</h2>
+        <h2>{WATCH.title(deciderOf(bundle.meta))}</h2>
         <p>{WATCH.subtitle}</p>
       </header>
       <div className="watch-grid">
@@ -120,7 +121,7 @@ export function Watch({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
           <Progress ticks={bundle.ticks} tickIndex={tickIndex} />
           <Transport bundle={bundle} tick={tick} tickIndex={tickIndex} />
           <p className="watch-honesty">
-            {live ? WATCH.liveHonesty : WATCH.honesty}{' '}
+            {live ? WATCH.liveHonesty(deciderOf(bundle.meta)) : WATCH.honesty}{' '}
             {!live && (
               <button type="button" className="link-button" onClick={() => openPanel('reference', 'provenance')}>
                 {WATCH.honestyLink}
