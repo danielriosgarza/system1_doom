@@ -609,6 +609,16 @@
           "description": "The configuration version it ended at",
           "title": "Configuration End",
           "type": "integer"
+        },
+        "decider": {
+          "default": "d1-ultra",
+          "description": "The decision model every decision was made by: d1-ultra, or jev",
+          "enum": [
+            "d1-ultra",
+            "jev"
+          ],
+          "title": "Decider",
+          "type": "string"
         }
       },
       "required": [

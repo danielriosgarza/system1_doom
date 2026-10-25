@@ -13,7 +13,23 @@
       "ticks": 59,
       "kills": 6.0,
       "configuration_start": 1,
-      "configuration_end": 1
+      "configuration_end": 1,
+      "decider": "d1-ultra"
+    },
+    {
+      "name": "jev-corridor-9",
+      "title": "deadly corridor, seed 9, jev, from configuration version 1",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "best",
+      "seed": 9,
+      "cleared": true,
+      "died": false,
+      "reward": 2279.48,
+      "ticks": 42,
+      "kills": 6.0,
+      "configuration_start": 1,
+      "configuration_end": 1,
+      "decider": "jev"
     },
     {
       "name": "corridor-9-v2",
@@ -27,7 +43,8 @@
       "ticks": 233,
       "kills": 8.0,
       "configuration_start": 2,
-      "configuration_end": 4
+      "configuration_end": 4,
+      "decider": "d1-ultra"
     },
     {
       "name": "corridor-11",
@@ -41,7 +58,23 @@
       "ticks": 179,
       "kills": 7.0,
       "configuration_start": 1,
-      "configuration_end": 1
+      "configuration_end": 1,
+      "decider": "d1-ultra"
+    },
+    {
+      "name": "jev-corridor-11",
+      "title": "deadly corridor, seed 11, jev, from configuration version 1",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "best",
+      "seed": 11,
+      "cleared": false,
+      "died": true,
+      "reward": 842.73,
+      "ticks": 211,
+      "kills": 5.0,
+      "configuration_start": 1,
+      "configuration_end": 3,
+      "decider": "jev"
     }
   ]
 }

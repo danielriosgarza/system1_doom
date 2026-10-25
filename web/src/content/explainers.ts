@@ -234,7 +234,7 @@ export const EXPLAINERS = {
     sentence:
       'The command, the scenario, the seed, the value networks and the configuration version it was played under.',
     paragraphs: [
-      'Every recording here was played by d1-ultra and exported with python -m system1_doom.export, which checks the files before they are shipped.',
+      'Every recording here was played by d1-ultra or by Jev, TypeSafe’s decision model, with the same instances, evidence and questions; its card and the top bar say which. Each was exported with python -m system1_doom.export, which checks the files before they are shipped.',
     ],
     code: 'export.py · record_bundle; export.py · check_bundle',
   },

@@ -86,12 +86,17 @@ history test's whole table, the trial and the judge, and the relevance
 ledger; Learning, Growing the menu and Reference (the one rule, a drawing
 of the two systems, the glossary) follow.
 
-It ships three recordings of `deadly_corridor.cfg` with the best
-networks as evidence: seeds 9 and 11 from the design's version 1 (both
-clear the corridor, in 59 and 179 decisions) and seed 9 again from
-version 2, the strategy System 2 chose and kept on the same run folder
-(it tries another strategy, the judge reverts it, and the episode dies
-after 233 decisions). The app reads trace schema 2 and is described in
+It ships five recordings of `deadly_corridor.cfg` with the best
+networks as evidence. Three were played by d1-ultra: seeds 9 and 11 from
+the design's version 1 (both clear the corridor, in 59 and 179
+decisions) and seed 9 again from version 2, the strategy System 2 chose
+and kept on the same run folder (it tries another strategy, the judge
+reverts it, and the episode dies after 233 decisions). Two were played
+by Jev with `--decider jev`, seeds 9 and 11 from version 1 (seed 9
+cleared in 42 decisions; on seed 11 System 2 tried exploring, reverted
+it, and the episode died after 211), so each decider can be watched on
+the same seed; every card and the top bar say which model played. The
+app reads trace schema 2 and is described in
 [`web/README.md`](web/README.md); the bundles, the screens and how they
 are made are in
 [`docs/DOCUMENTATION.md` §8.15](docs/DOCUMENTATION.md#815-episode-bundles--the-web-explainer--exportpy-servepy-web),

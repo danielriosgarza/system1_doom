@@ -1,9 +1,11 @@
 // The words for the instances: the strip on Watch, the configuration line, and The instances screen.
 import { type CentralRow, type ConfigurationAt, type VersionEntry, pct, words } from '../data/readings'
+import { type Decider, deciderName } from './decider'
 
 export const STRIP = {
   title: 'The six instances at this decision',
-  note: 'Each row is one d1-ultra call. A sense that spoke sent the central instance a message: its strength, a recommended action and a reason. Silent means it sent none; missed means it gave no usable answer. Click a row to see what that instance was sent and what it answered.',
+  note: (decider: Decider) =>
+    `Each row is one ${deciderName(decider)} call. A sense that spoke sent the central instance a message: its strength, a recommended action and a reason. Silent means it sent none; missed means it gave no usable answer. Click a row to see what that instance was sent and what it answered.`,
   rowTitle: 'Open this instance at this decision',
   spoke: 'spoke',
   silent: 'silent',
@@ -16,8 +18,8 @@ export const STRIP = {
 
 export const INSTANCES = {
   title: (decision: number) => `Decision ${decision}: what each instance was sent and what it answered`,
-  intro:
-    'Six d1-ultra calls made this decision: five senses and the central instance. Pick one to read the evidence it was sent, exactly as sent, and every answer it returned.',
+  intro: (decider: Decider) =>
+    `Six ${deciderName(decider)} calls made this decision: five senses and the central instance. Pick one to read the evidence it was sent, exactly as sent, and every answer it returned.`,
   tabs: 'Instances',
   scope: 'Channels it was shown',
   hidden: 'Channels it was not shown',
@@ -25,8 +27,8 @@ export const INSTANCES = {
   noFrame: 'No screen image: the frame channel is not in its scope.',
   text: 'The evidence text, exactly as sent',
   speak: 'Speak',
-  speakNote: (yesAt: number) =>
-    `d1-ultra’s probability that this sense should send a message now. At ${yesAt.toFixed(2)} or more it does; the mark on the bar is that point.`,
+  speakNote: (yesAt: number, decider: Decider) =>
+    `${deciderName(decider)}’s probability that this sense should send a message now. At ${yesAt.toFixed(2)} or more it does; the mark on the bar is that point.`,
   action: 'Action',
   reason: 'Reason',
   choice: 'Chosen action',

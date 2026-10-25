@@ -91,23 +91,32 @@ started from, and is brought up to date on Pause or a change of screen.
 
 ## The recordings
 
-`public/episodes/` holds three recordings of `deadly_corridor.cfg`,
-every decision made by d1-ultra, with the run folder's best value
-networks as evidence (`--networks best`):
+`public/episodes/` holds five recordings of `deadly_corridor.cfg` with
+the run folder's best value networks as evidence (`--networks best`):
+three with every decision made by d1-ultra, two with every decision made
+by Jev, TypeSafe's decision model (`--decider jev`), on the same seeds.
+The index names each recording's decider, and so do its card, the
+picker, the top bar and How this recording was made.
 
-| Recording | Configuration | Result | Size |
-|---|---|---|---:|
-| `corridor-9` | version 1 (`--fresh-configuration`) | cleared the corridor in 59 decisions, 6 kills | 4.3 MB |
-| `corridor-11` | version 1 (`--fresh-configuration`) | cleared the corridor in 179 decisions, 7 kills | 11.7 MB |
-| `corridor-9-v2` | versions 2 → 4 | died after 233 decisions, 8 kills | 14.2 MB |
+| Recording | Decided by | Configuration | Result | Size |
+|---|---|---|---|---:|
+| `corridor-9` | d1-ultra | version 1 (`--fresh-configuration`) | cleared the corridor in 59 decisions, 6 kills | 4.3 MB |
+| `jev-corridor-9` | Jev | version 1 (`--fresh-configuration`) | cleared the corridor in 42 decisions, 6 kills | 2.9 MB |
+| `corridor-11` | d1-ultra | version 1 (`--fresh-configuration`) | cleared the corridor in 179 decisions, 7 kills | 11.7 MB |
+| `jev-corridor-11` | Jev | versions 1 → 3 | died after 211 decisions, 5 kills | 11.2 MB |
+| `corridor-9-v2` | d1-ultra | versions 2 → 4 | died after 233 decisions, 8 kills | 14.2 MB |
 
 Version 2 is the strategy (`strat_evasive_survival`) System 2 chose and
 its judge kept over two `cli` episodes on the same run folder; in
 `corridor-9-v2` System 2 tries the other strategy, the judge reverts it
 (version 4), and the change chosen again at the end is queued for the
-next episode. Their calls, costs and what System 2 did in each are in
-`docs/DOCUMENTATION.md` §15. Together they are 30.2 MB, mostly frames.
-Making them again needs `LIQUID_API_KEY`.
+next episode. In `jev-corridor-11` System 2 puts the agent on explore
+for a 60-decision trial, the judge reverts it (version 3), and a widened
+scope passes the history test at the end and is queued. Their calls,
+costs and what System 2 did in each are in `docs/DOCUMENTATION.md` §15.
+Together they are 44.3 MB, mostly the decisions' text. Making the
+d1-ultra ones again needs `LIQUID_API_KEY`, the Jev ones
+`TYPESAFE_API_KEY`.
 
 ## Live mode
 
@@ -226,7 +235,7 @@ message that says so.
 | `src/screens/` | `Watch`, `Instances`, `SlowSystem`, `Learning`, `Menu` and `Reference` |
 | `src/components/` | The strip, the stage with its crossfade, the recording cards, the timeline (`Scrubber`), the panel frame and its explanation, bars, verbatim evidence, the relevance chart, the two-system drawing, linked glossary words (`Terms`, `TermLink`), the top bar |
 | `src/content/` | Every word on the screens, one file per screen; `explainers.ts`, each panel's explanation and the code behind it; `glossary.ts`, the glossary a test keeps in step with the documentation and the code |
-| `public/episodes/` | The three recordings and their index |
+| `public/episodes/` | The five recordings and their index |
 | `e2e/fixtures/episodes/` | The fixture recording the tests read |
 | `e2e/live-server.mjs` | The stand-in for `serve` the browser tests run against |
 

@@ -2,6 +2,7 @@ import { type KeyboardEvent, useId } from 'react'
 import { BarList, Meter } from '../components/Bars'
 import { EvidenceText } from '../components/Evidence'
 import { Panel } from '../components/Panel'
+import { type Decider, deciderOf } from '../content/decider'
 import { INSTANCES, STRIP, missWords, pickWords } from '../content/instances'
 import { type EpisodeBundle, bundleFileUrl } from '../data/loader'
 import {
@@ -42,7 +43,17 @@ function ScopeChips({ view }: { view: InstanceView }) {
   )
 }
 
-function Answers({ view, tick, yesAt }: { view: InstanceView; tick: TickTrace; yesAt: number }) {
+function Answers({
+  view,
+  tick,
+  yesAt,
+  decider,
+}: {
+  view: InstanceView
+  tick: TickTrace
+  yesAt: number
+  decider: Decider
+}) {
   const central = view.kind === 'central'
   return (
     <div className="answers" data-testid="answers">
@@ -72,7 +83,7 @@ function Answers({ view, tick, yesAt }: { view: InstanceView; tick: TickTrace; y
             </span>
           </h3>
           <Meter value={view.speak} mark={yesAt} label="speak" className="answer-meter" />
-          <p className="faint small">{INSTANCES.speakNote(yesAt)}</p>
+          <p className="faint small">{INSTANCES.speakNote(yesAt, decider)}</p>
         </div>
       )}
       <div className="answer-block">
@@ -149,7 +160,7 @@ export function Instances({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; 
     <main className="screen instances" aria-label="The instances">
       <header className="screen-head">
         <h2>{INSTANCES.title(tickIndex + 1)}</h2>
-        <p>{INSTANCES.intro}</p>
+        <p>{INSTANCES.intro(deciderOf(bundle.meta))}</p>
       </header>
       <div className="instance-tabs" role="tablist" aria-label={INSTANCES.tabs}>
         {names.map((n) => {
@@ -203,7 +214,7 @@ export function Instances({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; 
             <EvidenceText text={tick.instances[name]?.evidence ?? ''} name={name} />
           </Panel>
           <Panel id="answers">
-            <Answers view={view} tick={tick} yesAt={yesAt} />
+            <Answers view={view} tick={tick} yesAt={yesAt} decider={deciderOf(bundle.meta)} />
           </Panel>
         </div>
       )}

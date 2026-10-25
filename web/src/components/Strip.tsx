@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { deciderOf } from '../content/decider'
 import { STRIP, configWords, missWords, pickWords } from '../content/instances'
 import type { EpisodeBundle } from '../data/loader'
 import {
@@ -26,7 +27,7 @@ export function Strip({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
     <section className="strip" data-testid="strip" aria-labelledby="strip-title">
       <header className="strip-head">
         <h3 id="strip-title">{STRIP.title}</h3>
-        <p>{STRIP.note}</p>
+        <p>{STRIP.note(deciderOf(bundle.meta))}</p>
       </header>
       <ul className="strip-rows">
         {senses.map((row) => {

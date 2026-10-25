@@ -287,6 +287,10 @@ export interface BundleIndexEntry {
    * The configuration version it ended at
    */
   configuration_end?: number
+  /**
+   * The decision model every decision was made by: d1-ultra, or jev
+   */
+  decider?: 'd1-ultra' | 'jev'
 }
 /**
  * The central instance: its scope and the concern its instructions name.

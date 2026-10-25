@@ -1,6 +1,7 @@
 // The words of The slow system screen.
 import type { VersionStatus } from '../data/readings'
 import type { System2EpisodeSummary } from '../schema/bundle'
+import { type Decider, deciderName } from './decider'
 
 export const SLOW = {
   title: 'The slow system: what System 2 changed, and why',
@@ -107,13 +108,13 @@ export const STATUS_WORDS: Record<VersionStatus, string> = {
 }
 
 /** The episode's System 2 counts in one line. */
-export function summaryWords(s: System2EpisodeSummary | null | undefined): string[] {
+export function summaryWords(s: System2EpisodeSummary | null | undefined, decider: Decider): string[] {
   if (!s) return []
   const n = (k: number | undefined, one: string, many = `${one}s`) => `${k ?? 0} ${(k ?? 0) === 1 ? one : many}`
   return [
     n(s.cycles, 'cycle'),
     `${n(s.tests, 'history test')}, ${s.tests_passed ?? 0} passed`,
     `${n(s.trials_started, 'trial')} started, ${s.kept ?? 0} kept, ${s.reverted ?? 0} reverted`,
-    `${n(s.calls, 'd1-ultra call')}, $${(s.usd ?? 0).toFixed(4)}`,
+    `${n(s.calls, `${deciderName(decider)} call`)}, $${(s.usd ?? 0).toFixed(4)}`,
   ]
 }
