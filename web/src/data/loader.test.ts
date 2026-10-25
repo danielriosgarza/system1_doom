@@ -1,7 +1,17 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { BundleError, type Fetcher, frameUrl, loadEpisode, loadIndex, parseJsonl } from './loader'
+import type { BundleIndexEntry } from '../schema/bundle'
+import {
+  BundleError,
+  type Fetcher,
+  defaultEpisode,
+  endFrameUrl,
+  frameUrl,
+  loadEpisode,
+  loadIndex,
+  parseJsonl,
+} from './loader'
 
 const FIXTURES = fileURLToPath(new URL('./__fixtures__/', import.meta.url))
 
@@ -68,9 +78,13 @@ describe('loadEpisode', () => {
     expect([bare.metrics, bare.evaluation, bare.trust, bare.macros]).toEqual([null, null, null, null])
   })
 
-  it('names the frame of a tick by its number', async () => {
+  it('names the frame of a tick by its number, and the screen after the last action', async () => {
     const bundle = await loadEpisode('mini', 'episodes', diskFetcher())
     expect(frameUrl(bundle, 17)).toBe('episodes/mini/frames/00017.jpg')
+    expect(endFrameUrl(bundle)).toBe('episodes/mini/frames/end.jpg')
+    expect(
+      endFrameUrl({ ...bundle, meta: { ...bundle.meta, frames: { ...bundle.meta.frames, end_frame: null } } }),
+    ).toBe(null)
   })
 
   it('treats a missing proposals file as no proposals', async () => {
@@ -94,6 +108,37 @@ describe('loadEpisode', () => {
     await expect(loadEpisode('nope', 'episodes', diskFetcher())).rejects.toThrow(
       /episodes\/nope\/episode.json: HTTP 404/,
     )
+  })
+})
+
+describe('defaultEpisode', () => {
+  const entry = (name: string, cleared: boolean): BundleIndexEntry => ({
+    name,
+    title: name,
+    scenario: 'deadly_corridor.cfg',
+    model: 'heuristics',
+    seed: 9,
+    cleared,
+    died: !cleared,
+    reward: 0,
+    ticks: 10,
+  })
+
+  it('opens the first recording that cleared its level, wherever it is listed', () => {
+    const index = { episodes: [entry('a', false), entry('b', false), entry('c', true), entry('d', true)] }
+    expect(defaultEpisode(index)).toBe('c')
+  })
+
+  it('opens the first recording when none cleared, and nothing when there is none', () => {
+    expect(defaultEpisode({ episodes: [entry('a', false), entry('b', false)] })).toBe('a')
+    expect(defaultEpisode({ episodes: [] })).toBeNull()
+    expect(defaultEpisode(null)).toBeNull()
+  })
+
+  it('picks the cleared corridor among the shipped recordings', async () => {
+    const shipped = JSON.parse(await readFile(new URL('../../public/episodes/index.json', import.meta.url), 'utf8'))
+    expect(shipped.episodes[0].name).toBe('deadly_corridor-heuristics-9')
+    expect(defaultEpisode(shipped)).toBe('deadly_corridor-learned-9')
   })
 })
 
