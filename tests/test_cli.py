@@ -4,7 +4,7 @@ import json
 
 from system1_doom import cli
 from system1_doom.logger import TickTrace
-from tests.fake_d1 import FakeD1, shoot_when_aimed
+from tests.fake_d1 import FakeD1, explore_level_system2, shoot_when_aimed
 
 
 def test_play_fails_fast_without_the_key(tmp_path, monkeypatch, capsys):
@@ -48,19 +48,6 @@ def test_play_starts_from_a_configuration_file(tmp_path, capsys):
     assert trace.active_strategy == "strat_corridor_advance" and trace.configuration_version == 2
 
 
-def _level_policy(name, payload):
-    """System 2 for the carry-over story: the exploration reflector proposes `level:explore`, the central takes it."""
-    from tests.fake_d1 import SYSTEM2_CENTRAL, TRIAL_JUDGE, first_proposal, judge, reflector_answer
-
-    if name == SYSTEM2_CENTRAL:
-        return first_proposal(payload)
-    if name == TRIAL_JUDGE:
-        return judge(payload, "keep")
-    if name == "exploration_reflector":
-        return reflector_answer(payload, 0.9, "level:explore", "stuck_or_repeating")
-    return reflector_answer(payload, 0.1, "keep", "too_little_data")
-
-
 def _notes(path, kind):
     from system1_doom.reflection import System2Note, load_reflections
 
@@ -82,7 +69,7 @@ def test_the_configuration_and_system2_carry_across_runs_unless_started_fresh(tm
         enable_slow_llm=False, log_dir=str(tmp_path / "logs1"), relevance_path=str(store.relevance), enable_system2=True,
         configuration_out=str(store.configuration), system2_state_path=str(store.system2),
     )
-    ctrl = DoomDecisionController(env=env, config=cfg, transport=FakeD1(shoot_when_aimed, system2_policy=_level_policy), api_key="liquid_test_key")
+    ctrl = DoomDecisionController(env=env, config=cfg, transport=FakeD1(shoot_when_aimed, system2_policy=explore_level_system2), api_key="liquid_test_key")
     try:
         ctrl.run_episode(max_ticks=3)
         assert ctrl.wait_system2(30)
@@ -98,7 +85,7 @@ def test_the_configuration_and_system2_carry_across_runs_unless_started_fresh(tm
 
     # Run 2, a new process with no flag: it starts from the saved version 2, and System 2's state restores.
     argv = ["--scenario", "basic.cfg", "--ticks", "3", "--run-dir", str(store.root), "--disable-slow-llm"]
-    assert cli.main(argv + ["--log-dir", str(tmp_path / "logs2")], transport=FakeD1(shoot_when_aimed, system2_policy=_level_policy)) == 0
+    assert cli.main(argv + ["--log-dir", str(tmp_path / "logs2")], transport=FakeD1(shoot_when_aimed, system2_policy=explore_level_system2)) == 0
     captured = capsys.readouterr()
     assert f"configuration: {store.configuration} (version 2)" in captured.err
     (result,) = json.loads(captured.out)["results"]
@@ -111,7 +98,7 @@ def test_the_configuration_and_system2_carry_across_runs_unless_started_fresh(tm
     assert state.decisions == decisions + result["ticks"] and state.trial is not None and state.trial.change == "level:explore"
 
     # Run 3 with --fresh-configuration: the design's version 1, and System 2 starts over.
-    assert cli.main(argv + ["--fresh-configuration", "--log-dir", str(tmp_path / "logs3")], transport=FakeD1(shoot_when_aimed, system2_policy=_level_policy)) == 0
+    assert cli.main(argv + ["--fresh-configuration", "--log-dir", str(tmp_path / "logs3")], transport=FakeD1(shoot_when_aimed, system2_policy=explore_level_system2)) == 0
     captured = capsys.readouterr()
     assert "configuration: the design's version 1" in captured.err
     (result,) = json.loads(captured.out)["results"]
@@ -122,6 +109,52 @@ def test_the_configuration_and_system2_carry_across_runs_unless_started_fresh(tm
     state = System2State.model_validate_json(store.system2.read_text())
     assert state.decisions == result["ticks"] and state.cycles == 1 and state.trial is None and state.configuration_version == 1
     assert Configuration.load(store.configuration).version == 1
+
+
+def test_a_change_queued_when_a_run_ends_takes_effect_at_the_next_runs_first_tick_boundary(tmp_path, capsys):
+    from system1_doom.configuration import Configuration
+    from system1_doom.controller import ControllerConfig, DoomDecisionController
+    from system1_doom.system2 import System2State
+    from system1_doom.train import RunStore
+    from system1_doom.vizdoom_env import ViZDoomBridge
+
+    store = RunStore(tmp_path / "run")
+    # Run 1: the episode's end cycle queues `level:explore`, and the run ends before any tick boundary.
+    env = ViZDoomBridge(scenario="basic.cfg", window_visible=False, seed=4)
+    cfg = ControllerConfig(
+        enable_slow_llm=False, log_dir=str(tmp_path / "logs1"), relevance_path=str(store.relevance), enable_system2=True,
+        configuration_out=str(store.configuration), system2_state_path=str(store.system2),
+    )
+    ctrl = DoomDecisionController(env=env, config=cfg, transport=FakeD1(shoot_when_aimed, system2_policy=explore_level_system2), api_key="liquid_test_key")
+    try:
+        first = ctrl.run_episode(max_ticks=3)
+        assert ctrl.wait_system2(30)
+    finally:
+        ctrl.close()
+    assert Configuration.load(store.configuration).version == 1
+    state = System2State.model_validate_json(store.system2.read_text())
+    assert state.pending is not None and state.pending.stage == "queued" and state.pending.change == "level:explore"
+    assert state.pending.version == 2 and len(state.pending.before) == first["ticks"] and state.trial is None
+    decisions = state.decisions
+
+    # Run 2 restores the queued change; it takes effect at the first tick boundary as version 2, and its
+    # trial starts there, against the decisions before it saved with the change.
+    argv = ["--scenario", "basic.cfg", "--ticks", "3", "--run-dir", str(store.root), "--disable-slow-llm", "--log-dir", str(tmp_path / "logs2")]
+    assert cli.main(argv, transport=FakeD1(shoot_when_aimed, system2_policy=explore_level_system2)) == 0
+    captured = capsys.readouterr()
+    assert f"configuration: {store.configuration} (version 1)" in captured.err
+    traces = [TickTrace.model_validate_json(line) for line in (tmp_path / "logs2" / "ticks.jsonl").read_text().splitlines()]
+    assert traces[0].configuration_version == 2 and traces[0].configuration_changed and traces[0].exploration_level == "explore"
+    log = tmp_path / "logs2" / "reflections.jsonl"
+    (restored,) = _notes(log, "restored")
+    assert "level:explore had not taken effect and is queued again as version 2" in restored.detail
+    (started,) = _notes(log, "trial_started")
+    assert started.version == 2 and f"against the {first['ticks']} before it" in started.detail
+    state = System2State.model_validate_json(store.system2.read_text())
+    assert state.pending is None and state.trial is not None and state.trial.change == "level:explore" and state.trial.version == 2
+    assert state.trial.started_decision == decisions and state.trial.cooling_key == "system2"
+    assert [t.period for t in state.trial.ticks].count("before") == first["ticks"]
+    assert Configuration.load(store.configuration).version == 2
 
 
 def test_a_configuration_that_does_not_load_stops_play_with_its_remedy(tmp_path, capsys):

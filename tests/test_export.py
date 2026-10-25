@@ -195,6 +195,28 @@ def test_exported_episodes_start_from_the_saved_configuration_and_carry_it_on(tm
     assert [(m.configuration_start.version, m.configuration_start.exploration_level) for m in metas] == [(1, "exploit"), (1, "exploit")]
 
 
+def test_a_change_queued_at_an_exported_episodes_end_takes_effect_in_the_next_episode(tmp_path, capsys):
+    from tests.fake_d1 import explore_level_system2
+
+    out = tmp_path / "two"
+    argv = ["--scenario", "basic.cfg", "--seed", "3", "--max-ticks", "3", "--episodes", "2", "--run-dir", str(tmp_path / "run"),
+            "--out", str(out), "--no-slow-path"]
+    assert export.main(argv, transport=FakeD1(shoot_when_aimed, system2_policy=explore_level_system2)) == 0
+    first, second = sorted(out.iterdir())
+    metas = [export.EpisodeMeta.model_validate_json((b / "episode.json").read_text()) for b in (first, second)]
+    # Episode 1's end cycle queued the level change; its controller closed before any tick boundary.
+    (cycle,) = [r for r in load_reflections((first / "reflections.jsonl").read_text()) if r.record == "cycle"]
+    assert cycle.trigger == "episode_end" and cycle.outcome == "queued" and cycle.choice == "level:explore"
+    assert metas[0].configuration_end.version == 1
+    # Episode 2 restores it: from its first tick it plays at the bumped version, and the trial starts there.
+    ticks = [TickTrace.model_validate_json(line) for line in (second / "ticks.jsonl").read_text().splitlines()]
+    assert ticks[0].configuration_version == 2 and ticks[0].configuration_changed and all(t.exploration_level == "explore" for t in ticks)
+    assert metas[1].configuration_end.version == 2 and metas[1].configuration_end.exploration_level == "explore"
+    kinds = [r.kind for r in load_reflections((second / "reflections.jsonl").read_text()) if r.record == "note"]
+    assert kinds[:2] == ["restored", "trial_started"] and metas[1].system2.trials_started == 1
+    assert export.check_bundle(first) == [] and export.check_bundle(second) == []
+
+
 def test_index_lists_shippable_schema_2_bundles(bundle):
     entries = export.write_index(bundle.parent)
     assert [e.name for e in entries] == [bundle.name]

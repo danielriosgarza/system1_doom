@@ -41,7 +41,9 @@ and reverts; nothing here ranks or chooses a change, and nothing stands in for a
 number is a `Bounds` field. Each cycle is a `ReflectionTrace`, each verdict a `TrialVerdictTrace`, and the
 moments between are `System2Note`s, all in `reflections.jsonl`. System 2's own state (its decision count,
 cooling, change log, recent tests and verdicts, the trial in flight) is saved to `system2.json` and
-restored when the run starts from the configuration it was saved with.
+restored when the run starts from the configuration it was saved with; a revert or a change queued but
+not yet in play is queued again then, and a macro request (whose slow worker died with the process) is
+dropped.
 """
 
 from __future__ import annotations
@@ -234,6 +236,10 @@ class PendingChange(BaseModel):
     safety: bool = False
     no_verdict: bool = Field(default=False, description="A revert because the trial judge never answered")
     restore: Optional[Configuration] = Field(default=None, description="A revert: the configuration it restores (before the version bump)")
+    before: List[TrialTick] = Field(
+        default_factory=list,
+        description="A queued change: the decisions before it when it was queued, for a trial that starts after a restore",
+    )
 
 
 class TrialState(BaseModel):
@@ -450,13 +456,22 @@ class System2:
             self.state = saved
             trial = f"; trial of {saved.trial.change} continues" if saved.trial else ""
             lost = ""
+            again: Optional[Configuration] = None
             if dropped is not None and dropped.stage == "revert" and dropped.restore is not None:
                 # A verdict to revert is kept across runs: the revert is queued again for the first tick boundary.
-                restored = Configuration.model_validate({**dropped.restore.model_dump(), "version": configuration.version + 1})
-                self.host.request_configuration(restored)
-                self.state.pending = dropped.model_copy(update={"version": restored.version})
-                lost = f"; {dropped.change} had not taken effect and is queued again"
-            elif dropped is not None:
+                again = Configuration.model_validate({**dropped.restore.model_dump(), "version": configuration.version + 1})
+            elif dropped is not None and dropped.stage == "queued":
+                # A change queued (an end-of-episode cycle's, say) is kept too: rebuilt from the configuration it
+                # was queued against, which the fingerprint says this run starts from, as that version + 1.
+                try:
+                    again = apply_change(configuration, change_option(dropped.change, configuration))
+                except (ValidationError, ValueError) as exc:
+                    lost = f"; the queued {dropped.change} no longer applies ({str(exc).splitlines()[0][:120]}) and is dropped"
+            if again is not None and dropped is not None:
+                self.host.request_configuration(again)
+                self.state.pending = dropped.model_copy(update={"version": again.version})
+                lost = f"; {dropped.change} had not taken effect and is queued again as version {again.version}"
+            elif dropped is not None and not lost:
                 lost = f"; the pending {dropped.change} ({dropped.stage.replace('_', ' ')}) was not in play and is dropped"
             self._note("restored", f"System 2 restored at {saved.decisions} decisions, {saved.cycles} cycles{trial}{lost}", version=configuration.version)
 
@@ -806,6 +821,7 @@ class System2:
                     cycle_id=cycle_id, change=option.id, kind=kind, stage="queued", instance=option.instance,
                     description=option.description, decision=decision, version=new_configuration.version,
                     cooling_key=option.cooling_key, prediction=prediction,
+                    before=[trial_tick(r, option.instance, "before") for r in records[-bounds.trial_decisions :]],
                 )
             else:
                 notes.append(f"the configuration moved to version {now.version} during the cycle; {option.id} was not queued")
@@ -817,14 +833,19 @@ class System2:
 
     def _start_trial(self, pending: PendingChange, old: Configuration, new: Configuration) -> None:
         bounds = new.bounds
-        before = self.host.history.records()[-bounds.trial_decisions :]
+        before = [trial_tick(r, pending.instance, "before") for r in self.host.history.records()[-bounds.trial_decisions :]]
+        if len(before) < bounds.trial_decisions and pending.before:
+            # A change queued before a restore: this process's history does not hold the decisions before it,
+            # and the ticks saved with the change do.
+            held = {(t.episode_id, t.tick) for t in before}
+            before = ([t for t in pending.before if (t.episode_id, t.tick) not in held] + before)[-bounds.trial_decisions :]
         detail = f"admitted as {pending.macro_id}" if pending.macro_id else ""
         trial = TrialState(
             cycle_id=pending.cycle_id, change=pending.change, kind=pending.kind, instance=pending.instance,
             description=pending.description, detail=detail, cooling_key=pending.cooling_key, previous=old,
             version=new.version, diff=config_diff(old, new), started_at=DecisionLogger.now_iso(),
             started_decision=self.state.decisions, started_episode=self.host.episode_id, of=bounds.trial_decisions,
-            before_wanted=bounds.trial_decisions, prediction=pending.prediction, ticks=[trial_tick(r, pending.instance, "before") for r in before],
+            before_wanted=bounds.trial_decisions, prediction=pending.prediction, ticks=before,
         )
         self.state.trial = trial
         self.state.pending = None

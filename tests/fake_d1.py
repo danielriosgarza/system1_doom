@@ -231,6 +231,18 @@ def default_system2_policy(name: str, payload: Dict[str, Any]) -> Answers:
     return reflector_answer(payload, 0.1, "keep", "too_little_data")
 
 
+def explore_level_system2(name: str, payload: Dict[str, Any]) -> Answers:
+    """System 2 that makes one change: the exploration reflector proposes `level:explore` at 0.9, every other
+    reflector keeps at 0.1, System 2's central takes the first proposal, and the trial judge keeps."""
+    if name == SYSTEM2_CENTRAL:
+        return first_proposal(payload)
+    if name == TRIAL_JUDGE:
+        return judge(payload, "keep")
+    if name == "exploration_reflector":
+        return reflector_answer(payload, 0.9, "level:explore", "stuck_or_repeating")
+    return reflector_answer(payload, 0.1, "keep", "too_little_data")
+
+
 def survival_until_pickups(name: str, payload: Dict[str, Any]) -> Answers:
     """System 1 for the System 2 story: until its scope shows `pickups`, the survival sense speaks at 0.9 for
     the first menu action every tick (and the central follows it, the first message); once it sees pickups

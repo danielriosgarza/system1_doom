@@ -27,7 +27,7 @@
 
 **Package:** `system1-doom` 0.3.0 · **Python:** ≥ 3.11 · **Source layout:**
 `src/system1_doom/` (32 modules, ≈ 11,500 LOC) · **Tests:** `tests/`
-(25 files, 232 tests, 4 of them live) · **Web explainer:** `web/` (Vite +
+(25 files, 234 tests, 4 of them live) · **Web explainer:** `web/` (Vite +
 React + TypeScript; still on trace schema 1 until the third pull request
 of the design), online at <https://danielriosgarza.github.io/system1_doom/>
 
@@ -244,7 +244,7 @@ system1_doom/
 │       ├── specs/2026-10-23-learning-controller-design.md
 │       └── plans/2026-10-23-d1-ultra-doom-controller.md
 ├── src/system1_doom/               # the package (see table below)
-├── tests/                          # 25 files, 232 tests, fake_d1.py and system2_fixtures.py (§16)
+├── tests/                          # 25 files, 234 tests, fake_d1.py and system2_fixtures.py (§16)
 ├── web/                            # the web explainer: Vite + React app and demo bundles (§8.15)
 ├── runs/<scenario>/                # training output, the relevance ledger, the configuration and System 2's state (§13)
 ├── bundles/                        # episode bundles from `system1_doom.export` (§13)
@@ -275,7 +275,7 @@ system1_doom/
 | `history_channels.py` | 605 | System 2's evidence: the history channels over three windows (`h_outcomes`, `h_sense:<name>`, `h_central`, `h_actions`, `h_strategy`, `h_exploration`, `h_config`, `h_tests`, `messages`) |
 | `reflectors.py` | 430 | The nine reflectors: specs, finite change menus, the bounds that filter them, `apply_change`, configuration diffs |
 | `history_test.py` | 482 | The history test: a scope change's instance re-run on 24 stratified stored ticks; metrics, margin rule, noise estimate |
-| `system2.py` | 996 | `System2`: its thread, the cycle, System 2's central, trials and the judge, safety reverts, cooling, `system2.json` |
+| `system2.py` | 1017 | `System2`: its thread, the cycle, System 2's central, trials and the judge, safety reverts, cooling, `system2.json` |
 | `reflection.py` | 235 | `ReflectionTrace`, `TrialVerdictTrace`, `System2Note` (`reflections.jsonl`) and an episode's System 2 counts |
 | `controller.py` | 750 | `DoomDecisionController`: one tick and one episode; configuration hook; System 2's host; misses; cost |
 | `logger.py` | 145 | Schema-2 `TickTrace`/`ProposalTrace` JSONL logging, and System 2's `reflections.jsonl` |
@@ -1519,18 +1519,27 @@ configuration already holds every macro admitted and retired, so the run
 folder's `macros.json` is merged only into a configuration that is not
 the run folder's own. A multi-episode `export` plays each episode with
 its own controller: the first starts as asked, each next one from the
-configuration the one before saved. System 2's own state (its decision count, the last cycle, cooling, the
-change log, recent tests and verdicts, the trial in flight, a pending
-change) is saved atomically to `runs/<scenario>/system2.json` at every
+configuration the one before saved, and a change the episode's end cycle
+queued takes effect at the next episode's first tick boundary (that
+episode's `configuration_start` is the version before it, its first tick
+the version after). System 2's own state (its decision count, the last
+cycle, cooling, the change log, recent tests and verdicts, the trial in
+flight, a pending change) is saved atomically to `runs/<scenario>/system2.json` at every
 cycle, verdict, note, configuration change and episode end, and when
 play stops. It is restored at the first tick only when the session
 starts from the configuration it was saved with (a fingerprint of that
 configuration), which the default start ensures; a flag that changes the
 configuration before play (a different `--call-budget`, `--explore` or
 `--exploit`) changes the fingerprint, and System 2 starts fresh, with a
-note, as it does from any other configuration. A revert
-saved before it took effect is queued again on restore; any other
-pending change is dropped, with a note.
+note, as it does from any other configuration. A revert or a queued
+change saved before it took effect is queued again on restore: a revert
+as the configuration it restores, a queued change rebuilt from the saved
+configuration (`apply_change`), each as the saved version + 1, keeping
+its prediction and cooling key, and the `restored` note says so. It takes
+effect at the first tick boundary, where a queued change's trial starts
+against the decisions before it, saved with the change (this process's
+history does not hold them). A macro asked for or admitted is dropped,
+with a note, since the slow worker does not outlive the process.
 
 **The controller's side** is the `System2Host` protocol (§8.13). An
 episode's counts land in the `run_episode` result and in `episode.json`
@@ -1695,7 +1704,7 @@ hint), or on a checkpoint mismatch (with a `--fresh` remedy).
 | `--codex` | off | Let the slow path call the Codex CLI; otherwise it runs on templates |
 | `--no-slow-path` | — | Switch the slow path off |
 | `--no-system2` | — | Switch System 2 off; `reflections.jsonl` is then empty |
-| `--configuration PATH`, `--fresh-configuration` | the run folder's, else the design's | As `cli`, for the first episode; each next one starts from the configuration the one before saved |
+| `--configuration PATH`, `--fresh-configuration` | the run folder's, else the design's | As `cli`, for the first episode; each next one starts from the configuration the one before saved, and a change its end cycle queued takes effect at the next one's first tick |
 | `--check BUNDLE` | — | Validate a bundle and exit (exit code 1 on problems); no key needed |
 | `--index DIR` | — | Write `DIR/index.json` listing its shippable bundles and exit; no key needed |
 | `--schema OUT.json` | — | Write the bundle JSON Schema and exit; no key needed |
@@ -1845,7 +1854,8 @@ their checkpoints load (the gate keys are ignored) and serve the
 | The run folder's `configuration.json`, or `--configuration PATH`, does not load | The entry point exits 2 before the game starts, naming `--fresh-configuration` | — |
 | The slow path cannot take System 2's macro request (off or busy) | No change this cycle | outcome `macro_not_enqueued` |
 | System 2's macro request unanswered for 60 decisions | Abandoned; cycles resume | note `macro_abandoned` |
-| The session ends with a revert queued but not yet in play | Saved in `system2.json` and queued again when the next session starts from the same configuration | note `restored` |
+| The session ends with a revert or a change queued but not yet in play (an end-of-episode cycle's, in a multi-episode `export`) | Saved in `system2.json` and queued again when the next session starts from the same configuration, taking effect at its first tick boundary as the saved version + 1 | note `restored`, then `trial_started` or `revert_applied` |
+| The session ends with a macro asked for or admitted but not in play | Dropped: the slow worker does not outlive the process | note `restored` |
 | An exception in a System 2 job | Recorded; play goes on, and System 2 tries again at the next tick | note `error` |
 | No PyTorch | Play goes on; the `values` channel says no networks are loaded; `train` and `cli --learn` exit 2 | — |
 | Checkpoint mismatch (format/feature sizes/networks) | `train` and `cli --learn` exit 2 advising `--fresh`; plain `cli` plays without networks | — |
@@ -1946,8 +1956,8 @@ with `train --evaluate` (no, latest and best networks on the same seeds).
 ## 16. Testing
 
 ```bash
-python -m pytest                 # 232 tests, 25 files, from the repo root
-python -m pytest -k "not live"   # the 228 that need no key, as CI runs them
+python -m pytest                 # 234 tests, 25 files, from the repo root
+python -m pytest -k "not live"   # the 230 that need no key, as CI runs them
 ```
 
 Every behaviour is exercised without a key through `tests/fake_d1.py`:
@@ -1993,8 +2003,8 @@ and about 45 seconds with them.
 | `test_archive.py` | The archive holds no decision; the active strategy follows the configuration; a full archive makes room by age, never by score; outcomes update the record shown as evidence |
 | `test_learning.py` | n-step returns; per-network rewards; running stats; replay round-trip; each value net learns its own signal; episode credit assignment; checkpoint round-trip, overrides and mismatch; a checkpoint with gate weights loads (synthetic, and the shipped one when present) |
 | `test_training.py` | The motor executes an action's own plan; `train` writes the full run folder (with the ledger and history) and resumes; training and evaluation start from the saved configuration (evaluation with System 2 off, saving nothing) and `--fresh` forgets it; admitted macros persist and are re-validated; no exploration schedule; fail fast without the key; the idle burst |
-| `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a configuration that does not load stops play with its remedy |
-| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration` |
+| `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy |
+| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick |
 | `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration` |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
