@@ -12,7 +12,8 @@ sample, with every number logged.
   is relaxed only for a stratum it would leave short. Both are logged.
 - **Re-run.** Each sampled tick is re-rendered under the new scope from its stored `EvidenceInputs`
   (`run_instance` renders exactly what `history.rerender` would), with the screen the instance saw
-  attached when `frame` is in the new scope, and asked its questions again: 24 calls on System 2's pool.
+  attached when `frame` is in the new scope, and asked its questions again: 24 calls on System 2's pool,
+  counted by the client as `history_test:<instance>`.
   The old scope's answers are the ones stored in the tick (`TickRecord.instances[name]`): no calls.
 - **Metrics**, for both scopes on the same ticks. A sense: alarm recall on bad ticks (spoke and
   recommended an action other than the executed one), good agreement on good ticks (silent, or
@@ -57,6 +58,8 @@ LIMITS = (
     "reported as a noise estimate."
 )
 FrameSource = Callable[[TickRecord], Optional[str]]
+# The client counts the test's re-runs as `history_test:<instance>`, apart from System 1's calls of that instance.
+COUNTER_PREFIX = "history_test:"
 
 
 class Answer(BaseModel):
@@ -466,7 +469,7 @@ def _job(client: D1UltraClient, spec: InstanceSpec, record: TickRecord, frame: O
     def job() -> InstanceResult:
         return run_instance(
             client, spec, record.inputs, frame_b64=frame, budget=bounds.call_budget_sec,
-            yes_at=bounds.yes_at, tolerance=bounds.probability_tolerance,
+            yes_at=bounds.yes_at, tolerance=bounds.probability_tolerance, counter_name=f"{COUNTER_PREFIX}{spec.name}",
         )
 
     return job

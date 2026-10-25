@@ -201,12 +201,18 @@ def run_instance(
     budget: float = 5.0,
     yes_at: float = 0.5,
     tolerance: float = 0.02,
+    counter_name: Optional[str] = None,
 ) -> InstanceResult:
-    """Run a sense or the central: render its scope, ask its questions in one call, read the answers."""
+    """Run a sense or the central: render its scope, ask its questions in one call, read the answers.
+
+    `counter_name` is the name the client counts the call under (the instance's own name by default; the
+    history test's re-runs are counted as `history_test:<instance>`). It changes nothing in the payload.
+    """
     rendered = render_scope(inputs, spec.scope)
     questions = build_questions(spec, inputs.menu)
     images = _image(frame_b64) if rendered.image_ref is not None else None
-    call = client.call(spec.name, rendered.text, questions, images=images, budget=budget)
+    counted = counter_name or spec.name
+    call = client.call(counted, rendered.text, questions, images=images, budget=budget)
     base = dict(
         name=spec.name,
         kind=spec.kind,
@@ -240,7 +246,7 @@ def run_instance(
         action, action_probs = read_choice(answers, "choose", menu_ids, tolerance, "off_menu")
         return InstanceResult(**base, answers=answers, action=action, action_probabilities=action_probs)
     except _Miss as miss:
-        client.note_miss(spec.name, miss.reason)
+        client.note_miss(counted, miss.reason)
         return InstanceResult(**base, answers=answers, missed=True, miss_reason=miss.reason, error=str(miss), raw_answer=miss.raw)
 
 

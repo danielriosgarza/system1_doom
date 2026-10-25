@@ -2,20 +2,25 @@
 
 Every tick (design spec, sections 1, 5 and 7):
 
-1. a pending configuration is applied at the tick boundary (the hook System 2 will use; in this version
-   only `request_configuration` and an admitted macro queue one);
+1. a pending configuration is applied at the tick boundary (System 2's changes and reverts, and an
+   admitted macro, are queued with `request_configuration`), and System 2 is told which one took effect;
 2. the frozen world state is acquired and the legal menu built from the preconditions;
 3. the evidence is computed: the simulator's projections, the value networks' predictions and tries,
    the novelty counts and the relevance records, into one `EvidenceInputs`;
 4. System 1 decides: five senses in parallel, then the central, then the pick;
 5. the pick's fixed primitives are executed, or, when the central missed, no key is held for the
    decision's frames;
-6. the executed decision is kept for the value networks, the tick is stored whole in the history,
-   the trace is logged, and the recorder and dashboard are fed.
+6. the executed decision is kept for the value networks, the tick is stored whole in the history (with
+   the screen d1 saw, kept in memory beside the ring record), System 2 is told, the trace is logged, and
+   the recorder and dashboard are fed.
 
 Three consecutive central misses end the episode as `connection_lost`. At the end of an episode the
-relevance ledger is updated from the episode's ticks and saved. Nothing here ranks, scores or picks
-an action, and nothing stands in for a missed answer.
+relevance ledger is updated from the episode's ticks and saved, the configuration is saved (as it is at
+every change that takes effect, when the run has a `configuration.json`), and System 2 is told.
+
+System 2 (`system2.py`, on when `ControllerConfig.enable_system2`) runs on its own thread with
+`slow_client`; it never blocks a tick. Nothing here ranks, scores or picks an action or a change, and
+nothing stands in for a missed answer.
 """
 
 from __future__ import annotations
@@ -34,15 +39,17 @@ from system1_doom.admission import AdmissionDecisionResult, ProposalAdmissionPip
 from system1_doom.archive import StrategyArchive, StrategyEntry
 from system1_doom.configuration import SENSE_NAMES, Configuration, ExplorationLevel, default_configuration
 from system1_doom.d1_client import D1UltraClient, InstanceCounters, TransportFn, load_api_key
-from system1_doom.evidence import ChannelCaps, EvidenceCounters, ValueLine, build_inputs
+from system1_doom.evidence import ChannelCaps, EvidenceCounters, StrategyLine, ValueLine, build_inputs
 from system1_doom.features import encode_action, encode_actions, encode_state
 from system1_doom.history import HISTORY_FILE, HistoryStore, make_record
 from system1_doom.llm_worker import ExpansionRequest, SlowLLMWorker
 from system1_doom.logger import DecisionLogger, ProposalTrace, TickTrace
 from system1_doom.relevance import RelevanceDecision, RelevanceLedger, load_ledger, save_ledger, update_ledger
 from system1_doom.simulator import BoundedSimulator, ProjectionLimits
+from system1_doom.reflection import System2EpisodeSummary
 from system1_doom.state import WorldState
 from system1_doom.system1 import System1
+from system1_doom.system2 import Record, System2
 from system1_doom.tracing import (
     SlowPathRequestTrace,
     outcome_trace,
@@ -84,6 +91,11 @@ class ControllerConfig(BaseModel):
     use_codex_cli: bool = True
     log_dir: str = "logs"
     relevance_path: Optional[str] = Field(default=None, description="runs/<scenario>/relevance.json, restored and saved")
+    enable_system2: bool = Field(default=False, description="Run System 2 (the entry points turn it on unless --no-system2)")
+    configuration_out: Optional[str] = Field(
+        default=None, description="runs/<scenario>/configuration.json, saved at every change that takes effect and at episode end"
+    )
+    system2_state_path: Optional[str] = Field(default=None, description="runs/<scenario>/system2.json, System 2's state, restored and saved")
     record_experience: bool = False
     record_frames: bool = False
     show_dashboard: bool = False
@@ -174,6 +186,7 @@ class DoomDecisionController:
         self.config = config
         self.learner = learner
         self.configuration = initial_configuration(config)
+        self.system2: Optional[System2] = None
         self._pending_configuration: Optional[Configuration] = None
         self._config_lock = threading.Lock()
         bounds = self.configuration.bounds
@@ -217,6 +230,8 @@ class DoomDecisionController:
         self._last_world_state: Optional[WorldState] = None
         self.ticks_played = 0
         self._begin_episode()
+        if config.enable_system2:
+            self.system2 = System2(self, seed=config.seed, state_path=config.system2_state_path)
 
     # ------------------------------------------------------------------------------------------------
     # The configuration: applied whole, only at a tick boundary.
@@ -231,16 +246,31 @@ class DoomDecisionController:
             base = self._pending_configuration or self.configuration
             self._pending_configuration = base.with_changes(**changes)
 
+    def next_configuration(self) -> Configuration:
+        """The configuration the next tick will play under: the one queued, else the one in play."""
+        with self._config_lock:
+            return self._pending_configuration or self.configuration
+
     def _apply_pending_configuration(self) -> bool:
         with self._config_lock:
             pending, self._pending_configuration = self._pending_configuration, None
         if pending is None:
             return False
+        old = self.configuration
         self._sync_menu_and_strategy(pending)
         self.configuration = pending
         self.d1_client.default_timeout = pending.bounds.call_budget_sec
         self.admission_pipeline.call_budget_sec = pending.bounds.call_budget_sec
+        self._save_configuration()
+        if self.system2 is not None:
+            self.system2.on_configuration_applied(old, pending)
         return True
+
+    def _save_configuration(self) -> None:
+        if self.config.configuration_out:
+            path = Path(self.config.configuration_out)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self.configuration.save(path)
 
     def _sync_menu_and_strategy(self, configuration: Configuration) -> None:
         wanted = {spec.id: spec for spec in configuration.admitted_macros}
@@ -254,6 +284,36 @@ class DoomDecisionController:
                 self.archive.admit_strategy(strategy)
         if self.archive.get(configuration.active_strategy) is not None:
             self.archive.set_active(configuration.active_strategy)
+
+    def archive_lines(self) -> List[StrategyLine]:
+        """The strategy archive as the evidence shows it (System 2's strategy reflector reads it)."""
+        return [
+            StrategyLine(
+                strategy_id=e.strategy_id, action_sequence=tuple(e.action_sequence), observed_reward=e.observed_reward,
+                success_rate=e.success_rate, usage_count=e.usage_count,
+            )
+            for e in self.archive.entries()
+        ]
+
+    def slow_path_available(self) -> bool:
+        """Whether the slow worker could take a macro request now (on, and not busy)."""
+        return self.llm_worker.enabled and not self.llm_worker.is_busy()
+
+    # ------------------------------------------------------------------------------------------------
+    # System 2's records, for the recorder and the live page.
+
+    def add_reflection_listener(self, listener: Callable[[Record], None]) -> None:
+        """Call `listener` with each of System 2's records (cycles, verdicts, notes) as it is logged."""
+        if self.system2 is not None:
+            self.system2.add_listener(listener)
+
+    def remove_reflection_listener(self, listener: Callable[[Record], None]) -> None:
+        if self.system2 is not None:
+            self.system2.remove_listener(listener)
+
+    def wait_system2(self, timeout: Optional[float] = None) -> bool:
+        """Wait until System 2 has done what it was told so far (a cycle or a verdict in flight). True when idle."""
+        return True if self.system2 is None else self.system2.wait_idle(timeout)
 
     def admitted_macros(self) -> List[ActionSpec]:
         """Macro-actions admitted into the menu (the configuration's admitted macros)."""
@@ -329,6 +389,8 @@ class DoomDecisionController:
                     admitted_strategy_id=res.admitted_strategy_id,
                 )
             )
+            if self.system2 is not None:
+                self.system2.on_proposal(res)
             if res.admitted and res.admitted_action is not None:
                 if res.admitted_strategy is not None:
                     self._pending_strategies[res.admitted_action.id] = res.admitted_strategy
@@ -369,7 +431,9 @@ class DoomDecisionController:
         """Keep the screen d1 saw as `frames/<tick>.jpg` in the log folder; its reference goes in the evidence.
 
         The file is always rewritten: tick numbers restart with each episode, and a log folder that holds
-        several episodes keeps the latest episode's screens rather than an earlier episode's.
+        several episodes keeps the latest episode's screens rather than an earlier episode's. The history
+        test needs an earlier episode's screen too, so the history keeps each ring record's frame in memory
+        (`HistoryStore.frame`); the files and the bundle layout are unchanged.
         """
         if not frame_b64:
             return None
@@ -384,6 +448,8 @@ class DoomDecisionController:
         timing_ms: Dict[str, float] = {}
 
         # 1. A pending configuration takes effect here, at the tick boundary, and nowhere else.
+        if self.system2 is not None:
+            self.system2.begin()
         changed = self._apply_pending_configuration()
         configuration = self.configuration
         bounds = configuration.bounds
@@ -467,16 +533,19 @@ class DoomDecisionController:
             )
             self.logger.record_macro_performance(executed.id, exec_res.reward)
             tried_to_move = any(p.startswith(MOVEMENT_PRIMITIVES) for p in executed.primitive_expansion)
-            self._stall_streak = self._stall_streak + 1 if tried_to_move and exec_res.displacement < bounds.stall_units else 0
+            stalled = tried_to_move and exec_res.displacement < bounds.stall_units
+            self._stall_streak = self._stall_streak + 1 if stalled else 0
             self._central_misses_in_a_row = 0
         else:
+            stalled = False
             self._stall_streak = 0
             self._missed_ticks += 1
             self._central_misses_in_a_row += 1
             if self._central_misses_in_a_row >= bounds.central_miss_limit:
                 self.connection_lost = True
 
-        # 7. The history keeps the tick whole.
+        # 7. The history keeps the tick whole, with the screen d1 saw; then System 2 is told.
+        outcome = outcome_trace(exec_res)
         record = make_record(
             result,
             episode_id=self.episode_id,
@@ -486,9 +555,13 @@ class DoomDecisionController:
             primitives=exec_res.primitive_steps_executed,
             reward=exec_res.reward,
             done=exec_res.episode_finished,
+            outcome=outcome,
+            stalled=stalled,
         )
-        self.history.append(record)
+        self.history.append(record, frame_b64=obs.frame_jpeg_b64)
         self._episode_decisions.append(record.relevance_decision())
+        if self.system2 is not None:
+            self.system2.on_tick(record)
 
         # 8. The trace.
         timing_ms["total"] = (time.perf_counter() - tick_start) * 1000.0
@@ -508,7 +581,7 @@ class DoomDecisionController:
             pick=result.pick,
             executed_action=executed.id if executed is not None else None,
             primitive_steps_executed=list(exec_res.primitive_steps_executed),
-            outcome=outcome_trace(exec_res),
+            outcome=outcome,
             reward_outcome=round(exec_res.reward, 4),
             missed=executed is None,
             exploration_level=configuration.exploration_level,
@@ -564,6 +637,17 @@ class DoomDecisionController:
         """Every instance's call counters, System 1's and the slow path's."""
         merged = dict(self.d1_client.counters())
         for name, c in self.slow_client.counters().items():
+            if name in merged:
+                c = InstanceCounters(
+                    calls=merged[name].calls + c.calls,
+                    answered=merged[name].answered + c.answered,
+                    misses={r: merged[name].misses.get(r, 0) + c.misses.get(r, 0) for r in {*merged[name].misses, *c.misses}},
+                    retries=merged[name].retries + c.retries,
+                    latency_ms_total=merged[name].latency_ms_total + c.latency_ms_total,
+                    input_tokens=merged[name].input_tokens + c.input_tokens,
+                    output_tokens=merged[name].output_tokens + c.output_tokens,
+                    cost=merged[name].cost + c.cost,
+                )
             merged[name] = c
         return merged
 
@@ -576,12 +660,15 @@ class DoomDecisionController:
         """Play until the episode ends, `max_ticks` decisions are made, `on_tick` says stop, or the connection is lost.
 
         `on_tick(trace)` runs after each tick's trace is kept; returning True ends the episode there.
-        The relevance ledger is updated from the episode's ticks (and saved when it has a path).
+        The relevance ledger is updated from the episode's ticks (and saved when it has a path), the
+        configuration is saved, and System 2 is told the episode ended (its end-of-episode cycle runs on
+        its own thread, so its calls are not in this episode's cost; `wait_system2` waits for it).
         """
         previous_restart = self.env.auto_restart
         self.env.auto_restart = False
         traces: List[TickTrace] = []
         counters_before = self.counters()
+        system2_since = len(self.system2.records) if self.system2 is not None else 0
         configuration_start = self.configuration
         reason: FinishedReason = "max_ticks"
         try:
@@ -610,6 +697,10 @@ class DoomDecisionController:
             self._update_ledger()
             deltas = instance_deltas(self.counters(), counters_before)
             status = self.env.episode_status()
+            self._save_configuration()
+            system2 = self.system2.summary(system2_since) if self.system2 is not None else System2EpisodeSummary(enabled=False)
+            if self.system2 is not None and traces:
+                self.system2.on_episode_end(self.episode_id)
             return {
                 "health": max(0.0, status["health"]),
                 "armor": status["armor"],
@@ -631,6 +722,7 @@ class DoomDecisionController:
                 "actions": [t.executed_action or "missed" for t in traces],
                 "configuration_start": configuration_start,
                 "configuration_end": self.configuration,
+                "system2": system2.model_dump(),
                 "traces": traces,
             }
         finally:
@@ -648,6 +740,8 @@ class DoomDecisionController:
     def close(self) -> None:
         if self._dashboard is not None:
             self._dashboard.close()
+        if self.system2 is not None:
+            self.system2.shutdown()
         self.drain_slow_path()
         self.llm_worker.shutdown(wait=False)
         self.system1.shutdown()
