@@ -1105,8 +1105,8 @@ should ask for a new one, the arbiter's action, the exploration level,
 and at the gate the admission probability and tactical quality. On
 seed 11 d1 answered at all 44 ticks (134 calls, a median round trip of
 0.46 s, about a minute of wall time); the pick was d1's own first choice
-on 43 of the 44, d1's top action differed from the module's own on 43 of
-220 module answers, and the gate's d1 stage turned away both proposals
+on 43 of the 44, d1's top action differed from the module's first choice
+after the mix on 43 of 220 module answers, and the gate's d1 stage turned away both proposals
 (admission probability 0.38, under 0.40 with tactical quality under
 0.85, and 0.15, under the 0.20 floor). The episode died after 44
 decisions with 4 kills and reward 760, where the heuristics alone died
