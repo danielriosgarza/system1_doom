@@ -30,11 +30,19 @@ def sense_specs(config: Configuration) -> Tuple[InstanceSpec, ...]:
 
 
 def message_of(result: InstanceResult) -> Optional[Message]:
-    """The message a sense sends, or None when it was silent or missed."""
+    """The message a sense sends (with the target it chose, if any), or None when it was silent or missed."""
     if result.kind != "sense" or result.missed or not result.spoke:
         return None
     assert result.action is not None and result.reason is not None and result.strength is not None
-    return Message(sense=result.name, action=result.action, reason=result.reason, strength=result.strength)
+    return Message(
+        sense=result.name,
+        action=result.action,
+        reason=result.reason,
+        strength=result.strength,
+        target=result.target,
+        target_kind=result.target_kind,
+        target_line=result.target_line,
+    )
 
 
 def messages_of(results: Mapping[str, InstanceResult]) -> Tuple[Message, ...]:

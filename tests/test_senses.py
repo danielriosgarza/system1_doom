@@ -9,7 +9,7 @@ from system1_doom.configuration import SENSE_NAMES, default_configuration
 from system1_doom.d1_client import D1UltraClient
 from system1_doom.evidence import Message
 from system1_doom.senses import message_of, messages_of, run_senses, sense_specs
-from tests.fake_d1 import FakeD1, choice, default_policy, menu_of, noul, section
+from tests.fake_d1 import FakeD1, sense_answers, default_policy, menu_of, section
 from tests.test_evidence import golden_inputs
 
 CONFIG = default_configuration()
@@ -50,17 +50,18 @@ def test_spoken_senses_become_messages_in_sense_order_and_silent_ones_do_not():
     # The golden fixture has an enemy under the crosshair: combat speaks at 0.9; survival (health 64) at 0.2.
     results = _run(FakeD1(default_policy))
     assert results["combat"].spoke and not results["survival"].spoke
-    assert messages_of(results) == (Message(sense="combat", action="shoot", reason="target_aimed", strength=0.9),)
+    assert messages_of(results) == (
+        Message(
+            sense="combat", action="shoot", reason="target_aimed", strength=0.9, target="zombie_1", target_kind="enemy",
+            target_line="Zombieman at distance 180, 2 deg left, size 24x56 px, under the crosshair",
+        ),
+    )
     assert message_of(results["survival"]) is None
 
 
 def test_a_missed_sense_is_silence_and_the_others_still_speak():
     def everyone_speaks(name, payload):
-        return {
-            "speak": noul(0.8),
-            "action": choice(menu_of(payload), menu_of(payload)[-1]),
-            "reason": choice(list(payload["questions"]["reason"]["criteria"]), list(payload["questions"]["reason"]["criteria"])[0]),
-        }
+        return sense_answers(payload, 0.8, menu_of(payload)[-1])
 
     fake = FakeD1(everyone_speaks).fail("combat", [0], "raise").fail("goal", [0], "off_menu")
     results = _run(fake)
@@ -96,11 +97,7 @@ def test_a_sense_over_budget_is_a_timeout_miss():
 @pytest.mark.parametrize("p, spoke", [(0.5, True), (0.4999, False), (1.0, True), (0.0, False)])
 def test_the_speak_line_is_d1s_own_yes(p, spoke):
     def policy(name, payload):
-        return {
-            "speak": noul(p),
-            "action": choice(menu_of(payload), "shoot"),
-            "reason": choice(list(payload["questions"]["reason"]["criteria"]), list(payload["questions"]["reason"]["criteria"])[0]),
-        }
+        return sense_answers(payload, p, "shoot")
 
     results = _run(FakeD1(policy))
     assert all(r.spoke is spoke and r.strength == p for r in results.values())

@@ -11,7 +11,12 @@ the exploration level, its world channels, the legal menu). The central's answer
 
 Where the top probabilities tie, the first in menu order is taken and the tie is logged. There is no
 temperature, no bonus and no stand-in: nothing here ranks or scores an action, and a missed central is
-recorded as missed. While the level is `explore` the central is also shown `novelty`, when its scope has
+recorded as missed.
+
+The motor's targets are the senses' answers too: the enemy the aim locks onto is the combat sense's
+`target` answer and the pickup a pickup-seeking action walks to is the resource sense's (whichever sense
+the configuration gives each target). A sense that missed, or was not asked because its scope showed no
+candidate, leaves its target empty, and the motor then has nothing to aim at. While the level is `explore` the central is also shown `novelty`, when its scope has
 room within the bound.
 """
 
@@ -27,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from system1_doom.configuration import CENTRAL_NAME, Configuration, ExplorationLevel
 from system1_doom.d1_client import D1UltraClient, Usage
 from system1_doom.evidence import EvidenceInputs, Message
-from system1_doom.instance import InstanceResult, central_spec, run_instance
+from system1_doom.instance import InstanceResult, central_spec, run_instance, sense_spec, target_criteria
 from system1_doom.senses import messages_of, run_senses
 
 PickKind = Literal["top", "drawn", "missed"]
@@ -93,6 +98,39 @@ def total_usage(results: Sequence[InstanceResult]) -> Usage:
     )
 
 
+class Targets(BaseModel):
+    """What the senses chose for the motor's assistance this tick; None where no sense chose."""
+
+    model_config = ConfigDict(frozen=True)
+
+    enemy: Optional[str] = Field(default=None, description="The visible enemy the aim locks onto")
+    pickup: Optional[str] = Field(default=None, description="The remembered pickup a pickup-seeking action walks to")
+    chosen_by: Dict[str, str] = Field(default_factory=dict, description="Target kind -> the sense whose answer it is")
+
+
+ONLY_CANDIDATE = "only candidate"
+
+
+def targets_of(config: Configuration, senses: Dict[str, InstanceResult], inputs: EvidenceInputs) -> Targets:
+    """Each target kind's answer, from the sense the configuration gives it; empty when that sense missed.
+
+    A lone candidate (one enemy in view, one pickup remembered) is the target without a question, since a
+    choice needs two options; it is recorded as chosen by `only candidate`.
+    """
+    chosen: Dict[str, str] = {}
+    by: Dict[str, str] = {}
+    for name, sense in config.senses.items():
+        if sense.target is None:
+            continue
+        candidates = target_criteria(sense_spec(name, sense), inputs)
+        result = senses.get(name)
+        if len(candidates) == 1:
+            chosen[sense.target], by[sense.target] = next(iter(candidates)), ONLY_CANDIDATE
+        elif result is not None and not result.missed and result.target is not None:
+            chosen[sense.target], by[sense.target] = result.target, name
+    return Targets(enemy=chosen.get("enemy"), pickup=chosen.get("pickup"), chosen_by=by)
+
+
 class System1Result(BaseModel):
     """One tick of System 1: the evidence inputs, the six instance results, the messages and the pick."""
 
@@ -103,6 +141,7 @@ class System1Result(BaseModel):
     central: InstanceResult
     messages: Tuple[Message, ...]
     pick: Pick
+    targets: Targets = Field(default_factory=Targets, description="The senses' targets for the motor")
     exploration_level: ExplorationLevel
     senses_ms: float = 0.0
     central_ms: float = 0.0
@@ -158,6 +197,7 @@ class System1:
             central=central,
             messages=messages,
             pick=pick,
+            targets=targets_of(config, senses, inputs),
             exploration_level=config.exploration_level,
             senses_ms=round((senses_done - started) * 1000.0, 3),
             central_ms=round((finished - senses_done) * 1000.0, 3),

@@ -19,7 +19,15 @@ from system1_doom.evidence import (
 )
 from system1_doom.instance import build_questions, central_spec, sense_spec
 from system1_doom.relevance import RelevanceCounts
-from system1_doom.state import ControllerMemory, EnemyObservation, Observation, PickupObservation, Pose3D, WorldState
+from system1_doom.state import (
+    ControllerMemory,
+    EnemyObservation,
+    LandmarkObservation,
+    Observation,
+    PickupObservation,
+    Pose3D,
+    WorldState,
+)
 
 
 def golden_state() -> WorldState:
@@ -47,10 +55,24 @@ def golden_state() -> WorldState:
         movement_state="moving",
         recent_actions=("move_forward", "shoot", "strafe_left+turn_left", "shoot"),
         position=Pose3D(x=120.4, y=-64.6, angle=90.0),
-        episode_progress={"tick": 42.0, "episode_tick": 12.0, "reward_so_far": 35.5, "kills": 1.0, "last_displacement": 18.2},
+        episode_progress={"tick": 42.0, "episode_tick": 12.0, "reward_so_far": 35.5, "kills": 1.0, "last_displacement": 18.2, "last_reward": -2.46},
         wall_distance_front=300.0,
         wall_distance_left=96.5,
         wall_distance_right=140.0,
+        landmarks=(
+            LandmarkObservation(
+                landmark_id="armor_0", name="GreenArmor", category="armor", x=1312.0, y=0.0, distance=1192.4, bearing=-86.9,
+                in_view=False, last_seen_tick=30, reward_agreement=1.0, reward_moves=26,
+            ),
+            LandmarkObservation(
+                landmark_id="med_1", name="Medikit", category="health", x=120.0, y=85.0, distance=150.0, bearing=5.0,
+                in_view=True, last_seen_tick=42,
+            ),
+            LandmarkObservation(
+                landmark_id="clip_3", name="Clip", category="ammo", x=160.0, y=-110.0, distance=60.2, bearing=-131.3,
+                in_view=False, last_seen_tick=39, reward_agreement=-0.62, reward_moves=8, approaches_nowhere=3,
+            ),
+        ),
     )
     memory = ControllerMemory(
         recent_state_summaries=(
@@ -98,7 +120,10 @@ def golden_inputs() -> EvidenceInputs:
             },
             "messages": (
                 Message(sense="survival", action="strafe_left", reason="under_fire", strength=0.82),
-                Message(sense="combat", action="shoot", reason="target_aimed", strength=0.9),
+                Message(
+                    sense="combat", action="shoot", reason="target_aimed", strength=0.9, target="zombie_1", target_kind="enemy",
+                    target_line="Zombieman at distance 180, 2 deg left, size 24x56 px, under the crosshair",
+                ),
             ),
         }
     )
@@ -114,9 +139,21 @@ GOLDEN = {
     "incoming": "[incoming]\ndamage taken since the last decision 8; consecutive decisions under fire 2",
     "outgoing": "[outgoing]\ndamage dealt since the last decision 40, hits 2, kills 1",
     "pickups": "[pickups]\n1 pickup visible, nearest first:\n- Medikit (health) at distance 150, 5 deg left",
+    "landmarks": (
+        "[landmarks]\n3 pickups seen this episode and not picked up, where each lies now from your position and facing, "
+        "nearest first:\n"
+        "- Clip (ammo): cannot be walked to from here, 3 walks at it got no closer; 60 away, 131 deg right, behind you, "
+        "out of view, last seen 3 decisions ago\n"
+        "- Medikit (health): 150 away, 5 deg left, in view; no reward link yet\n"
+        "- GreenArmor (armor): 1192 away, 87 deg right, out of view, last seen 12 decisions ago; "
+        "reward rose as you got closer (agreement +1.00 over 26 moves)"
+    ),
     "geometry": "[geometry]\nwall distance ahead 300, left 96, right 140; moving",
     "position": "[position]\nx 120, y -65, facing 90 deg; 3 sectors discovered this episode",
-    "progress": "[progress]\ndecisions so far 12, reward so far 35.5, kills 1, last displacement 18 units, stall streak 0",
+    "progress": (
+        "[progress]\ndecisions so far 12, reward so far 35.5, reward from the last decision -2.5, kills 1, "
+        "last displacement 18 units, stall streak 0"
+    ),
     "history": (
         "[history]\nlast 4 primitives executed, oldest first: move_forward, shoot, strafe_left+turn_left, shoot\n"
         "last 3 decisions, oldest first:\n- tick=10 act=shoot hp=72 r=+1.0\n- tick=11 act=strafe_left hp=64 r=-0.5\n"
@@ -124,9 +161,9 @@ GOLDEN = {
     ),
     "frame": "[frame]\nthe screen at this decision is attached as the image (320x240)",
     "menu": (
-        "[menu]\nthe legal actions now:\n- shoot: Aim and fire current weapon at visible enemy target\n"
-        "- strafe_left: Sidestep left perpendicular to heading to dodge projectiles or reposition\n"
-        "- approach_pickup: Sprint forward down the corridor toward visible armor, health, weapon, or goal pickup"
+        "[menu]\nthe legal actions now:\n- shoot: Turn onto the chosen enemy and fire the current weapon once it is centred\n"
+        "- strafe_left: Sidestep left without walking forward; the aim keeps turning onto the chosen enemy while it is in view\n"
+        "- approach_pickup: Walk to the pickup the resource sense chose, turning toward where it lies, even when it is out of view"
     ),
     "projections": (
         "[projections]\na rough projection from a hand-written simulator, not the game; per legal action:\n"
@@ -153,7 +190,8 @@ GOLDEN = {
     "exploration": "[exploration]\nlevel exploit: the action you give the highest probability is executed.",
     "messages": (
         "[messages]\nsurvival says strafe_left, strength 0.82, reason under fire.\n"
-        "combat says shoot, strength 0.90, reason target aimed."
+        "combat says shoot, strength 0.90, reason target aimed, aim at Zombieman at distance 180, 2 deg left, size 24x56 px, "
+        "under the crosshair."
     ),
     "relevance": (
         "[relevance]\neach sense's record in this situation "
@@ -177,6 +215,9 @@ def test_the_empty_cases_say_so():
     calm = build_inputs(WorldState(observation=Observation()), [vocab.get("move_forward")])
     assert render_channel(calm, "threats") == "[threats]\nno enemy visible"
     assert render_channel(calm, "pickups") == "[pickups]\nno pickup visible"
+    assert render_channel(calm, "landmarks") == (
+        "[landmarks]\nno pickup remembered: none seen yet this episode, or every one seen was picked up"
+    )
     assert render_channel(calm, "frame") == "[frame]\nno screen image at this decision"
     assert render_channel(calm, "values") == "[values]\nno value networks are loaded"
     assert render_channel(calm, "messages") == "[messages]\nno sense spoke this tick."
@@ -196,7 +237,7 @@ def test_a_scope_renders_only_its_channels_in_channel_order():
     survival = render_scope(inputs, configuration.senses["survival"].scope).text
     assert "Medikit" not in survival and "[pickups]" not in survival and "says" not in survival
     resource = render_scope(inputs, configuration.senses["resource"].scope).text
-    assert "Zombieman" not in resource and "expected value" not in resource
+    assert "Zombieman" not in resource and "expected value" not in resource and "GreenArmor" in resource
     with pytest.raises(ValueError):
         render_scope(inputs, ("vitals", "menu", "telepathy"))
 

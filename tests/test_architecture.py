@@ -61,7 +61,8 @@ def test_keys_are_pressed_only_by_the_controller_and_only_from_the_pick():
 
     tree = ast.parse((SRC / "controller.py").read_text(encoding="utf-8"))
     (press,) = _calls(tree, "execute_action")
-    assert [ast.unparse(a) for a in press.args] == ["executed"]
+    # The action is the pick; the motor's targets are the senses' answers, carried in System 1's result.
+    assert [ast.unparse(a) for a in press.args] == ["executed", "result.targets"]
     assignments = [
         n for n in ast.walk(tree)
         if isinstance(n, (ast.Assign, ast.AnnAssign)) and "executed" in [ast.unparse(t) for t in (n.targets if isinstance(n, ast.Assign) else [n.target])]
@@ -100,7 +101,7 @@ def test_every_executed_action_is_the_centrals_answer_and_a_miss_executes_nothin
     env = ViZDoomBridge(scenario="deadly_corridor.cfg", window_visible=False, seed=2)
     pressed = []
     execute_action, execute_idle = env.execute_action, env.execute_idle
-    env.execute_action = lambda action: pressed.append(action.id) or execute_action(action)
+    env.execute_action = lambda action, targets=None: pressed.append(action.id) or execute_action(action, targets)
     env.execute_idle = lambda frames: pressed.append(("idle", frames)) or execute_idle(frames)
     ctrl = DoomDecisionController(
         env=env, config=ControllerConfig(log_dir=str(tmp_path), enable_slow_llm=False), api_key="liquid_test_key", transport=fake

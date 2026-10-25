@@ -317,7 +317,7 @@
         },
         "max_scope_channels": {
           "default": 7,
-          "maximum": 18,
+          "maximum": 19,
           "minimum": 1,
           "title": "Max Scope Channels",
           "type": "integer"
@@ -334,6 +334,13 @@
           "description": "Pickups rendered in the pickups channel",
           "minimum": 1,
           "title": "Max Pickups",
+          "type": "integer"
+        },
+        "max_landmarks": {
+          "default": 8,
+          "description": "Remembered pickups rendered in the landmarks channel",
+          "minimum": 1,
+          "title": "Max Landmarks",
           "type": "integer"
         },
         "max_history_steps": {
@@ -672,6 +679,11 @@
           "title": "Pickups",
           "type": "integer"
         },
+        "landmarks": {
+          "default": 8,
+          "title": "Landmarks",
+          "type": "integer"
+        },
         "history_steps": {
           "default": 6,
           "title": "History Steps",
@@ -848,6 +860,11 @@
           "default": false,
           "title": "Is Attacking",
           "type": "boolean"
+        },
+        "attacks_without_hit": {
+          "default": 0,
+          "title": "Attacks Without Hit",
+          "type": "integer"
         }
       },
       "required": [
@@ -1859,6 +1876,56 @@
           "title": "Reason Probabilities",
           "type": "object"
         },
+        "target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The enemy or pickup a sense chose for the motor (first in criteria order on a tie)",
+          "title": "Target"
+        },
+        "target_probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Target Probabilities",
+          "type": "object"
+        },
+        "target_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "enemy",
+                "pickup"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What a sense's target is (enemy or pickup), from its configuration",
+          "title": "Target Kind"
+        },
+        "target_line": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The chosen target's criterion: the line the sense saw it in",
+          "title": "Target Line"
+        },
         "admit": {
           "anyOf": [
             {
@@ -1981,6 +2048,84 @@
       "title": "InstanceResult",
       "type": "object"
     },
+    "LandmarkTrace": {
+      "description": "A pickup remembered from earlier in the episode: where it lies from this tick's pose, and its record.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "x": {
+          "default": 0.0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0.0,
+          "title": "Y",
+          "type": "number"
+        },
+        "distance": {
+          "title": "Distance",
+          "type": "number"
+        },
+        "bearing": {
+          "description": "Degrees from the facing, positive to the left",
+          "title": "Bearing",
+          "type": "number"
+        },
+        "in_view": {
+          "default": false,
+          "title": "In View",
+          "type": "boolean"
+        },
+        "last_seen_tick": {
+          "default": 0,
+          "title": "Last Seen Tick",
+          "type": "integer"
+        },
+        "reward_agreement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How reward went with getting closer, -1 to 1",
+          "title": "Reward Agreement"
+        },
+        "reward_moves": {
+          "default": 0,
+          "title": "Reward Moves",
+          "type": "integer"
+        },
+        "approaches_nowhere": {
+          "default": 0,
+          "title": "Approaches Nowhere",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category",
+        "distance",
+        "bearing"
+      ],
+      "title": "LandmarkTrace",
+      "type": "object"
+    },
     "MenuItem": {
       "description": "One legal action as the menu shows it.",
       "properties": {
@@ -2018,6 +2163,45 @@
         "strength": {
           "title": "Strength",
           "type": "number"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The enemy or pickup the sense chose for the motor, if it chooses one",
+          "title": "Target"
+        },
+        "target_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "enemy or pickup",
+          "title": "Target Kind"
+        },
+        "target_line": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The chosen target in the words the sense saw it in",
+          "title": "Target Line"
         }
       },
       "required": [
@@ -2516,6 +2700,12 @@
         "requires_visible_pickup": {
           "default": false,
           "title": "Requires Visible Pickup",
+          "type": "boolean"
+        },
+        "requires_known_pickup": {
+          "default": false,
+          "description": "A pickup seen this episode and not yet picked up is remembered",
+          "title": "Requires Known Pickup",
           "type": "boolean"
         },
         "min_wall_distance_front": {
@@ -3171,7 +3361,7 @@
       "type": "object"
     },
     "SenseConfig": {
-      "description": "One sense: the channels it is shown, the concern its instructions name, and its finite reasons.",
+      "description": "One sense: the channels it is shown, the concern its instructions name, its finite reasons, and the\nmotor target it chooses, if any.",
       "properties": {
         "scope": {
           "items": {
@@ -3193,6 +3383,23 @@
           "minItems": 1,
           "title": "Reasons",
           "type": "array"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "enum": [
+                "enemy",
+                "pickup"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A fourth question: the enemy the aim locks onto, or the pickup to walk to",
+          "title": "Target"
         }
       },
       "required": [
@@ -3272,6 +3479,13 @@
             "$ref": "#/$defs/PickupTrace"
           },
           "title": "Pickups",
+          "type": "array"
+        },
+        "landmarks": {
+          "items": {
+            "$ref": "#/$defs/LandmarkTrace"
+          },
+          "title": "Landmarks",
           "type": "array"
         },
         "recent_incoming_damage": {
@@ -3495,6 +3709,47 @@
         "detail"
       ],
       "title": "System2Note",
+      "type": "object"
+    },
+    "Targets": {
+      "description": "What the senses chose for the motor's assistance this tick; None where no sense chose.",
+      "properties": {
+        "enemy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The visible enemy the aim locks onto",
+          "title": "Enemy"
+        },
+        "pickup": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The remembered pickup a pickup-seeking action walks to",
+          "title": "Pickup"
+        },
+        "chosen_by": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Target kind -> the sense whose answer it is",
+          "title": "Chosen By",
+          "type": "object"
+        }
+      },
+      "title": "Targets",
       "type": "object"
     },
     "TestTick": {
@@ -3777,6 +4032,10 @@
         },
         "pick": {
           "$ref": "#/$defs/Pick"
+        },
+        "targets": {
+          "$ref": "#/$defs/Targets",
+          "description": "The enemy and the pickup the senses chose for the motor"
         },
         "executed_action": {
           "anyOf": [

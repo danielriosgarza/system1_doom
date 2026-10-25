@@ -34,6 +34,7 @@ class PreconditionSpec(BaseModel):
     max_health: float = 200.0
     requires_visible_enemy: bool = False
     requires_visible_pickup: bool = False
+    requires_known_pickup: bool = Field(default=False, description="A pickup seen this episode and not yet picked up is remembered")
     min_wall_distance_front: float = 0.0
     max_wall_distance_front: float = 99999.0
     excluded_weapons: Tuple[str, ...] = ()
@@ -47,6 +48,8 @@ class PreconditionSpec(BaseModel):
         if self.requires_visible_enemy and len(obs.visible_enemies) == 0:
             return False
         if self.requires_visible_pickup and len(obs.visible_pickups) == 0:
+            return False
+        if self.requires_known_pickup and len(obs.landmarks) == 0:
             return False
         if obs.wall_distance_front < self.min_wall_distance_front:
             return False
@@ -71,6 +74,8 @@ class PreconditionSpec(BaseModel):
             return "requires_visible_enemy"
         if self.requires_visible_pickup and len(obs.visible_pickups) == 0:
             return "requires_visible_pickup"
+        if self.requires_known_pickup and len(obs.landmarks) == 0:
+            return "requires_known_pickup"
         if obs.wall_distance_front < self.min_wall_distance_front:
             return "min_wall_distance_front"
         if obs.wall_distance_front > self.max_wall_distance_front:
@@ -123,7 +128,7 @@ class ActionSpec(BaseModel):
 DEFAULT_PRIMITIVES: Tuple[ActionSpec, ...] = (
     ActionSpec(
         id="move_forward",
-        description="Advance forward toward the corridor goal or next room",
+        description="Walk straight ahead, the way you are facing",
         is_macro=False,
         parameters={"step_size": 1},
         preconditions=PreconditionSpec(min_wall_distance_front=16.0),
@@ -133,7 +138,7 @@ DEFAULT_PRIMITIVES: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="move_backward",
-        description="Retreat backward away from point-blank threats when critically injured",
+        description="Walk backward, away from the way you are facing, when critically injured",
         is_macro=False,
         parameters={"step_size": 1},
         preconditions=PreconditionSpec(max_health=45.0, requires_visible_enemy=True),
@@ -143,7 +148,7 @@ DEFAULT_PRIMITIVES: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="strafe_left",
-        description="Sidestep left perpendicular to heading to dodge projectiles or reposition",
+        description="Sidestep left without walking forward; the aim keeps turning onto the chosen enemy while it is in view",
         is_macro=False,
         parameters={"step_size": 1},
         preconditions=PreconditionSpec(),
@@ -153,7 +158,7 @@ DEFAULT_PRIMITIVES: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="strafe_right",
-        description="Sidestep right perpendicular to heading to dodge projectiles or reposition",
+        description="Sidestep right without walking forward; the aim keeps turning onto the chosen enemy while it is in view",
         is_macro=False,
         parameters={"step_size": 1},
         preconditions=PreconditionSpec(),
@@ -163,7 +168,7 @@ DEFAULT_PRIMITIVES: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="turn_left",
-        description="Rotate view left to aim at left-side targets or scan room",
+        description="Turn the view about 28 degrees to the left",
         is_macro=False,
         parameters={"degrees": 15},
         preconditions=PreconditionSpec(),
@@ -173,7 +178,7 @@ DEFAULT_PRIMITIVES: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="turn_right",
-        description="Rotate view right to aim at right-side targets or scan room",
+        description="Turn the view about 28 degrees to the right",
         is_macro=False,
         parameters={"degrees": 15},
         preconditions=PreconditionSpec(),
@@ -183,7 +188,7 @@ DEFAULT_PRIMITIVES: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="shoot",
-        description="Aim and fire current weapon at visible enemy target",
+        description="Turn onto the chosen enemy and fire the current weapon once it is centred",
         is_macro=False,
         parameters={"shots": 1},
         preconditions=PreconditionSpec(min_ammo=1, requires_visible_enemy=True),
@@ -233,7 +238,7 @@ DEFAULT_PRIMITIVES: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="strafe_left_shoot",
-        description="Strafe left while tracking the target, firing whenever it is centred",
+        description="Sidestep left while turning onto the chosen enemy, firing whenever it is centred",
         is_macro=False,
         parameters={"shots": 1},
         preconditions=PreconditionSpec(min_ammo=1, requires_visible_enemy=True),
@@ -243,7 +248,7 @@ DEFAULT_PRIMITIVES: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="strafe_right_shoot",
-        description="Strafe right while tracking the target, firing whenever it is centred",
+        description="Sidestep right while turning onto the chosen enemy, firing whenever it is centred",
         is_macro=False,
         parameters={"shots": 1},
         preconditions=PreconditionSpec(min_ammo=1, requires_visible_enemy=True),
@@ -286,17 +291,17 @@ DEFAULT_MACROS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="approach_pickup",
-        description="Sprint forward down the corridor toward visible armor, health, weapon, or goal pickup",
+        description="Walk to the pickup the resource sense chose, turning toward where it lies, even when it is out of view",
         is_macro=True,
-        parameters={"pickup_id": "nearest_pickup", "duration": 4},
-        preconditions=PreconditionSpec(requires_visible_pickup=True, min_wall_distance_front=24.0),
+        parameters={"pickup_id": "chosen_pickup", "duration": 4},
+        preconditions=PreconditionSpec(requires_known_pickup=True),
         maximum_duration=8,
-        termination_condition="pickup_collected_or_enemy_encountered",
+        termination_condition="pickup_collected_or_duration_elapsed",
         primitive_expansion=("move_forward", "move_forward", "move_forward", "move_forward"),
     ),
     ActionSpec(
         id="peek_and_fire",
-        description="Engage visible enemy with an aimed double burst while weaving left and right",
+        description="Sidestep left and fire at the chosen enemy, then sidestep right and fire again",
         is_macro=True,
         parameters={"direction": "left_right", "burst_length": 4},
         preconditions=PreconditionSpec(min_ammo=1, requires_visible_enemy=True),
@@ -306,7 +311,7 @@ DEFAULT_MACROS: Tuple[ActionSpec, ...] = (
     ),
     ActionSpec(
         id="weave_fire",
-        description="Keep strafing left then right while tracking the target and firing whenever it is centred",
+        description="Sidestep left then right while turning onto the chosen enemy, firing whenever it is centred",
         is_macro=True,
         parameters={"target": "locked_enemy", "duration": 4},
         preconditions=PreconditionSpec(min_ammo=1, requires_visible_enemy=True),

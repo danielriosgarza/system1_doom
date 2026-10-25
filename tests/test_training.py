@@ -10,6 +10,7 @@ from system1_doom.controller import ControllerConfig, DoomDecisionController
 from system1_doom.learning import Learner
 from system1_doom.logger import TickTrace
 from system1_doom.relevance import load_ledger
+from system1_doom.system1 import Targets
 from system1_doom.vizdoom_env import ViZDoomBridge
 from tests.fake_d1 import FakeD1, default_policy
 
@@ -49,15 +50,27 @@ def test_weave_fire_keeps_strafing_while_it_aims_and_fires(vocab):
         env.close()
 
 
-def test_shoot_aims_at_the_target_before_firing(vocab):
+def test_shoot_aims_at_the_chosen_target_before_firing(vocab):
     env = ViZDoomBridge(scenario="basic.cfg", seed=5)
     try:
         hits = 0.0
         for _ in range(15):
             if env.is_episode_finished():
                 break
-            hits += env.execute_action(vocab.get("shoot")).hits_delta
+            enemies = env.acquire_world_state().observation.visible_enemies
+            targets = Targets(enemy=enemies[0].enemy_id if enemies else None)
+            hits += env.execute_action(vocab.get("shoot"), targets).hits_delta
         assert hits >= 1.0
+    finally:
+        env.close()
+
+
+def test_the_aim_never_turns_onto_an_enemy_nobody_chose(vocab):
+    env = ViZDoomBridge(scenario="basic.cfg", seed=5)
+    try:
+        angle = env.acquire_world_state().observation.position.angle
+        env.execute_action(vocab.get("shoot"), Targets())
+        assert env.acquire_world_state().observation.position.angle == angle
     finally:
         env.close()
 

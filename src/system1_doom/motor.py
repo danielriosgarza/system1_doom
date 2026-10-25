@@ -1,23 +1,34 @@
 """Bounded closed-loop motor for ViZDoom scenarios.
 
 d1-ultra's central instance picks one action from a finite set and the motor executes that
-action's primitive list. Each primitive keeps a small amount of closed-loop assistance:
-`shoot` aims at the locked target before firing, strafes keep tracking it, and the
-forward steps of a pickup-seeking action steer toward the nearest visible pickup.
-Every burst is bounded by the length of the action's primitive list. When the central
-instance missed, `idle` presses no key for the decision's frames: nothing stands in for it.
+action's primitive list. Each primitive keeps a small amount of closed-loop assistance, aimed at
+targets d1-ultra chose, never at targets of its own: `shoot` turns onto the enemy the combat sense
+chose before firing and strafes keep tracking it, and the forward steps of a pickup-seeking action
+turn toward the pickup the resource sense chose, by its remembered position, so it works while the
+pickup is out of view (turning in place while it lies behind). Without a chosen target (no enemy visible, the sense missed, or the target is
+not in view) the assistance has nothing to aim at: the primitive's keys are pressed as they are.
+Every burst is bounded by the length of the action's primitive list. When the central instance
+missed, `idle` presses no key for the decision's frames: nothing stands in for it.
 """
 
 from __future__ import annotations
 
+import math
 import time
-from typing import Dict, Iterable, List, Optional, Sequence, Set
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import vizdoom as vzd
 
 REFLEX_FRAME_SKIP = 2
 STEPS_PER_DECISION = 4
+# Degrees off the chosen pickup's bearing within which a forward step walks without turning.
+STEER_DEADBAND_DEG = 4.0
+# A pickup-seeking action counts as a walk at its pickup when it starts with the pickup within this cone of
+# the facing; farther round, its first steps are a turn toward it.
+WALK_CONE_DEG = 30.0
+# A pickup behind the agent (beyond this bearing) is turned toward in place: walking on would walk away from it.
+BEHIND_DEG = 90.0
 
 ENEMY_KEYWORDS = (
     "zombieman",
@@ -94,6 +105,15 @@ def is_pickup_name(name: str) -> bool:
     return any(token in lowered for token in PICKUP_KEYWORDS)
 
 
+def bearing_to(px: float, py: float, facing_deg: float, tx: float, ty: float) -> float:
+    """Degrees from the facing to the point (tx, ty), positive to the left (Doom angles grow counter-clockwise), in (-180, 180]."""
+    if abs(tx - px) < 1e-9 and abs(ty - py) < 1e-9:
+        return 0.0
+    raw = math.degrees(math.atan2(ty - py, tx - px)) - facing_deg
+    wrapped = (raw + 180.0) % 360.0 - 180.0
+    return 180.0 if wrapped == -180.0 else wrapped
+
+
 def _screen_size(screen_buf: Optional[np.ndarray]) -> tuple[int, int]:
     if screen_buf is None or screen_buf.ndim < 2:
         return 320, 240
@@ -148,13 +168,11 @@ class TacticalMotor:
         self.button_names = list(button_names)
         self.scenario = scenario
         self.lock_id: Optional[int] = None
-        self.ignored_pickups: Set[int] = set()
-        self.last_pickup_target: Optional[int] = None
+        self.pickup_target: Optional[Tuple[float, float]] = None
 
     def reset(self) -> None:
         self.lock_id = None
-        self.ignored_pickups.clear()
-        self.last_pickup_target = None
+        self.pickup_target = None
 
     def action_supported(self, primitive_expansion: Iterable[str]) -> bool:
         prims = list(primitive_expansion)
@@ -162,7 +180,18 @@ class TacticalMotor:
             return False
         return all(button in self.button_names for p in prims for button in PRIMITIVE_BUTTONS[p])
 
-    def burst(self, plan: Sequence[str], steer_to_pickup: bool = False, step_delay_ms: int = 0) -> MotorBurst:
+    def burst(
+        self,
+        plan: Sequence[str],
+        steer_to_pickup: bool = False,
+        step_delay_ms: int = 0,
+        enemy_target: Optional[int] = None,
+        pickup_target: Optional[Tuple[float, float]] = None,
+    ) -> MotorBurst:
+        """Press `plan`, aiming at `enemy_target` (an object id d1 chose) and steering a pickup-seeking action's
+        forward steps toward `pickup_target` (the chosen pickup's remembered x, y); either may be None."""
+        self.lock_id = enemy_target
+        self.pickup_target = pickup_target if steer_to_pickup else None
         hp_before = self._var(vzd.GameVariable.HEALTH, 100.0)
         kills_before = self._var(vzd.GameVariable.KILLCOUNT, 0.0)
         hits_before = self._var(vzd.GameVariable.HITCOUNT, 0.0)
@@ -174,14 +203,13 @@ class TacticalMotor:
         last_frame: Optional[np.ndarray] = None
         terminated_early = False
         hold = max(1, STEPS_PER_DECISION // max(1, len(plan)))
-        self.last_pickup_target = None
 
         for primitive in plan:
             for _ in range(hold):
                 if self.game.is_episode_finished():
                     terminated_early = True
                     break
-                flags = self._assisted_flags(primitive, steer_to_pickup)
+                flags = self._assisted_flags(primitive)
                 if not flags:
                     continue
                 reward += self._press(flags)
@@ -230,7 +258,6 @@ class TacticalMotor:
         primitives: List[str] = []
         last_frame: Optional[np.ndarray] = None
         terminated_early = False
-        self.last_pickup_target = None
         for _ in range(max(1, frames // REFLEX_FRAME_SKIP)):
             if self.game.is_episode_finished():
                 terminated_early = True
@@ -278,7 +305,7 @@ class TacticalMotor:
         ordered = [FLAG_TO_PRIMITIVE[name] for name in FLAG_TO_PRIMITIVE if name in flags]
         return "+".join(ordered) if ordered else "idle"
 
-    def _assisted_flags(self, primitive: str, steer_to_pickup: bool) -> Set[str]:
+    def _assisted_flags(self, primitive: str) -> Set[str]:
         state = self.game.get_state()
         screen_w = 320
         if state is not None and state.screen_buffer is not None:
@@ -310,13 +337,13 @@ class TacticalMotor:
                 turn = self._turn_toward(target["cx"], center, align_px)
                 if turn is not None:
                     flags.add(turn)
-        elif primitive == "move_forward" and steer_to_pickup:
-            pickup = self._nearest_pickup(state)
-            if pickup is not None:
-                self.last_pickup_target = int(pickup.object_id)
-                turn = self._turn_toward(float(pickup.x + pickup.width / 2.0), center, align_px)
-                if turn is not None:
-                    flags.add(turn)
+        elif primitive == "move_forward" and self.pickup_target is not None:
+            bearing = self._bearing_of(self.pickup_target)
+            turn = self._turn_for(bearing)
+            if turn is not None:
+                flags.add(turn)
+                if abs(bearing) > BEHIND_DEG:
+                    flags.discard(button)
         return flags
 
     def _living_enemies(self, state: Optional[object]) -> List[Dict[str, float]]:
@@ -335,29 +362,26 @@ class TacticalMotor:
             )
         return enemies
 
-    def _nearest_pickup(self, state: Optional[object]) -> Optional[object]:
-        if state is None or not getattr(state, "labels", None):
-            return None
-        pickups = [
-            label
-            for label in state.labels
-            if is_pickup_name(label.object_name) and int(label.object_id) not in self.ignored_pickups
-        ]
-        if not pickups:
-            return None
-        # A taller sprite is a closer pickup.
-        return max(pickups, key=lambda label: label.height)
+    def _bearing_of(self, target: Tuple[float, float]) -> float:
+        """Degrees from the facing to the world point `target`, positive to the left."""
+        px = self._var(vzd.GameVariable.POSITION_X, 0.0)
+        py = self._var(vzd.GameVariable.POSITION_Y, 0.0)
+        facing = self._var(vzd.GameVariable.ANGLE, 0.0)
+        return bearing_to(px, py, facing, target[0], target[1])
+
+    def _turn_for(self, bearing: float) -> Optional[str]:
+        """The turn that brings the facing onto `bearing`, or None when within the deadband."""
+        if bearing > STEER_DEADBAND_DEG and "TURN_LEFT" in self.button_names:
+            return "TURN_LEFT"
+        if bearing < -STEER_DEADBAND_DEG and "TURN_RIGHT" in self.button_names:
+            return "TURN_RIGHT"
+        return None
 
     def _locked_enemy(self, enemies: List[Dict[str, float]], center: float) -> Optional[Dict[str, float]]:
-        target = None
-        if self.lock_id is not None:
-            target = next((enemy for enemy in enemies if int(enemy["id"]) == self.lock_id), None)
-        if target is None and enemies:
-            target = min(enemies, key=lambda enemy: abs(enemy["cx"] - center))
-            self.lock_id = int(target["id"])
-        if target is None:
-            self.lock_id = None
-        return target
+        """The enemy d1 chose, while it is in view; there is no other target."""
+        if self.lock_id is None:
+            return None
+        return next((enemy for enemy in enemies if int(enemy["id"]) == self.lock_id), None)
 
     def _turn_toward(self, cx: float, center: float, align_px: float) -> Optional[str]:
         if cx < center - align_px and "TURN_LEFT" in self.button_names:

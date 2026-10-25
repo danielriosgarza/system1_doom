@@ -6,7 +6,7 @@ import pytest
 
 from system1_doom.configuration import default_configuration
 from system1_doom.d1_client import D1UltraClient
-from system1_doom.instance import ADMIT_SPEC, central_spec, run_admit, run_instance, sense_spec
+from system1_doom.instance import ADMIT_SPEC, central_spec, run_admit, run_instance, sense_spec, target_criteria
 from tests.fake_d1 import FakeD1, choice, menu_of, noul, section
 from tests.test_evidence import golden_inputs
 
@@ -30,7 +30,8 @@ def test_a_sense_sends_one_payload_of_its_scope_its_questions_and_the_frame_only
     combat, _ = _sense("combat", fake, frame_b64="QUJD")
     survival, _ = _sense("survival", fake, frame_b64="QUJD")
     (combat_payload,), (survival_payload,) = fake.payloads("combat"), fake.payloads("survival")
-    assert combat_payload["model"] == "d1-ultra" and set(combat_payload["questions"]) == {"speak", "action", "reason"}
+    assert combat_payload["model"] == "d1-ultra" and set(combat_payload["questions"]) == {"speak", "action", "reason", "target"}
+    assert set(survival_payload["questions"]) == {"speak", "action", "reason"}
     assert combat_payload["state"] == combat.evidence and combat_payload["images"] == ["data:image/jpeg;base64,QUJD"]
     assert combat.image_ref == "frames/00042.jpg" and survival.image_ref is None and "images" not in survival_payload
     assert section(survival_payload["state"], "pickups") == "" and "Medikit" not in survival_payload["state"]
@@ -116,7 +117,9 @@ def test_the_central_payload_holds_only_its_scope_and_one_choice_over_the_menu()
     assert list(payload["questions"]["choose"]["criteria"]) == ["shoot", "strafe_left", "approach_pickup"]
     headers = [line for line in payload["state"].splitlines() if line.startswith("[")]
     assert headers == ["[vitals]", "[menu]", "[exploration]", "[messages]", "[relevance]"]
-    assert "Zombieman" not in payload["state"] and "expected value" not in payload["state"]
+    # The central sees no threats channel; an enemy reaches it only as the target in a sense's message.
+    assert "DoomImp" not in payload["state"] and "expected value" not in payload["state"]
+    assert "aim at Zombieman at distance 180" in section(payload["state"], "messages")
     # The fake central picks the first message's action: survival's strafe_left.
     assert result.action == "strafe_left" and result.action_probabilities["strafe_left"] == pytest.approx(0.7)
 
@@ -130,3 +133,34 @@ def test_the_admit_instance_asks_one_noul_over_the_proposal():
     assert set(payload["questions"]) == {"admit"} and payload["questions"]["admit"]["type"] == "noul"
     assert payload["state"] == "Proposal: zigzag_fire\nSandbox: survives"
     assert result.admit == 0.8 and result.kind == "admit" and ADMIT_SPEC.concern in payload["questions"]["admit"]["instructions"]
+
+
+def test_the_target_question_lists_the_candidates_the_scope_shows_in_the_channels_words():
+    fake = FakeD1()
+    combat, _ = _sense("combat", fake)
+    resource, _ = _sense("resource", fake)
+    target = fake.payloads("combat")[0]["questions"]["target"]
+    assert target["instructions"].endswith("Which visible enemy should the agent's aim lock onto?")
+    assert target["criteria"] == {
+        "zombie_1": "Zombieman at distance 180, 2 deg left, size 24x56 px, under the crosshair",
+        "imp_2": "DoomImp at distance 410, 21 deg right, size 20x40 px, attacking",
+    }
+    assert combat.target == "zombie_1" and combat.target_kind == "enemy" and combat.target_line == target["criteria"]["zombie_1"]
+    pickups = fake.payloads("resource")[0]["questions"]["target"]["criteria"]
+    assert list(pickups) == ["clip_3", "med_1", "armor_0"] and pickups["med_1"] == "Medikit (health): 150 away, 5 deg left, in view; no reward link yet"
+    assert resource.target == "clip_3" and resource.target_kind == "pickup"
+
+
+def test_without_the_candidates_in_scope_there_is_no_target_and_a_lone_candidate_needs_no_question():
+    no_threats = sense_spec("combat", CONFIG.senses["combat"]).model_copy(update={"scope": ("vitals", "menu")})
+    assert target_criteria(no_threats, golden_inputs()) == {}
+    lone = golden_inputs()
+    lone = lone.model_copy(update={"state": lone.state.model_copy(update={"enemies": lone.state.enemies[:1]})})
+    fake = FakeD1()
+    client = _client(fake)
+    try:
+        result = run_instance(client, sense_spec("combat", CONFIG.senses["combat"]), lone, budget=2.0)
+    finally:
+        client.shutdown(wait=False)
+    assert "target" not in fake.payloads("combat")[0]["questions"]
+    assert result.target == lone.state.enemies[0].id and result.target_probabilities == {}

@@ -27,6 +27,7 @@ class EnemyObservation(BaseModel):
     width: int = 20
     height: int = 40
     is_attacking: bool = False
+    attacks_without_hit: int = Field(default=0, ge=0, description="The agent's attacks on it in a row that hit nothing")
 
 
 class PickupObservation(BaseModel):
@@ -43,6 +44,31 @@ class PickupObservation(BaseModel):
     height: int = 12
 
 
+class LandmarkObservation(BaseModel):
+    """A pickup seen earlier this episode and not yet gone, remembered where it was seen.
+
+    Its distance and bearing are measured from the player's pose at this tick, whether it is in view or
+    not, so the evidence can say where something seen before lies now. `reward_agreement` is how the
+    episode's per-decision reward has gone with getting closer to it: +1 when every step closer came
+    with reward, -1 when every step away did, over `reward_moves` decisions that changed its distance.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    landmark_id: str
+    name: str
+    category: Literal["health", "armor", "ammo", "weapon", "item"] = "item"
+    x: float = 0.0
+    y: float = 0.0
+    distance: float = Field(default=0.0, ge=0.0)
+    bearing: float = Field(default=0.0, description="Degrees from the facing to the landmark, positive to the left, in (-180, 180]")
+    in_view: bool = False
+    last_seen_tick: int = 0
+    reward_agreement: Optional[float] = None
+    reward_moves: int = 0
+    approaches_nowhere: int = Field(default=0, description="Approaches aimed at it that ended without getting closer")
+
+
 class Observation(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -53,6 +79,7 @@ class Observation(BaseModel):
     current_weapon: str = "pistol"
     visible_enemies: Tuple[EnemyObservation, ...] = ()
     visible_pickups: Tuple[PickupObservation, ...] = ()
+    landmarks: Tuple[LandmarkObservation, ...] = ()
     recent_incoming_damage: float = 0.0
     recent_outgoing_damage: float = 0.0
     recent_hits: int = 0

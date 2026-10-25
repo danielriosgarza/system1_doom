@@ -4,16 +4,27 @@ import base64
 import io
 import math
 import os
-from typing import Dict, List, Literal, Optional, Set, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 import numpy as np
 from PIL import Image
 import vizdoom as vzd
 
 from system1_doom.actions import ActionSpec
-from system1_doom.motor import MotorBurst, TacticalMotor, _screen_size, is_enemy_name, is_ignored_actor, is_pickup_name
+from system1_doom.motor import (
+    WALK_CONE_DEG,
+    MotorBurst,
+    TacticalMotor,
+    _screen_size,
+    bearing_to,
+    is_enemy_name,
+    is_ignored_actor,
+    is_pickup_name,
+)
 from system1_doom.state import (
     ControllerMemory,
     EnemyObservation,
+    LandmarkObservation,
     Observation,
     PickupObservation,
     Pose3D,
@@ -46,7 +57,35 @@ PICKUP_CATEGORY_MAP: Dict[str, Literal["health", "armor", "ammo", "weapon", "ite
 }
 
 
+# An approach that got less than this much closer to the chosen pickup counts as getting nowhere.
 UNREACHABLE_PICKUP_PROGRESS = 12.0
+# A decision that changed a landmark's distance by less than this tells nothing about reward and distance.
+LANDMARK_MOVE_UNITS = 1.0
+
+
+@dataclass
+class _Remembered:
+    """A pickup the agent has seen this episode: where it was seen, and how reward went with its distance."""
+
+    landmark_id: str
+    object_id: int
+    name: str
+    category: str
+    x: float
+    y: float
+    last_seen_tick: int
+    gone: bool = False
+    moves: int = 0
+    reward_closer: float = 0.0  # sum of reward x (distance lost)
+    distance_sq: float = 0.0  # sum of (distance change)^2
+    reward_sq: float = 0.0  # sum of reward^2
+    approaches_nowhere: int = 0
+
+    def agreement(self) -> Optional[float]:
+        """How reward went with getting closer: the cosine of the per-decision rewards and distance lost."""
+        if self.distance_sq <= 0.0 or self.reward_sq <= 0.0:
+            return None
+        return max(-1.0, min(1.0, self.reward_closer / math.sqrt(self.distance_sq * self.reward_sq)))
 
 
 class ExecutionStepResult:
@@ -138,6 +177,10 @@ class ViZDoomBridge:
         self._discovered_locations: List[str] = []
         self._episode_cells: Set[Tuple[int, int]] = set()
         self._last_displacement: Optional[float] = None
+        self._last_reward: Optional[float] = None
+        self._landmarks: Dict[int, _Remembered] = {}
+        # Per enemy object id: the agent's attacks on it in a row (it the chosen target) that hit nothing.
+        self._attacks_without_hit: Dict[int, int] = {}
 
     def _safe_var(self, var: vzd.GameVariable, default: float = 0.0) -> float:
         try:
@@ -174,6 +217,9 @@ class ViZDoomBridge:
         self._episode_cells.clear()
         self._episode_tick = 0
         self._last_displacement = None
+        self._last_reward = None
+        self._landmarks.clear()
+        self._attacks_without_hit.clear()
 
     def reset_tick_count(self) -> None:
         """Number the next observation tick 0, as a new bridge would; otherwise the count runs on across episodes."""
@@ -218,9 +264,14 @@ class ViZDoomBridge:
         v_state = self.game.get_state()
         health = max(0.0, self._safe_var(vzd.GameVariable.HEALTH, 100.0))
         armor = max(0.0, self._safe_var(vzd.GameVariable.ARMOR, 0.0))
-        ammo_raw = self._safe_var(vzd.GameVariable.SELECTED_WEAPON_AMMO, 25.0)
-        ammo = int(max(0.0, ammo_raw)) if ammo_raw >= 0 else 25
         weapon_id = int(self._safe_var(vzd.GameVariable.SELECTED_WEAPON, 2.0))
+        ammo_raw = self._safe_var(vzd.GameVariable.SELECTED_WEAPON_AMMO, -1.0)
+        if weapon_id < 1 or ammo_raw < 0:
+            # Before the first game tic the selected weapon is not reported yet: the player holds the pistol,
+            # whose rounds are the bullets (AMMO2).
+            weapon_id = 2
+            ammo_raw = self._safe_var(vzd.GameVariable.AMMO2, 25.0)
+        ammo = int(max(0.0, ammo_raw))
         weapon_name = {1: "fist_chainsaw", 2: "pistol", 3: "shotgun", 4: "chaingun"}.get(weapon_id, f"weapon_{weapon_id}")
 
         hits = self._safe_var(vzd.GameVariable.HITCOUNT, 0.0)
@@ -247,6 +298,7 @@ class ViZDoomBridge:
         # Extract visible enemies and pickups from labels + objects
         enemies: List[EnemyObservation] = []
         pickups: List[PickupObservation] = []
+        in_view: Set[int] = set()
         wall_front, wall_left, wall_right = 256.0, 128.0, 128.0
         frame_b64: Optional[str] = None
         brightness = 0.5
@@ -289,7 +341,7 @@ class ViZDoomBridge:
                     if is_enemy_name(lbl.object_name):
                         enemies.append(
                             EnemyObservation(
-                                enemy_id=f"{lbl.object_name}_{lbl.object_id}_{idx}",
+                                enemy_id=f"{lbl.object_name}_{lbl.object_id}",
                                 name=lbl.object_name,
                                 distance=round(dist, 1),
                                 angle_offset=round(angle_offset, 1),
@@ -297,17 +349,21 @@ class ViZDoomBridge:
                                 screen_y=cy,
                                 width=int(lbl.width),
                                 height=int(lbl.height),
+                                attacks_without_hit=self._attacks_without_hit.get(int(lbl.object_id), 0),
                             )
                         )
-                    elif is_pickup_name(lbl.object_name) and int(lbl.object_id) not in self.motor.ignored_pickups:
+                    elif is_pickup_name(lbl.object_name):
                         cat: Literal["health", "armor", "ammo", "weapon", "item"] = "item"
                         for k_sub, k_cat in PICKUP_CATEGORY_MAP.items():
                             if k_sub in name_low:
                                 cat = k_cat
                                 break
+                        if lbl.object_id in obj_pos_by_id:
+                            self._remember(lbl.object_name, int(lbl.object_id), cat, *obj_pos_by_id[lbl.object_id])
+                            in_view.add(int(lbl.object_id))
                         pickups.append(
                             PickupObservation(
-                                pickup_id=f"{lbl.object_name}_{lbl.object_id}_{idx}",
+                                pickup_id=f"{lbl.object_name}_{lbl.object_id}",
                                 name=lbl.object_name,
                                 category=cat,
                                 distance=round(dist, 1),
@@ -318,6 +374,12 @@ class ViZDoomBridge:
                                 height=int(lbl.height),
                             )
                         )
+
+        if v_state is not None and v_state.objects:
+            # A remembered pickup no longer among the level's objects was picked up.
+            for remembered in self._landmarks.values():
+                if remembered.object_id not in obj_pos_by_id:
+                    remembered.gone = True
 
         grid_loc = f"sector_{int(px // 128)}_{int(py // 128)}"
         if grid_loc not in self._discovered_locations:
@@ -332,6 +394,7 @@ class ViZDoomBridge:
             current_weapon=weapon_name,
             visible_enemies=tuple(enemies),
             visible_pickups=tuple(pickups),
+            landmarks=self._landmark_observations(px, py, angle, in_view),
             recent_incoming_damage=recent_in_dmg,
             recent_outgoing_damage=recent_out_dmg,
             recent_hits=recent_hits,
@@ -343,6 +406,7 @@ class ViZDoomBridge:
                 "tick": float(self._tick),
                 "episode_tick": float(self._episode_tick),
                 "reward_so_far": round(self._total_reward, 2),
+                **({"last_reward": round(self._last_reward, 2)} if self._last_reward is not None else {}),
                 "kills": float(kills),
                 **(
                     {"last_displacement": round(self._last_displacement, 1)}
@@ -366,28 +430,111 @@ class ViZDoomBridge:
         )
         return WorldState(observation=obs, memory=mem)
 
+    def _remember(self, name: str, object_id: int, category: str, x: float, y: float) -> None:
+        remembered = self._landmarks.get(object_id)
+        if remembered is None:
+            self._landmarks[object_id] = _Remembered(
+                landmark_id=f"{name}_{object_id}", object_id=object_id, name=name, category=category,
+                x=x, y=y, last_seen_tick=self._tick,
+            )
+        else:
+            remembered.x, remembered.y, remembered.last_seen_tick = x, y, self._tick
+
+    def _landmark_observations(self, px: float, py: float, facing: float, in_view: Set[int]) -> Tuple[LandmarkObservation, ...]:
+        out = []
+        for r in self._landmarks.values():
+            if r.gone:
+                continue
+            agreement = r.agreement()
+            out.append(
+                LandmarkObservation(
+                    landmark_id=r.landmark_id,
+                    name=r.name,
+                    category=r.category,  # type: ignore[arg-type]
+                    x=round(r.x, 1),
+                    y=round(r.y, 1),
+                    distance=round(math.hypot(r.x - px, r.y - py), 1),
+                    bearing=round(bearing_to(px, py, facing, r.x, r.y), 1),
+                    in_view=r.object_id in in_view,
+                    last_seen_tick=r.last_seen_tick,
+                    reward_agreement=None if agreement is None else round(agreement, 3),
+                    reward_moves=r.moves,
+                    approaches_nowhere=r.approaches_nowhere,
+                )
+            )
+        return tuple(out)
+
+    def _landmark_by_id(self, landmark_id: Optional[str]) -> Optional[_Remembered]:
+        if not landmark_id:
+            return None
+        return next((r for r in self._landmarks.values() if r.landmark_id == landmark_id and not r.gone), None)
+
+    @staticmethod
+    def _object_id(target_id: Optional[str]) -> Optional[int]:
+        """The object id at the end of an enemy or pickup id such as `ShotgunGuy_2`."""
+        if not target_id:
+            return None
+        tail = target_id.rsplit("_", 1)[-1]
+        return int(tail) if tail.isdigit() else None
+
+    def _learn_landmarks(self, x0: float, y0: float, reward: float) -> None:
+        """Add one decision to every remembered pickup's record of how reward went with its distance."""
+        x1 = self._safe_var(vzd.GameVariable.POSITION_X, x0)
+        y1 = self._safe_var(vzd.GameVariable.POSITION_Y, y0)
+        for r in self._landmarks.values():
+            if r.gone:
+                continue
+            change = math.hypot(r.x - x1, r.y - y1) - math.hypot(r.x - x0, r.y - y0)
+            if abs(change) < LANDMARK_MOVE_UNITS:
+                continue
+            r.moves += 1
+            r.reward_closer += reward * -change
+            r.distance_sq += change * change
+            r.reward_sq += reward * reward
+
     @property
     def episode_cells_discovered(self) -> int:
         """Map cells (128 x 128 units) visited this episode, shown in the position channel."""
         return len(self._episode_cells)
 
-    def execute_action(self, action: ActionSpec) -> ExecutionStepResult:
-        """Realize the selected action as a bounded closed-loop reflex burst."""
+    def execute_action(self, action: ActionSpec, targets: Optional[Any] = None) -> ExecutionStepResult:
+        """Realize the selected action as a bounded closed-loop reflex burst.
+
+        `targets` carries what d1-ultra chose for the motor's assistance: `enemy`, the visible enemy to aim
+        at, and `pickup`, the remembered pickup a pickup-seeking action walks to (ids, either may be None).
+        Without them the assistance has no target.
+        """
         if self.game.is_episode_finished() and not self.auto_restart:
             return self._finished_result()
         self._episode_cells.add(self._current_cell())
         x0 = self._safe_var(vzd.GameVariable.POSITION_X, 0.0)
         y0 = self._safe_var(vzd.GameVariable.POSITION_Y, 0.0)
         steer = "pickup_id" in action.parameters
+        pickup = self._landmark_by_id(getattr(targets, "pickup", None)) if steer else None
+        before = math.hypot(pickup.x - x0, pickup.y - y0) if pickup is not None else 0.0
+        # A walk at the pickup, not an arc round toward it: it starts with the pickup ahead, within the cone.
+        walked_at = pickup is not None and abs(
+            bearing_to(x0, y0, self._safe_var(vzd.GameVariable.ANGLE, 0.0), pickup.x, pickup.y)
+        ) <= WALK_CONE_DEG
+        enemy = self._object_id(getattr(targets, "enemy", None))
         burst = self.motor.burst(
             plan=action.primitive_expansion,
             steer_to_pickup=steer,
             step_delay_ms=self.step_delay_ms,
+            enemy_target=enemy,
+            pickup_target=(pickup.x, pickup.y) if pickup is not None else None,
         )
+        if enemy is not None and any("shoot" in p for p in action.primitive_expansion) and not burst.episode_finished:
+            # An attack on the chosen enemy: the evidence keeps how many in a row hit nothing.
+            self._attacks_without_hit[enemy] = 0 if burst.hits_delta > 0 else self._attacks_without_hit.get(enemy, 0) + 1
         displacement = self._displacement(x0, y0)
-        if steer and self.motor.last_pickup_target is not None and displacement < UNREACHABLE_PICKUP_PROGRESS:
-            # Walking at this pickup got nowhere (ledge, wall, or a full inventory); stop chasing it this episode.
-            self.motor.ignored_pickups.add(self.motor.last_pickup_target)
+        if pickup is not None and walked_at and not burst.episode_finished:
+            after = math.hypot(pickup.x - self._safe_var(vzd.GameVariable.POSITION_X, x0), pickup.y - self._safe_var(vzd.GameVariable.POSITION_Y, y0))
+            if before - after < UNREACHABLE_PICKUP_PROGRESS:
+                # Walking at this pickup got nowhere (a ledge, a wall, a full inventory): the evidence says so.
+                pickup.approaches_nowhere += 1
+        if not burst.episode_finished:
+            self._learn_landmarks(x0, y0, burst.reward)
         return self._account(action.id, burst, displacement)
 
     def execute_idle(self, frames: int) -> ExecutionStepResult:
@@ -398,7 +545,10 @@ class ViZDoomBridge:
         x0 = self._safe_var(vzd.GameVariable.POSITION_X, 0.0)
         y0 = self._safe_var(vzd.GameVariable.POSITION_Y, 0.0)
         burst = self.motor.idle(frames)
-        return self._account("missed", burst, self._displacement(x0, y0))
+        displacement = self._displacement(x0, y0)
+        if not burst.episode_finished:
+            self._learn_landmarks(x0, y0, burst.reward)
+        return self._account("missed", burst, displacement)
 
     @staticmethod
     def _finished_result() -> ExecutionStepResult:
@@ -427,6 +577,7 @@ class ViZDoomBridge:
         self._tick += 1
         self._episode_tick += 1
         self._total_reward += burst.reward
+        self._last_reward = burst.reward
         self._state_summaries.append(f"tick={self._tick} act={label} hp={burst.health_after:.0f} r={burst.reward:+.1f}")
         return ExecutionStepResult(
             reward=burst.reward,

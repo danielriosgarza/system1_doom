@@ -55,6 +55,10 @@ export interface PreconditionSpec {
   max_health?: number
   requires_visible_enemy?: boolean
   requires_visible_pickup?: boolean
+  /**
+   * A pickup seen this episode and not yet picked up is remembered
+   */
+  requires_known_pickup?: boolean
   min_wall_distance_front?: number
   max_wall_distance_front?: number
   excluded_weapons?: string[]
@@ -150,6 +154,10 @@ export interface Bounds {
    * Pickups rendered in the pickups channel
    */
   max_pickups?: number
+  /**
+   * Remembered pickups rendered in the landmarks channel
+   */
+  max_landmarks?: number
   /**
    * Primitives rendered in the history channel
    */
@@ -311,6 +319,7 @@ export interface CentralConfig {
 export interface ChannelCaps {
   enemies?: number
   pickups?: number
+  landmarks?: number
   history_steps?: number
   summaries?: number
   thin_record?: number
@@ -344,7 +353,8 @@ export interface Configuration {
   bounds?: Bounds
 }
 /**
- * One sense: the channels it is shown, the concern its instructions name, and its finite reasons.
+ * One sense: the channels it is shown, the concern its instructions name, its finite reasons, and the
+ * motor target it chooses, if any.
  *
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
  * via the `definition` "SenseConfig".
@@ -356,6 +366,10 @@ export interface SenseConfig {
    * @minItems 1
    */
   reasons: [string, ...string[]]
+  /**
+   * A fourth question: the enemy the aim locks onto, or the pickup to walk to
+   */
+  target?: ('enemy' | 'pickup') | null
 }
 /**
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
@@ -371,6 +385,7 @@ export interface EnemyTrace {
   width: number
   height: number
   is_attacking?: boolean
+  attacks_without_hit?: number
 }
 /**
  * What an episode's d1-ultra calls cost, as the responses' usage blocks report it.
@@ -637,6 +652,7 @@ export interface StateTrace {
   walls: WallTrace
   enemies?: EnemyTrace[]
   pickups?: PickupTrace[]
+  landmarks?: LandmarkTrace[]
   recent_incoming_damage?: number
   recent_outgoing_damage?: number
   recent_hits?: number
@@ -680,6 +696,32 @@ export interface PickupTrace {
   screen_y: number
   width?: number
   height?: number
+}
+/**
+ * A pickup remembered from earlier in the episode: where it lies from this tick's pose, and its record.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "LandmarkTrace".
+ */
+export interface LandmarkTrace {
+  id: string
+  name: string
+  category: string
+  x?: number
+  y?: number
+  distance: number
+  /**
+   * Degrees from the facing, positive to the left
+   */
+  bearing: number
+  in_view?: boolean
+  last_seen_tick?: number
+  /**
+   * How reward went with getting closer, -1 to 1
+   */
+  reward_agreement?: number | null
+  reward_moves?: number
+  approaches_nowhere?: number
 }
 /**
  * One legal action as the menu shows it.
@@ -756,6 +798,18 @@ export interface Message {
   action: string
   reason: string
   strength: number
+  /**
+   * The enemy or pickup the sense chose for the motor, if it chooses one
+   */
+  target?: string | null
+  /**
+   * enemy or pickup
+   */
+  target_kind?: string | null
+  /**
+   * The chosen target in the words the sense saw it in
+   */
+  target_line?: string | null
 }
 /**
  * The whole table of one history test, as the `ReflectionTrace` keeps it.
@@ -905,6 +959,21 @@ export interface InstanceResult {
   reason_probabilities?: {
     [k: string]: number
   }
+  /**
+   * The enemy or pickup a sense chose for the motor (first in criteria order on a tie)
+   */
+  target?: string | null
+  target_probabilities?: {
+    [k: string]: number
+  }
+  /**
+   * What a sense's target is (enemy or pickup), from its configuration
+   */
+  target_kind?: ('enemy' | 'pickup') | null
+  /**
+   * The chosen target's criterion: the line the sense saw it in
+   */
+  target_line?: string | null
   /**
    * The admit instance's probability
    */
@@ -1336,6 +1405,28 @@ export interface System2Note {
   version?: number | null
 }
 /**
+ * What the senses chose for the motor's assistance this tick; None where no sense chose.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "Targets".
+ */
+export interface Targets {
+  /**
+   * The visible enemy the aim locks onto
+   */
+  enemy?: string | null
+  /**
+   * The remembered pickup a pickup-seeking action walks to
+   */
+  pickup?: string | null
+  /**
+   * Target kind -> the sense whose answer it is
+   */
+  chosen_by?: {
+    [k: string]: string
+  }
+}
+/**
  * One tick, whole.
  *
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
@@ -1450,6 +1541,7 @@ export interface TickTrace {
    */
   messages?: Message[]
   pick: Pick
+  targets?: Targets1
   /**
    * The central's pick; None when the central missed and the tick idled
    */
@@ -1477,6 +1569,25 @@ export interface TickTrace {
     [k: string]: number
   }
   usage?: Usage1
+}
+/**
+ * The enemy and the pickup the senses chose for the motor
+ */
+export interface Targets1 {
+  /**
+   * The visible enemy the aim locks onto
+   */
+  enemy?: string | null
+  /**
+   * The remembered pickup a pickup-seeking action walks to
+   */
+  pickup?: string | null
+  /**
+   * Target kind -> the sense whose answer it is
+   */
+  chosen_by?: {
+    [k: string]: string
+  }
 }
 /**
  * Token usage and cost of one call, as the response's `usage` block reports it.

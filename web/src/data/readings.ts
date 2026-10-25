@@ -26,6 +26,7 @@ export const CHANNELS = [
   'incoming',
   'outgoing',
   'pickups',
+  'landmarks',
   'geometry',
   'position',
   'progress',

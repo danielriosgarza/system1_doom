@@ -108,7 +108,7 @@ def test_h_sense_golden(inputs):
         "- last 2 episodes (6 decisions): spoke 4, followed 4, paid off 3 of 4; overruled 0, the chosen action paid off 0 of 0; "
         "mean strength 0.68 over 3 ticks when it paid off, 0.70 over 1 tick when not; missed 0 of 6 calls\n"
         "scope now (5 of 7 channels): vitals, threats, incoming, projections, menu\n"
-        "could add: outgoing, pickups, geometry, position, progress, history, frame, values, novelty, archive\n"
+        "could add: outgoing, pickups, landmarks, geometry, position, progress, history, frame, values, novelty, archive\n"
         "could drop: vitals, threats, incoming, projections"
     )
     goal = render_history_channel(inputs, "h_sense:goal")
@@ -127,7 +127,7 @@ def test_h_central_golden(inputs):
         "- last 2 episodes (6 decisions): 6 decisions, 1 missed; followed the strongest message on 4 of 5 decisions with a message; "
         "picks that paid off 4 of 5; ties 1\n"
         "scope now (5 of 7 channels): messages, relevance, exploration, vitals, menu; novelty is added while the level is explore and there is room\n"
-        "could add: threats, incoming, outgoing, pickups, geometry, position, progress, history, frame, projections, values, novelty, archive\n"
+        "could add: threats, incoming, outgoing, pickups, landmarks, geometry, position, progress, history, frame, projections, values, novelty, archive\n"
         "could drop: messages, relevance, exploration, vitals"
     )
 

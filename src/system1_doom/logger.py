@@ -20,7 +20,7 @@ from system1_doom.configuration import ExplorationLevel
 from system1_doom.d1_client import Usage
 from system1_doom.evidence import Message
 from system1_doom.instance import InstanceResult
-from system1_doom.system1 import Pick
+from system1_doom.system1 import Pick, Targets
 from system1_doom.tracing import (
     OutcomeTrace,
     ProjectionChainTrace,
@@ -49,6 +49,7 @@ class TickTrace(BaseModel):
     instances: Dict[str, InstanceResult] = Field(description="The five senses in sense order, then the central")
     messages: List[Message] = Field(default_factory=list, description="What the senses that spoke sent the central")
     pick: Pick
+    targets: Targets = Field(default_factory=Targets, description="The enemy and the pickup the senses chose for the motor")
     executed_action: Optional[str] = Field(description="The central's pick; None when the central missed and the tick idled")
     primitive_steps_executed: List[str]
     outcome: OutcomeTrace

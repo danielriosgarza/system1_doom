@@ -103,8 +103,8 @@ there is nothing that could decide, so `cli`, `train`, `export` and
 ## 2. Architecture at a glance
 
 ```text
- Evidence channels (evidence.py): vitals · threats · incoming · outgoing · pickups · geometry
-      position · progress · history · frame · menu · projections (simulator) · values (networks)
+ Evidence channels (evidence.py): vitals · threats · incoming · outgoing · pickups · landmarks
+      geometry · position · progress · history · frame · menu · projections (simulator) · values
       novelty · archive                      central only: exploration · messages · relevance
         │           │            │             │            │
    ┌────▼───┐  ┌────▼───┐  ┌─────▼─────┐  ┌────▼────┐  ┌───▼──┐   five senses (senses.py): one
@@ -368,7 +368,7 @@ strafe_left_shoot  strafe_right_shoot     ← compound: strafe + track + fire
 |---|---|---|
 | `circle_strafe_left/right` | turn, shoot, strafe, shoot | orbit a side target while firing |
 | `retreat_to_cover` | backward, strafe_left, backward | disengage at low HP |
-| `approach_pickup` | forward ×4 (`pickup_id` param ⇒ motor steers) | collect the nearest pickup |
+| `approach_pickup` | forward ×4 (`pickup_id` param ⇒ motor steers) | walk to the pickup the resource sense chose, by its remembered position |
 | `peek_and_fire` | strafe_left, shoot, strafe_right, shoot | weave + double burst |
 | `weave_fire` | strafe_left_shoot ×2, strafe_right_shoot ×2 | strafe-fire both ways; empirically the strongest built-in on `deadly_corridor` (scripted check: 8/20 seeds cleared vs 2/20 for `peek_and_fire`) |
 
@@ -470,8 +470,16 @@ so all downstream logic is button-set-aware.
   (`is_enemy_name`, `is_pickup_name`, `is_ignored_actor` — dead actors,
   the player, blood/puffs/bullets/gibs are ignored). Pickup names map to
   categories via `PICKUP_CATEGORY_MAP` (medikit→health, greenarmor→armor,
-  shellbox→ammo, shotgun→weapon, …). Pickups the motor has marked
-  unreachable this episode are hidden here too.
+  shellbox→ammo, shotgun→weapon, …). Each enemy carries how many of the
+  agent's attacks on it in a row hit nothing (`attacks_without_hit`).
+* **Remembered pickups** (`landmarks`): every pickup seen this episode
+  whose position the objects buffer gives is remembered until it leaves
+  the level's objects (picked up). Each carries, from the current
+  position and facing, its distance and bearing (positive to the left),
+  whether it is in view and when it was last seen; how the per-decision
+  reward went with its distance over the decisions that moved the agent
+  relative to it (a cosine, `reward_agreement`, and the number of such
+  moves); and how many walks at it got no closer (`approaches_nowhere`).
 * **Depth buffer** → mean depth of the centre/left/right thirds ×4 →
   `wall_distance_front/left/right`.
 * **Screen buffer** → brightness, and a 320×240 JPEG (quality 75,
@@ -480,15 +488,21 @@ so all downstream logic is button-set-aware.
 * Memory: last 10 actions, last 5 one-line state summaries, last 16
   discovered 128-unit grid sectors, archive strategy refs.
 
-**`execute_action(action)`** snapshots position, delegates to
+**`execute_action(action, targets)`** snapshots position, delegates to
 `motor.burst(plan=action.primitive_expansion, steer_to_pickup=("pickup_id"
-in parameters))`, then derives everything the learner and logger need:
-reward, damage taken, hits/kills deltas, health/armor/ammo *gains*, death,
+in parameters), enemy_target=…, pickup_target=…)` with the targets the
+senses chose (`targets.enemy`, the visible enemy to aim at, and
+`targets.pickup`, the remembered pickup to walk to; either may be
+`None`), then derives everything the learner and logger need: reward,
+damage taken, hits/kills deltas, health/armor/ammo *gains*, death,
 displacement, and **new map cells** (128-unit grid cells first entered
-this episode — the navigation reward). If a pickup-seeking action moved
-the player < 12 units, that pickup is added to `motor.ignored_pickups`
-for the rest of the episode (otherwise a shotgun on a ledge would pin
-the player against a wall until timeout — found in training).
+this episode — the navigation reward). Two records feed the evidence,
+and neither removes or chooses anything: a walk at the chosen pickup
+(started with it within 30° of the facing) that got less than 12 units
+closer adds one to its `approaches_nowhere`, and an attack on the chosen
+enemy that hit nothing adds one to its `attacks_without_hit` (a hit
+resets it). Every decision also adds to each remembered pickup's record
+of how reward went with its distance.
 
 **`execute_idle(frames)`** holds no keys for `frames // 2` motor steps
 (4 steps for a decision's 8 frames) and accounts the result exactly as
@@ -503,15 +517,19 @@ alive; default ⇒ finished alive with ≥1 kill or armor ≥ 100.
 `episode_status()` exposes `{health, armor, kills, reward}`.
 `auto_restart` (default `True`) restarts finished episodes on the next
 acquire; `run_episode` disables it and manages restarts itself.
-`restart_episode(seed)` also resets the motor's target lock and cell set.
+`restart_episode(seed)` also clears the remembered pickups, the attack
+records and the cell set.
 
 ### 8.2 Tactical motor — `motor.py`
 
 The central instance picks an *action*; the motor executes that action's
 **own** primitive list. The assists below are reflexes *inside* a
-primitive (aim before firing, track while strafing), bounded by the plan;
-they never choose an action. `idle(frames)` presses nothing, for a missed
-decision.
+primitive (aim before firing, track while strafing, steer while walking
+to a pickup), bounded by the plan; they never choose an action, and they
+aim only at targets d1-ultra chose: the enemy the combat sense chose and
+the pickup the resource sense chose (§8.6). With no chosen target the
+primitive's keys are pressed as they are. `idle(frames)` presses
+nothing, for a missed decision.
 
 * **Timing.** Each primitive is held for `hold = max(1, 4 // len(plan))`
   motor steps, each step being `make_action(vector, frame_skip=2)`
@@ -519,20 +537,21 @@ decision.
   last ≈ 8 tics; longer macros run longer. The burst stops at episode end.
 * **Assisted primitives** (`_assisted_flags`) — every primitive keeps a
   small closed-loop assist, all bounded by the plan:
-  * `shoot`: find the *locked* enemy (the motor keeps a `lock_id` across
-    steps, re-acquiring the most-central enemy when the lock is lost);
-    if it is off-centre by more than `align_px ≈ 10 px @320 wide`, press
-    the turn button toward it (or strafe toward it on scenarios without
-    turn buttons); fire only once centred.
-  * `strafe_left/right`: strafe, plus a tracking turn onto the locked
-    enemy when one is visible.
+  * `shoot`: find the chosen enemy (`lock_id`, the object id of the
+    combat sense's target; the motor never picks another); if it is
+    off-centre by more than `align_px ≈ 10 px @320 wide`, press the turn
+    button toward it (or strafe toward it on scenarios without turn
+    buttons); fire only once centred. With no chosen enemy in view it
+    fires straight ahead.
+  * `strafe_left/right`: strafe, plus a tracking turn onto the chosen
+    enemy while it is in view.
   * `strafe_left_shoot` / `strafe_right_shoot` (compound): strafe the
     whole step; turn toward the target, and press `ATTACK` in the same
     step once centred. This compound exists because no single primitive
     could move and fire simultaneously.
   * `move_forward` inside a pickup-seeking action: also turn toward the
-    nearest visible pickup (tallest sprite = closest), recording
-    `last_pickup_target` for the bridge's unreachable-pickup rule.
+    bearing of the chosen pickup's remembered position (outside a 4°
+    deadband), so the walk works while the pickup is out of view.
   * Everything else is pressed literally.
 * **Support check.** `action_supported(expansion)` requires every
   primitive's buttons (including compound pairs) to exist in the
@@ -605,26 +624,33 @@ Configuration (version ≥ 1)
 **Initial scopes** (version 1, `default_configuration()`, the design's
 tables):
 
-| Instance | Scope | Reasons |
-|---|---|---|
-| survival | `vitals`, `threats`, `incoming`, `projections`, `menu` | health_critical, under_fire, enemy_too_close, recovering, no_threat |
-| combat | `threats`, `outgoing`, `vitals`, `frame`, `projections`, `menu` | target_aimed, target_off_centre, several_enemies, low_ammo, no_target |
-| navigation | `geometry`, `position`, `progress`, `projections`, `menu` | path_clear, wall_ahead, stalled, door_or_switch_ahead, unexplored_side |
-| resource | `pickups`, `vitals`, `menu` | health_pickup_near, ammo_pickup_near, pickup_guarded, nothing_needed, nothing_visible |
-| goal | `progress`, `archive`, `history`, `values`, `menu` | making_progress, plateau, strategy_fits, strategy_failing, nearly_done |
-| central | `messages`, `relevance`, `exploration`, `vitals`, `menu` (+ `novelty` while exploring, if there is room) | — |
+| Instance | Scope | Reasons | Target |
+|---|---|---|---|
+| survival | `vitals`, `threats`, `incoming`, `projections`, `menu` | health_critical, under_fire, enemy_too_close, recovering, no_threat | — |
+| combat | `threats`, `outgoing`, `vitals`, `frame`, `projections`, `menu` | target_aimed, target_off_centre, several_enemies, low_ammo, no_target | `enemy` |
+| navigation | `landmarks`, `geometry`, `position`, `progress`, `menu` | path_clear, wall_ahead, stalled, off_course, door_or_switch_ahead, unexplored_side | — |
+| resource | `pickups`, `landmarks`, `vitals`, `menu` | health_pickup_near, ammo_pickup_near, pickup_guarded, nothing_needed, nothing_visible | `pickup` |
+| goal | `landmarks`, `progress`, `history`, `archive`, `values`, `menu` | making_progress, plateau, off_course, strategy_fits, strategy_failing, nearly_done | — |
+| central | `messages`, `relevance`, `exploration`, `vitals`, `menu` (+ `novelty` while exploring, if there is room) | — | — |
+
+A sense's **target** is the motor target it chooses: the combat sense
+chooses which visible enemy the aim locks onto, the resource sense which
+remembered pickup a pickup-seeking action walks to (§8.2, §8.6). Each
+target kind is chosen by one sense at most; a configuration saved before
+targets existed loads with these two.
 
 **Validation** (a configuration that breaks any of these does not load):
 the senses are exactly the five, in order; every channel is known and
 appears once; every scope contains `menu`; a scope holds at most
 `max_scope_channels` (7) channels; a sense's scope never contains
 `messages`, `relevance` or `exploration`; reasons are unique lowercase
-snake_case ids; only macros can be admitted.
+snake_case ids; each target kind belongs to one sense at most; only
+macros can be admitted.
 
 **`Bounds`** holds every number of the design in one place: per-call
 budget 5 s; `yes_at` 0.5 (d1's own yes, for speaking and admitting);
-scope 7 channels; caps of 6 enemies, 6 pickups, 6 history steps and 3
-summaries; pools of 6 (System 1) and 2 (System 2); 1 trial in flight; 60
+scope 7 channels; caps of 6 enemies, 6 pickups, 8 remembered pickups, 6
+history steps and 3 summaries; pools of 6 (System 1) and 2 (System 2); 1 trial in flight; 60
 decisions of cooling; a history ring of 2,000; a history-test sample of
 24; 40 System 2 calls per cycle; 3 consecutive central misses; 8 frames
 per decision; an 8-step return with discount 0.9; a probability
@@ -664,10 +690,11 @@ A scope renders only its channels, in the fixed order of
 | Channel | What it renders | Source |
 |---|---|---|
 | `vitals` | health, armor, ammo, weapon | observation |
-| `threats` | the visible enemies nearest first (at most 6): name, distance, angle, on-screen size, under the crosshair or attacking; the count | observation |
+| `threats` | the visible enemies nearest first (at most 6): name, distance, angle, on-screen size, under the crosshair or attacking, how many of the agent's last attacks on it hit nothing; the count | observation, bridge |
 | `incoming` | damage taken since the last decision; consecutive decisions under fire | observation, counter |
 | `outgoing` | damage dealt, hits and kills since the last decision | observation |
 | `pickups` | the visible pickups nearest first (at most 6): name, category, distance, angle | observation |
+| `landmarks` | the pickups seen this episode and not picked up, nearest first (at most 8), each where it lies now from the agent's position and facing: distance, bearing (“behind you” past 90°), in view or when last seen, and how reward went with its distance (“reward rose as you got closer (agreement +0.97 over 8 moves)”); once walks at it got no closer, “cannot be walked to from here, N walks at it got no closer” in place of the reward link | bridge |
 | `geometry` | wall distance ahead, left, right; moving or still | depth buffer |
 | `position` | x, y, facing; sectors discovered this episode | observation, bridge |
 | `progress` | decisions so far, reward so far, kills, last displacement, stall streak | observation, counter |
@@ -679,7 +706,7 @@ A scope renders only its channels, in the fixed order of
 | `novelty` | how often each legal action has been taken in this situation so far | controller counter |
 | `archive` | the strategies, the active one and each one's record | `archive.py` |
 | `exploration` | the level and what it asks of the chooser (central only) | configuration |
-| `messages` | one line per spoken sense: “survival says strafe_left, strength 0.82, reason under fire.” (central only) | System 1 |
+| `messages` | one line per spoken sense: “survival says strafe_left, strength 0.82, reason under fire.”, with the sense's target in the words it saw it in when it chose one (“…, aim at Zombieman at distance 180, 2 deg left, …”, “…, walk to GreenArmor (armor): 1192 away, …”) (central only) | System 1 |
 | `relevance` | each sense's record in this situation (central only, §8.8) | ledger |
 
 Rendering is **deterministic**: the same inputs and scope give the same
@@ -733,6 +760,7 @@ and reads the answers:
 | sense | `speak`: “Must the action chooser hear from you before the next decision?” | noul | — |
 | sense | `action`: “Which legal action do you recommend now?” | choice | exactly the legal menu, id → description, in menu order |
 | sense | `reason`: “Which reason best describes why?” | choice | the sense's reasons |
+| sense with a target | `target`: “Which visible enemy should the agent's aim lock onto?” (combat) or “When the agent walks to a pickup, which one should it walk to, given where each lies and whether walking at it has got the agent any closer?” (resource) | choice | the candidates its scope shows, id → the channel's own line for it (`threats` for enemies, `landmarks` for pickups); asked only when there are two or more |
 | central | `choose`: “Choose the action the agent executes now.” | choice | exactly the legal menu |
 | admit | `admit`: “Should this proposed macro-action enter the agent's legal menu?” | noul | — |
 | reflector | `speak`: “Must the slow system's central hear a proposal from you now?” | noul | — |
@@ -743,7 +771,8 @@ and reads the answers:
 
 `InstanceResult` keeps everything for the trace and the history: scope,
 verbatim evidence, image reference, every answer in full, `spoke`,
-`strength`, the top `action` and its distribution, the top `reason`,
+`strength`, the top `action` and its distribution, the top `reason`, the
+`target` with its distribution and its line,
 `missed` and `miss_reason`, the raw answer, latency and usage. System 2's
 instances are sent with `run_system2_instance`: their evidence is history
 text (never a frame), and they also fill `change` or `verdict` with its
@@ -761,8 +790,8 @@ each inside the per-call budget (the pool waits 2 s past the budget at
 most, against a starved thread, and then records a timeout). A sense
 speaks when its `speak` probability is at least `yes_at` (0.5): d1's own
 yes, not a tuned threshold. A spoken sense sends a `Message` (sense,
-action, reason, strength = the `speak` probability, unscaled) to the
-central's `messages` channel; a silent sense is logged with the same
+action, reason, strength = the `speak` probability, unscaled, and its
+target in the words it saw it in) to the central's `messages` channel; a silent sense is logged with the same
 answers but reaches the central as silence, and a missed sense is silent
 and marked `missed`.
 
@@ -787,8 +816,16 @@ only place a `Pick` is made:
 There is no temperature and no bonus. The `exploration` channel tells
 the central what its level means, so d1 knows what is asked of it.
 `System1Result` carries the inputs, the five sense results, the
-central's result, the messages, the pick and the timings (`senses_ms`,
-`central_ms`), and sums the tick's usage.
+central's result, the messages, the pick, the motor's targets and the
+timings (`senses_ms`, `central_ms`), and sums the tick's usage.
+
+The **targets** (`Targets`: `enemy`, `pickup`, `chosen_by`) are the
+senses' `target` answers, each from the sense the configuration gives
+that kind; the controller passes them to `execute_action` with the pick.
+A sense that missed leaves its target empty, and the motor then has
+nothing to aim at. When there is a single candidate (one enemy in view,
+one pickup remembered) it is the target without a question, since a
+choice needs two options; `chosen_by` records it as `only candidate`.
 
 ### 8.8 Relevance and history — `relevance.py`, `history.py`
 
