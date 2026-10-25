@@ -2,6 +2,7 @@
 
     python -m system1_doom.export --scenario deadly_corridor.cfg --episodes 1 --seed 7
     python -m system1_doom.export --scenario deadly_corridor.cfg --seed 7 --model best --out web/public/episodes/x
+    python -m system1_doom.export --scenario deadly_corridor.cfg --seed 11 --model latest --d1 --d1-sync --out web/public/episodes/y
     python -m system1_doom.export --check web/public/episodes/x
     python -m system1_doom.export --index web/public/episodes
     python -m system1_doom.export --schema web/schema/bundle.schema.json
@@ -49,6 +50,10 @@ if TYPE_CHECKING:
 Model = Literal["heuristics", "best", "latest"]
 
 FRAME_QUALITY = 80
+TICK_BUDGET_SEC = 0.04
+# Under --d1-sync a tick waits for d1-ultra over the network, so its budget must outlast a round trip
+# (the reduced and critical thresholds are absolute, 12 ms and 4 ms, so every tick stays in full mode).
+D1_SYNC_TICK_BUDGET_SEC = 5.0
 COPIED_RUN_FILES = ("metrics.jsonl", "evaluation.json", "macros.json")
 # `macros.json` is `RunStore.save_macros`: the macros admitted during training, as action specs.
 MacroList = TypeAdapter(List[ActionSpec])
@@ -360,8 +365,12 @@ def build_player(
     slow_path: bool = True,
     codex: bool = False,
     deterministic: bool = False,
+    d1_sync: bool = False,
 ) -> Player:
-    """The bridge and controller a bundle is played with, writing its frames and logs into `out`."""
+    """The bridge and controller a bundle is played with, writing its frames and logs into `out`.
+
+    `d1_sync` waits for d1-ultra's answers each tick instead of reading them from a cache (`sync_d1`).
+    """
     env = RecordingBridge(
         frames_dir=out / "frames",
         scenario=scenario,
@@ -370,11 +379,11 @@ def build_player(
         seed=seed,
     )
     cfg = ControllerConfig(
-        execution_mode="async_cached",
+        execution_mode="sync_d1" if d1_sync else "async_cached",
         enable_d1_ultra=d1,
         enable_slow_llm=slow_path,
         use_codex_cli=codex,
-        tick_budget_sec=0.04,
+        tick_budget_sec=D1_SYNC_TICK_BUDGET_SEC if d1_sync else TICK_BUDGET_SEC,
         log_dir=str(out),
         deterministic_arbiter=deterministic,
         exploration_floor=0.0,
@@ -516,13 +525,14 @@ def record_bundle(
     deterministic: bool = False,
     name: Optional[str] = None,
     title: Optional[str] = None,
+    d1_sync: bool = False,
 ) -> EpisodeMeta:
     """Play one seeded episode and write it as a bundle in `out`."""
     store = RunStore(run_dir or default_run_dir(scenario))
     learner, model_path = _load_model(store, model)
     _prepare_out_dir(out)
     player = build_player(
-        scenario, seed, out, model, store, learner, model_path, max_ticks, d1, slow_path, codex, deterministic
+        scenario, seed, out, model, store, learner, model_path, max_ticks, d1, slow_path, codex, deterministic, d1_sync
     )
     try:
         result, traces = play_episode(player, seed)
@@ -637,6 +647,12 @@ def bundle_json_schema() -> Dict[str, Any]:
     return schema
 
 
+D1_SYNC_HELP = (
+    f"With --d1: wait for d1-ultra's answers every tick (execution mode sync_d1, tick budget "
+    f"{D1_SYNC_TICK_BUDGET_SEC:g} s) instead of reading earlier answers from a cache"
+)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Record controller episodes as bundles for the web app")
     parser.add_argument("--scenario", default="deadly_corridor.cfg", help="ViZDoom scenario config filename")
@@ -649,6 +665,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--title", default=None, help="Episode title shown in the app")
     parser.add_argument("--max-ticks", type=int, default=500, help="Decision cap per episode")
     parser.add_argument("--d1", action="store_true", help="Use Liquid AI d1-ultra (needs LIQUID_API_KEY)")
+    parser.add_argument("--d1-sync", action="store_true", help=D1_SYNC_HELP)
     parser.add_argument("--codex", action="store_true", help="Let the slow path call the Codex CLI instead of templates")
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
     parser.add_argument("--deterministic", action="store_true", help="Always take the arbiter's top-scored action")
@@ -659,7 +676,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.d1_sync and not args.d1:
+        parser.error("--d1-sync needs --d1")
     if args.schema:
         out = Path(args.schema)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -699,6 +719,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 deterministic=args.deterministic,
                 name=args.name if args.episodes == 1 else None,
                 title=args.title if args.episodes == 1 else None,
+                d1_sync=args.d1_sync,
             )
         except (FileNotFoundError, FileExistsError) as exc:
             print(exc, file=sys.stderr)

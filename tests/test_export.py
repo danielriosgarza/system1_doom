@@ -4,7 +4,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from system1_doom import export
+from system1_doom import d1_client, export
 from system1_doom.actions import ActionVocabulary
 from system1_doom.admission import ProposalAdmissionPipeline
 from system1_doom.archive import StrategyArchive
@@ -179,3 +179,48 @@ def test_admission_records_each_stage():
     rejected = pipeline.evaluate_and_admit(good.replace("strafe_right", "noclip"), state)
     assert not rejected.admitted
     assert [(s.stage, s.passed) for s in rejected.stage_results] == [("parse", True), ("legality", False)]
+
+
+def _fake_d1(url: str, headers: dict, payload: dict, timeout: float) -> dict:
+    """Answers every question d1-ultra is asked: the first choice at 0.6, a middling score, a 0.5 noul."""
+    answers = {}
+    for key, question in payload["questions"].items():
+        if question["type"] == "choice":
+            ids = list(question["criteria"])
+            rest = 0.4 / max(1, len(ids) - 1)
+            probabilities = {a: (0.6 if i == 0 else rest) for i, a in enumerate(ids)}
+            answers[key] = {"type": "choice", "choice": ids[0], "probabilities": probabilities, "confidence": 0.6}
+        elif question["type"] == "score":
+            answers[key] = {"type": "score", "score": 1.0, "probabilities": {"0": 0.2, "1": 0.6, "2": 0.2}}
+        else:
+            answers[key] = {"type": "noul", "noul": 0.5}
+    return {"model": "d1-ultra", "answers": answers}
+
+
+def test_d1_sync_waits_for_d1_at_every_tick(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIQUID_API_KEY", "liquid_test_key")
+    monkeypatch.setattr(d1_client, "_default_requests_transport", _fake_d1)
+    out = tmp_path / "basic-heuristics-d1-3"
+    meta = export.record_bundle(
+        scenario="basic.cfg", seed=3, out=out, run_dir=tmp_path / "no_run", max_ticks=5, d1=True, d1_sync=True,
+        deterministic=True,
+    )
+    assert meta.brains.d1_ultra
+    assert meta.config.execution_mode == "sync_d1" and meta.config.tick_budget_sec == export.D1_SYNC_TICK_BUDGET_SEC
+    ticks = _ticks(out)
+    assert ticks
+    for tick in ticks:
+        # The budget never drops out of full mode, so every tick asks the modules', arbiter's and exploration's questions.
+        assert tick["budget_mode"] == "full" and tick["used_d1_ultra"]
+        first = tick["available_actions"][0]
+        assert max(tick["d1_arbiter_distribution"], key=tick["d1_arbiter_distribution"].get) == first
+        for module in tick["module_outputs"].values():
+            assert module["used_d1_ultra"] and module["d1_top_action"] == first and module["d1_weight"] in (0.25, 0.75)
+        assert tick["exploration_state"]["terms"]["d1_pressure"] == pytest.approx(0.5)
+    assert export.check_bundle(out) == []
+
+
+def test_d1_sync_needs_d1(capsys):
+    with pytest.raises(SystemExit) as exc:
+        export.main(["--d1-sync", "--out", "unused"])
+    assert exc.value.code == 2 and "--d1-sync needs --d1" in capsys.readouterr().err
