@@ -97,10 +97,19 @@ export async function loadIndex(root = 'episodes', fetcher: Fetcher = defaultFet
   return index
 }
 
+export interface LoadOptions {
+  /**
+   * An episode still being played: it may have no ticks yet, and the three files are read at slightly
+   * different moments, so the tick count is taken from the ticks rather than checked against the meta.
+   */
+  live?: boolean
+}
+
 export async function loadEpisode(
   name: string,
   root = 'episodes',
   fetcher: Fetcher = defaultFetcher,
+  options: LoadOptions = {},
 ): Promise<EpisodeBundle> {
   const base = `${root}/${name}`
   // Fetched together, but a failure is reported for the first file in this order, so a missing
@@ -114,14 +123,19 @@ export async function loadEpisode(
     if (r.status === 'rejected') throw r.reason
     return r.value
   })
-  const meta = parseJson<EpisodeMeta>(metaText, `${name}/episode.json`)
+  let meta = parseJson<EpisodeMeta>(metaText, `${name}/episode.json`)
   checkSchemaVersion(meta.schema_version, `${name}/episode.json`)
   const ticks = parseJsonl<TickTrace>(ticksText, `${name}/ticks.jsonl`)
-  if (ticks.length === 0) throw new BundleError(`${name}/ticks.jsonl has no ticks.`)
-  if (ticks.length !== meta.tick_count) {
-    throw new BundleError(`${name}/ticks.jsonl has ${ticks.length} ticks, but episode.json says ${meta.tick_count}.`)
+  if (!options.live) {
+    if (ticks.length === 0) throw new BundleError(`${name}/ticks.jsonl has no ticks.`)
+    if (ticks.length !== meta.tick_count) {
+      throw new BundleError(`${name}/ticks.jsonl has ${ticks.length} ticks, but episode.json says ${meta.tick_count}.`)
+    }
   }
   ticks.sort((a, b) => a.tick - b.tick)
+  if (options.live) {
+    meta = { ...meta, tick_count: ticks.length, last_tick: ticks[ticks.length - 1]?.tick ?? meta.last_tick }
+  }
   const proposals = parseJsonl<ProposalTrace>(proposalsText, `${name}/proposals.jsonl`)
 
   // Files copied from the training run, fetched only when episode.json lists them.

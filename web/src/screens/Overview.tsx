@@ -4,6 +4,7 @@ import { Brains } from '../components/Brains'
 import { BOXES, type BoxId } from '../content/architecture'
 import { ExplainerBody } from '../components/Panel'
 import { EXPLAINERS, type ExplainerContext, STORY } from '../content/explainers'
+import { LIVE_COPY } from '../content/live'
 import type { EpisodeBundle } from '../data/loader'
 import type { TickTrace } from '../schema/bundle'
 import { type Screen, openDrawer, openInInspector, openPanel, setScreen, startTour, useApp } from '../store'
@@ -42,6 +43,8 @@ const SCREEN_LINES: Array<{ id: Screen; name: string; line: string }> = [
 export function Overview({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: TickTrace; ctx: ExplainerContext }) {
   const tickIndex = useApp((s) => s.tickIndex)
   const playing = useApp((s) => s.playing)
+  const following = useApp((s) => s.following)
+  const live = useApp((s) => s.live?.current === bundle.name)
   const tourSeen = useApp((s) => s.tourSeen)
   const [selected, setSelected] = useState<BoxId | null>(null)
   const box = selected ? BOXES[selected] : null
@@ -69,6 +72,11 @@ export function Overview({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: T
         <p className="story-line">
           <strong>{STORY.sentence}</strong> {STORY.invariant}
         </p>
+        {live && (
+          <p className="live-line" data-testid="live-line">
+            <span className="live-dot" aria-hidden /> {LIVE_COPY.overview}
+          </p>
+        )}
         <Brains meta={bundle.meta}>
           <button type="button" className="link-button" onClick={() => openDrawer('recording')}>
             About this recording →
@@ -88,7 +96,7 @@ export function Overview({ bundle, tick, ctx }: { bundle: EpisodeBundle; tick: T
               bundle={bundle}
               tick={tick}
               tickIndex={tickIndex}
-              playing={playing}
+              playing={playing || following}
               selected={selected}
               onSelect={select}
             />

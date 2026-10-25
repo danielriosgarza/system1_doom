@@ -37,6 +37,9 @@ import {
   triggerAt,
   trustActions,
   trustLambda,
+  serveCommand,
+  stillPlaying,
+  stoppedEarly,
   trustRows,
   utcStamp,
 } from './derive'
@@ -450,6 +453,59 @@ describe('the command that makes a recording again', async () => {
     expect(exportCommand(changed)).toBe(`${exportCommand(base)} --deterministic --d1 --codex --max-ticks 200`)
     const quiet = { ...base, brains: { ...base.brains, slow_path: 'off' as const } }
     expect(exportCommand(quiet)).toBe(`${exportCommand(base)} --no-slow-path`)
+  })
+
+  it('records a live episode under export’s own folder name, since live-<k> belongs to serve', async () => {
+    const base = await meta('deadly_corridor-heuristics-9')
+    expect(exportCommand({ ...base, name: 'live-4', seed: 12 })).toBe(
+      'python -m system1_doom.export --scenario deadly_corridor.cfg --seed 12 --model heuristics --out web/public/episodes/deadly_corridor-heuristics-12',
+    )
+  })
+
+  it('names the serve command with the flags that differ from its defaults', () => {
+    const config = {
+      scenario: 'deadly_corridor.cfg',
+      seed: 7,
+      model: 'latest' as const,
+      d1: false,
+      codex: false,
+      slow_path: true,
+      deterministic: false,
+      max_ticks: 500,
+      pace_sec: 0.23,
+      episodes: null,
+    }
+    const plain = 'python -m system1_doom.serve --scenario deadly_corridor.cfg --seed 7 --model latest'
+    expect(serveCommand(config)).toBe(plain)
+    expect(
+      serveCommand({
+        ...config,
+        d1: true,
+        slow_path: false,
+        deterministic: true,
+        pace_sec: 0,
+        episodes: 3,
+        max_ticks: 90,
+      }),
+    ).toBe(`${plain} --deterministic --d1 --no-slow-path --max-ticks 90 --pace 0 --episodes 3`)
+  })
+
+  it('tells an episode still being played from a finished one', async () => {
+    const base = await meta('deadly_corridor-heuristics-9')
+    expect(stillPlaying(base)).toBe(false)
+    expect(stillPlaying({ ...base, result: { ...base.result, ticks: 0 } })).toBe(true)
+  })
+
+  it('tells an episode serve stopped by hand from one that ended, died or reached the cap', async () => {
+    const base = await meta('deadly_corridor-heuristics-9')
+    expect(stoppedEarly(base)).toBe(false)
+    const open = { ...base.result, finished: false, cleared: false, died: false }
+    expect(stoppedEarly({ ...base, result: { ...open, ticks: 7 }, tick_count: 7 })).toBe(true)
+    // Still playing: serve's zero result, not a stop.
+    expect(stoppedEarly({ ...base, result: { ...open, ticks: 0 }, tick_count: 7 })).toBe(false)
+    const cap = base.config.max_ticks
+    expect(stoppedEarly({ ...base, result: { ...open, ticks: cap }, tick_count: cap })).toBe(false)
+    expect(stoppedEarly({ ...base, result: { ...open, ticks: 7, died: true }, tick_count: 7 })).toBe(false)
   })
 
   it('shows the recording time in UTC', () => {

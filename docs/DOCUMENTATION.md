@@ -18,8 +18,8 @@
 > section references like “Spec §9” point back to `spec.md`.
 
 **Package:** `system1-doom` 0.2.0 · **Python:** ≥ 3.11 · **Source layout:**
-`src/system1_doom/` (23 modules, ≈ 6,600 LOC) · **Tests:** `tests/`
-(14 files, 57 tests) · **Web explainer:** `web/` (Vite + React + TypeScript)
+`src/system1_doom/` (24 modules, ≈ 7,400 LOC) · **Tests:** `tests/`
+(15 files, 67 tests) · **Web explainer:** `web/` (Vite + React + TypeScript)
 
 ---
 
@@ -206,6 +206,12 @@ python -m system1_doom.cli --scenario deadly_corridor.cfg --episodes 1 \
 # 6) Full system: d1-ultra in the loop + Codex proposing macros.
 #    (requires LIQUID_API_KEY and the codex CLI)
 python -m system1_doom.cli --scenario deadly_corridor.cfg --episodes 1 --visible
+
+# 7) Watch it decide in the browser, live: each tick streamed to the web
+#    explainer as it is played. Build the app once, then open
+#    http://127.0.0.1:8765/ (Ctrl+C stops it; §8.15, §11).
+(cd web && npm install && npm run build)
+python -m system1_doom.serve --scenario deadly_corridor.cfg --model latest
 ```
 
 Training writes to `runs/<scenario-stem>/` by default; re-running the same
@@ -226,7 +232,7 @@ system1_doom/
 │       ├── specs/2026-10-23-learning-controller-design.md
 │       └── plans/2026-10-23-d1-ultra-doom-controller.md
 ├── src/system1_doom/               # the package (see table below)
-├── tests/                          # 14 files, 57 tests (§16)
+├── tests/                          # 15 files, 67 tests (§16)
 ├── web/                            # the web explainer: Vite + React app and demo bundles (§8.15)
 ├── runs/<scenario>/                # training output, per scenario (§13)
 ├── bundles/                        # episode bundles from `system1_doom.export` (§13)
@@ -238,7 +244,7 @@ system1_doom/
 |---|---:|---|
 | `state.py` | 153 | Immutable `WorldState`/`Observation` pydantic models; state hash, context signature, d1 text rendering |
 | `actions.py` | 322 | Finite action vocabulary: 13 primitives + 6 built-in macros, preconditions, `ActionSpec` validation |
-| `vizdoom_env.py` | 423 | ViZDoom ⇄ controller bridge: builds `WorldState` from labels/depth/game vars, executes actions via the motor, level-clear rules |
+| `vizdoom_env.py` | 429 | ViZDoom ⇄ controller bridge: builds `WorldState` from labels/depth/game vars, executes actions via the motor, level-clear rules |
 | `motor.py` | 332 | Closed-loop reflex execution of a primitive plan (aim, tracking strafe, pickup steering) |
 | `simulator.py` | 276 | Bounded analytic short-horizon projections + empirical transition cache |
 | `modules.py` | 482 | The five `DecisionModule`s (survival/combat/navigation/resource/goal) + parallel `BatchModuleEvaluator` |
@@ -250,10 +256,11 @@ system1_doom/
 | `d1_client.py` | 248 | Liquid AI d1-ultra HTTP client: typed questions, sync `decide()`, async cache, graceful disable |
 | `llm_worker.py` | 236 | Async slow path: builds a bounded expansion prompt, runs `codex exec`, falls back to templates |
 | `admission.py` | 230 | Deterministic + sandbox + d1 admission gate for LLM macro proposals |
-| `controller.py` | 462 | `DoomDecisionController`: orchestrates one tick and one episode; budget degradation; module swapping |
+| `controller.py` | 516 | `DoomDecisionController`: orchestrates one tick and one episode; budget degradation; module swapping |
 | `logger.py` | 121 | `TickTrace`/`ProposalTrace` JSONL logging |
 | `tracing.py` | 425 | Typed decision-anatomy records for traces (state, pruning, module and arbiter arithmetic, rollout, steering, outcome), read-only |
-| `export.py` | 519 | Episode bundles for the web explainer, bundle checks, index, JSON Schema (`python -m system1_doom.export`) |
+| `export.py` | 712 | Episode bundles for the web explainer, bundle checks, index, JSON Schema (`python -m system1_doom.export`) |
+| `serve.py` | 574 | Live mode: plays episodes as `export` does, writes each as a bundle and streams every tick to the web explainer (`python -m system1_doom.serve`) |
 | `visualizer.py` | 386 | Split-screen HUD frames, GIF/MP4 recorder, live Tk decision dashboard |
 | `charts.py` | 118 | `learning_curves.png` from `metrics.jsonl` (matplotlib, dark theme) |
 | `cli.py` | 183 | Play/watch entry point (`python -m system1_doom.cli`) |
@@ -1092,6 +1099,36 @@ that makes it again), and the keyboard (1 to 5 switch screens, t starts
 the tour, f toggles the depth). It is a modal dialog: focus stays inside
 until Esc or a click outside closes it, and it is not in the URL hash.
 
+**Live mode.** `python -m system1_doom.serve` plays episodes with the
+same bridge, controller and configuration as `export` (`record_bundle`
+is split into the build, the episode and the finish that both use) and
+writes each one as a bundle in `live/live-<k>`, with seeds `seed,
+seed+1, …`. The controller is built once, so a macro admitted in one
+live episode stays on the menu for the next. One local server
+(127.0.0.1:8765 by default) answers on one origin: the built app, the
+shipped recordings, the live episodes (the one in progress from memory,
+so a reader never sees a half-written line; finished ones from disk),
+`live/status.json` (what is playing, the finished live episodes and the
+settings) and `live/events`, a stream of server-sent events: `hello` on
+connect; `start` with the opening `episode.json`; `tick` with each trace
+as it is decided, its frame already on disk; `proposals` with the whole
+list, and the action catalog, whenever they change; `end` with the final
+meta and its index line; `stopped` when play stops. The invariant holds
+in the server too: publishing a tick is a queue put per viewer, a viewer
+whose queue fills is dropped (its browser reconnects and reloads the
+files), and the pacing (`--pace`, 0.23 s per tick by default, eight game
+frames) is a wait after a tick, never inside one. The app asks for
+`live/status.json` at start, and a 404 means there is no live mode: a
+static deployment looks exactly as before. With a status, the picker
+gains a Live group, the bar a LIVE badge, and the cursor follows the
+newest tick, riding into each new episode, until the viewer moves it;
+Follow or the key l resumes, and `#live/<screen>` links to whatever is
+playing. A slow-path request still in flight when an episode ends is
+waited for (at most the Codex timeout), so its proposal is logged in the
+episode that asked. Ctrl+C finishes the current episode's files with
+`finished` false. A finished live episode is an ordinary bundle: `export --check
+live/live-1` passes and the app opens it like a shipped recording.
+
 ---
 
 ## 9. The slow path end-to-end
@@ -1231,7 +1268,27 @@ python -m system1_doom.export --check web/public/episodes/deadly_corridor-learne
 python -m system1_doom.export --index web/public/episodes
 ```
 
-There is no `python -m system1_doom` `__main__`; use the three module
+### `python -m system1_doom.serve` — play live and stream to the web explainer
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--scenario`, `--seed`, `--model`, `--run-dir`, `--max-ticks`, `--d1`, `--codex`, `--no-slow-path`, `--deterministic` | as `export` | The brain and the play, as for `export`; episode k gets seed `seed + k - 1` |
+| `--episodes N` | until Ctrl+C | Episodes to play; afterwards the server keeps serving until Ctrl+C |
+| `--pace SEC` | 0.23 | Least wall time per tick (8 game frames at 35 fps); 0 plays flat out |
+| `--rest SEC` | 3 | Pause between episodes |
+| `--host` | `127.0.0.1` | Address to listen on; any other address exposes the stream with no authentication |
+| `--port` | 8765 | Port to listen on |
+| `--out DIR` | `live` | Folder for the live episodes; earlier `live-<k>` folders are cleared at start, and anything else there stops it |
+| `--app DIR` | `web/dist` | The built app (`cd web && npm run build`); without it the data is still served, for `npm run dev`, which passes `/live` and `/episodes/live-*` through |
+| `--recordings DIR` | `web/public/episodes` | The shipped recordings and their index |
+
+```bash
+(cd web && npm run build)
+python -m system1_doom.serve --scenario deadly_corridor.cfg --model latest   # open http://127.0.0.1:8765/
+python -m system1_doom.export --check live/live-1                           # a finished live episode
+```
+
+There is no `python -m system1_doom` `__main__`; use the four module
 entry points above (or embed `DoomDecisionController` directly — §17).
 
 ---
@@ -1359,7 +1416,7 @@ Two empirical findings worth knowing before tuning:
 ## 16. Testing
 
 ```bash
-python -m pytest            # 57 tests, 14 files, from the repo root
+python -m pytest            # 67 tests, 15 files, from the repo root
 ```
 
 Tests use real ViZDoom headlessly, so the suite takes longer than a pure
@@ -1383,13 +1440,17 @@ and expect them to fail (by assertion, not skip) without one.
 | `test_level_clearance.py` | Heuristic controller clears `basic.cfg`; every executed step follows the selected action's own plan; learning controller records every decision |
 | `test_visualizer.py` | HUD frame render + GIF save; dashboard shows d1/Codex sections |
 | `test_export.py` | A 5-tick `basic.cfg` bundle has every file and a frame per tick; pruned + legal actions partition the vocabulary; each arbiter breakdown adds up to its score; module anatomy and outcome are recorded; the schema dump validates a trace; pre-anatomy traces still parse; `failing_condition` agrees with `is_satisfied`; admission records each stage |
+| `test_serve.py` | Two live `basic.cfg` episodes in-process: the event order (start, ticks from 0 in order, proposals only on change, end), every frame on disk before its tick event, the episode in progress served from memory, each finished episode a valid bundle equal to its `end` event, the next seed, the status and the untouched index; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog; a slow-path answer still in flight at the end logged in its own episode |
 
 The web explainer has its own checks, run from `web/`: `npm run build`
 and `npm run lint` (type-check and oxlint), `npm test` (Vitest: the
 loader and the trace readings on a five-tick fixture bundle) and
 `npm run e2e` (Playwright: scrubbing to tick 5 shows the traced action
-in every panel). The unit tests also hold the app's glossary to §18 and
-check the export command each bundle's This recording tab shows.
+in every panel; and, against `e2e/live-server.mjs`, a stand-in for serve
+that replays a shipped recording as live episodes, following, Follow,
+the end of an episode and the next one, every screen, and the bar's fit).
+The unit tests also hold the app's glossary to §18 and check the export
+and serve commands the This recording tab shows.
 
 ---
 
@@ -1463,6 +1524,7 @@ fails the app's tests until the glossary has it.
 | **Exploration floor** | Flat probability of a tempered exploratory arbiter pick (training-time), distinct from exploration *pressure*. |
 | **Exploration pressure / temperature** | State-dependent exploration intensity from `ExplorationController`; temperature = 0.10 + pressure drives arbiter sampling. |
 | **Gate network** | Learned `state → 5` network estimating how much following each module pays off in goal return; blended into arbiter module weights. |
+| **Live episode** | An episode being played right now by `python -m system1_doom.serve` and streamed to the web explainer tick by tick; when it ends it is a bundle like any recording (§8.15). |
 | **Macro** | Multi-primitive `ActionSpec` (`is_macro=True`); built-in, hand-added, or Codex-proposed-and-admitted. |
 | **Module** | One of survival/combat/navigation/resource/goal; a `DecisionModule` producing a distribution over the same candidate set. |
 | **Network share** | Experience-weighted mean trust λ — how much of play the learned networks currently steer. |

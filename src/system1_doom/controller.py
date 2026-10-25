@@ -127,6 +127,10 @@ class DoomDecisionController:
             if spec.id not in BUILTIN_ACTION_IDS:
                 self.vocabulary.register_admitted_macro(spec)
 
+    def drain_slow_path(self) -> None:
+        """Log the slow path's finished proposals now, as `close` does, rather than at the next tick."""
+        self._drain_slow_llm_proposals()
+
     def _drain_slow_llm_proposals(self) -> None:
         self._log_proposals(self.llm_worker.drain_completed_results())
 
@@ -450,8 +454,13 @@ class DoomDecisionController:
     def run_ticks(self, num_ticks: int) -> List[TickTrace]:
         return [self.step() for _ in range(num_ticks)]
 
-    def run_episode(self, max_ticks: int = 500) -> Dict[str, Any]:
-        """Play until the episode ends or `max_ticks` control decisions have been made."""
+    def run_episode(
+        self, max_ticks: int = 500, on_tick: Optional[Callable[[TickTrace], Optional[bool]]] = None
+    ) -> Dict[str, Any]:
+        """Play until the episode ends or `max_ticks` control decisions have been made.
+
+        `on_tick(trace)` runs after each tick's trace is kept; returning True ends the episode there.
+        """
         previous_restart = self.env.auto_restart
         self.env.auto_restart = False
         traces: List[TickTrace] = []
@@ -464,6 +473,8 @@ class DoomDecisionController:
                 if self.env.is_episode_finished():
                     break
                 traces.append(self.step())
+                if on_tick is not None and on_tick(traces[-1]):
+                    break
             transitions = 0
             if self.learner is not None and self.config.record_experience:
                 transitions = self.learner.end_episode()

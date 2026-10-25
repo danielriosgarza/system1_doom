@@ -1,5 +1,18 @@
 import { useRef, useState } from 'react'
-import { BRAIN_WORDS, INDEX_COMMAND, MODULES, exportCommand, fmt, pct, prettyId, utcStamp } from '../data/derive'
+import { LIVE_COPY } from '../content/live'
+import {
+  BRAIN_WORDS,
+  INDEX_COMMAND,
+  MODULES,
+  exportCommand,
+  fmt,
+  pct,
+  prettyId,
+  serveCommand,
+  stillPlaying,
+  stoppedEarly,
+  utcStamp,
+} from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
 import type { TickTrace } from '../schema/bundle'
 import { openEpisode, useApp } from '../store'
@@ -42,6 +55,7 @@ function Command({ text, label }: { text: string; label: string }) {
 /** This recording: what it is, what was on, how it was played, what it scored, what it holds, and how to make it again. */
 export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: TickTrace }) {
   const index = useApp((s) => s.index)
+  const live = useApp((s) => (s.live?.current === bundle.name ? s.live : null))
   const { meta } = bundle
   const { config, result, checkpoint } = meta
   const others = index?.episodes.filter((e) => e.name !== bundle.name) ?? []
@@ -55,8 +69,10 @@ export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: Tick
         </dd>
         <dt>Brain</dt>
         <dd>{BRAIN_WORDS[meta.model]}</dd>
-        <dt>Recorded</dt>
-        <dd>{utcStamp(meta.recorded_at)}</dd>
+        <dt>{live ? 'Playing' : 'Recorded'}</dt>
+        <dd data-testid="recorded">
+          {live ? `${LIVE_COPY.running} ${utcStamp(meta.recorded_at)}` : utcStamp(meta.recorded_at)}
+        </dd>
         <dt>Versions</dt>
         <dd>
           package {meta.package_version ?? 'unknown'}, bundle schema {meta.schema_version ?? 1}
@@ -85,7 +101,10 @@ export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: Tick
         <dd>{config.exploration_floor > 0 ? fmt(config.exploration_floor, 2) : '0: never a random draw'}</dd>
         <dt>Tick cap</dt>
         <dd>
-          {config.max_ticks}; the episode ended at tick {meta.last_tick}, after {meta.tick_count} ticks
+          {config.max_ticks};{' '}
+          {stillPlaying(meta)
+            ? `tick ${meta.last_tick} so far, after ${meta.tick_count} ticks`
+            : `the episode ended at tick ${meta.last_tick}, after ${meta.tick_count} ticks`}
         </dd>
       </dl>
 
@@ -116,26 +135,40 @@ export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: Tick
       )}
 
       <h4>The result</h4>
-      <dl className="prov-list">
-        <dt>Outcome</dt>
-        <dd>{result.cleared ? 'cleared the level' : result.died ? 'died' : 'survived to the tick cap'}</dd>
-        <dt>Ticks</dt>
-        <dd>{result.ticks}</dd>
-        <dt>Reward</dt>
-        <dd>{fmt(result.reward, 2)}</dd>
-        <dt>Kills</dt>
-        <dd>{fmt(result.kills, 0)}</dd>
-        <dt>At the end</dt>
-        <dd>
-          health {fmt(result.health, 0)}, armor {fmt(result.armor, 0)}
-        </dd>
-        <dt>Network share</dt>
-        <dd>
-          {meta.brains.learned_networks
-            ? `${pct(result.network_share ?? 0)} of the say on the actions picked, on average`
-            : 'none'}
-        </dd>
-      </dl>
+      {stillPlaying(meta) ? (
+        <p className="empty-note">Still playing: the result arrives when the episode ends.</p>
+      ) : (
+        <dl className="prov-list">
+          <dt>Outcome</dt>
+          <dd>
+            {result.cleared
+              ? 'cleared the level'
+              : result.died
+                ? 'died'
+                : stoppedEarly(meta)
+                  ? 'stopped by hand (Ctrl+C in serve) before the end'
+                  : result.finished
+                    ? 'survived until the scenario ended'
+                    : 'survived to the tick cap'}
+          </dd>
+          <dt>Ticks</dt>
+          <dd>{result.ticks}</dd>
+          <dt>Reward</dt>
+          <dd>{fmt(result.reward, 2)}</dd>
+          <dt>Kills</dt>
+          <dd>{fmt(result.kills, 0)}</dd>
+          <dt>At the end</dt>
+          <dd>
+            health {fmt(result.health, 0)}, armor {fmt(result.armor, 0)}
+          </dd>
+          <dt>Network share</dt>
+          <dd>
+            {meta.brains.learned_networks
+              ? `${pct(result.network_share ?? 0)} of the say on the actions picked, on average`
+              : 'none'}
+          </dd>
+        </dl>
+      )}
 
       <h4>The five questions</h4>
       <ul className="prov-modules">
@@ -180,8 +213,15 @@ export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: Tick
         </>
       )}
 
+      {live && (
+        <>
+          <h4>{LIVE_COPY.servePlaying}</h4>
+          <p>{LIVE_COPY.serveIntro}</p>
+          <Command text={serveCommand(live.config)} label="the serve command" />
+        </>
+      )}
       <h4>How to make it again</h4>
-      <p>From the repository root, with the package installed:</p>
+      <p>{live ? LIVE_COPY.exportAgain : 'From the repository root, with the package installed:'}</p>
       <Command text={exportCommand(meta)} label="the export command" />
       <p>Then rebuild the list of recordings the app offers:</p>
       <Command text={INDEX_COMMAND} label="the index command" />

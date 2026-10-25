@@ -1,5 +1,5 @@
 import { type PointerEvent, useState } from 'react'
-import { FLOOR_SCHEDULE, MODULES, ROLLING_WINDOW, fmt, pct, rolling, survived } from '../data/derive'
+import { FLOOR_SCHEDULE, MODULES, ROLLING_WINDOW, fmt, pct, rolling, stillPlaying, survived } from '../data/derive'
 import type { EpisodeMeta, MetricsRow } from '../schema/bundle'
 
 const W = 300
@@ -61,7 +61,7 @@ function buildSeries(metrics: MetricsRow[], meta: EpisodeMeta): Series[] {
       lines: [mean(reward)],
       max: niceMax(Math.max(...reward, meta.result.reward)),
       format: (v) => fmt(v, 0),
-      recording: meta.result.reward,
+      recording: stillPlaying(meta) ? undefined : meta.result.reward,
     },
     {
       key: 'ticks',
@@ -70,7 +70,7 @@ function buildSeries(metrics: MetricsRow[], meta: EpisodeMeta): Series[] {
       lines: [mean(ticks)],
       max: niceMax(Math.max(...ticks, meta.result.ticks)),
       format: (v) => fmt(v, 0),
-      recording: meta.result.ticks,
+      recording: stillPlaying(meta) ? undefined : meta.result.ticks,
     },
     {
       key: 'kills',

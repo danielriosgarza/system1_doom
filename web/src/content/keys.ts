@@ -15,6 +15,7 @@ export const KEY_GROUPS: Array<{ title: string; rows: KeyRow[] }> = [
       { keys: ['Home'], does: 'the first tick' },
       { keys: ['End'], does: 'the last tick' },
       { keys: ['Space'], does: 'play or pause' },
+      { keys: ['l'], does: 'follow the live episode, opening it if another is open (only while serve is playing)' },
     ],
   },
   {

@@ -342,6 +342,18 @@ export const GLOSSARY: GlossaryEntry[] = [
     code: 'admission.py · ProposalAdmissionPipeline.evaluate_and_admit',
   },
   {
+    id: 'live-episode',
+    term: 'live episode',
+    aliases: ['live episodes', 'live mode'],
+    meaning:
+      'An episode being played right now by python -m system1_doom.serve: the same deciders, the same records as a recording, arriving one tick at a time; when it ends it becomes a recording.',
+    see: [
+      { tab: 'recording', label: 'This recording' },
+      { tab: 'keys', label: 'the l key' },
+    ],
+    code: 'serve.py · play_live_episode',
+  },
+  {
     id: 'menu',
     term: 'menu',
     aliases: ['legal actions', 'legal', 'pruned', 'precondition', 'preconditions'],

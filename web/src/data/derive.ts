@@ -10,6 +10,7 @@ import type {
   TickTrace,
   TrustFile,
 } from '../schema/bundle'
+import { LIVE_NAME, type LiveConfig } from './live'
 
 export const MODULES = ['survival', 'combat', 'navigation', 'resource', 'goal'] as const
 export type ModuleName = (typeof MODULES)[number]
@@ -1386,20 +1387,64 @@ export function tickRange(ticks: number[]): string {
 /** export.py's --max-ticks default. */
 export const EXPORT_MAX_TICKS = 500
 
-/** The command that recorded this bundle: the flags that differ from the defaults, and nothing else. */
+/**
+ * The command that recorded this bundle: the flags that differ from the defaults, and nothing else. A live
+ * episode is recorded under export's own folder name instead, since `live-<k>` names belong to serve.
+ */
 export function exportCommand(meta: EpisodeMeta): string {
+  const folder = LIVE_NAME.test(meta.name)
+    ? `${meta.scenario.replace('.cfg', '')}-${meta.model}-${meta.seed}`
+    : meta.name
   const parts = [
     'python -m system1_doom.export',
     `--scenario ${meta.scenario}`,
     `--seed ${meta.seed}`,
     `--model ${meta.model}`,
-    `--out web/public/episodes/${meta.name}`,
+    `--out web/public/episodes/${folder}`,
   ]
   if (meta.config.deterministic_arbiter) parts.push('--deterministic')
   if (meta.brains.d1_ultra) parts.push('--d1')
   if (meta.brains.slow_path === 'codex') parts.push('--codex')
   if (meta.brains.slow_path === 'off') parts.push('--no-slow-path')
   if (meta.config.max_ticks !== EXPORT_MAX_TICKS) parts.push(`--max-ticks ${meta.config.max_ticks}`)
+  return parts.join(' ')
+}
+
+export const SERVE_PACE_SEC = 0.23
+
+/**
+ * True for a live episode still being played: serve's meta carries a zero result until the episode
+ * ends, while a finished bundle's result always counts the same ticks as the bundle holds.
+ */
+export function stillPlaying(meta: EpisodeMeta): boolean {
+  return meta.result.ticks !== meta.tick_count
+}
+
+/**
+ * True for an episode serve stopped by hand (Ctrl+C): it neither ended in the game nor reached the
+ * tick cap, so its result is the state of play when it was stopped.
+ */
+export function stoppedEarly(meta: EpisodeMeta): boolean {
+  const { result } = meta
+  if (stillPlaying(meta) || result.finished || result.cleared || result.died) return false
+  return meta.tick_count < meta.config.max_ticks
+}
+
+/** The command serve was started with, from its status: the flags that differ from the defaults. */
+export function serveCommand(config: LiveConfig): string {
+  const parts = [
+    'python -m system1_doom.serve',
+    `--scenario ${config.scenario}`,
+    `--seed ${config.seed}`,
+    `--model ${config.model}`,
+  ]
+  if (config.deterministic) parts.push('--deterministic')
+  if (config.d1) parts.push('--d1')
+  if (config.codex) parts.push('--codex')
+  if (!config.slow_path) parts.push('--no-slow-path')
+  if (config.max_ticks !== EXPORT_MAX_TICKS) parts.push(`--max-ticks ${config.max_ticks}`)
+  if (config.pace_sec !== SERVE_PACE_SEC) parts.push(`--pace ${config.pace_sec}`)
+  if (config.episodes !== null) parts.push(`--episodes ${config.episodes}`)
   return parts.join(' ')
 }
 
