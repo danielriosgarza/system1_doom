@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "episodes": [
+    {
+      "name": "fixture-corridor",
+      "title": "deadly corridor on the fake d1-ultra (test fixture)",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "latest",
+      "seed": 9,
+      "cleared": false,
+      "died": false,
+      "reward": 570.26,
+      "ticks": 40,
+      "kills": 4.0,
+      "configuration_start": 1,
+      "configuration_end": 3
+    }
+  ]
+}

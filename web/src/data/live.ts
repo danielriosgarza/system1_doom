@@ -1,19 +1,25 @@
-// Live mode: `python -m system1_doom.serve` plays episodes and streams each tick as it is decided.
-// A static deployment has no `live/status.json`, and then none of this shows.
+// Live mode: `python -m system1_doom.serve` plays episodes and streams each tick as it is decided, and each of
+// System 2's records as it is written. A static deployment has no `live/status.json`, and then none of this shows.
 import type { BundleIndexEntry, EpisodeMeta, ProposalTrace, TickTrace } from '../schema/bundle'
-import type { EpisodeBundle, EpisodeIndex, Fetcher } from './loader'
+import {
+  type EpisodeBundle,
+  type EpisodeIndex,
+  type Fetcher,
+  SUPPORTED_SCHEMA_VERSION,
+  type System2Record,
+} from './loader'
 
 /** The settings serve was started with; the app builds the serve command from them. */
 export interface LiveConfig {
   scenario: string
   seed: number
-  model: EpisodeMeta['model']
-  d1: boolean
-  /** Whether each tick waits for d1-ultra (serve --d1-sync); absent from a serve before 0.3.0. */
-  d1_sync?: boolean
+  decider: 'd1-ultra'
+  networks: EpisodeMeta['value_networks']
+  call_budget_sec: number | null
+  exploration_level: 'exploit' | 'explore' | null
   codex: boolean
   slow_path: boolean
-  deterministic: boolean
+  system2: boolean
   max_ticks: number
   pace_sec: number
   episodes: number | null
@@ -41,10 +47,12 @@ export type LiveEvent =
   | { type: 'tick'; name: string; trace: TickTrace }
   /** The whole proposal list whenever it changes, and the action catalog with any macro it admitted. */
   | { type: 'proposals'; name: string; proposals: ProposalTrace[]; actions?: EpisodeMeta['actions'] }
+  /** One of System 2's records; `name` is null when it was written between two episodes. */
+  | { type: 'reflection'; name: string | null; record: System2Record }
   | { type: 'end'; name: string; meta: EpisodeMeta; entry: BundleIndexEntry }
   | { type: 'stopped' }
 
-const EVENT_TYPES = ['hello', 'start', 'tick', 'proposals', 'end', 'stopped'] as const
+const EVENT_TYPES = ['hello', 'start', 'tick', 'proposals', 'reflection', 'end', 'stopped'] as const
 
 /** A live episode's name, `live-<k>`; serve owns that pattern under `episodes/`. */
 export const LIVE_NAME = /^live-(\d+)$/
@@ -55,7 +63,7 @@ export async function fetchLiveStatus(fetcher: Fetcher = (url) => fetch(url)): P
     const response = await fetcher('live/status.json')
     if (!response.ok) return null
     const status = (await response.json()) as LiveStatus
-    return status && status.schema_version === 1 ? status : null
+    return status && status.schema_version === SUPPORTED_SCHEMA_VERSION ? status : null
   } catch {
     return null
   }
@@ -82,10 +90,17 @@ export function subscribeLive(onEvent: (event: LiveEvent) => void, onOpen?: () =
   return () => source.close()
 }
 
+/** What tells two of System 2's records apart: its kind, its cycle, and when it was written. */
+export function recordKey(record: System2Record): string {
+  const when = 'started_at' in record ? record.started_at : record.timestamp
+  const kind = 'kind' in record && record.record === 'note' ? record.kind : ''
+  return `${record.record ?? 'cycle'}|${record.cycle_id ?? ''}|${when}|${kind}`
+}
+
 /**
  * The bundle with one live event applied. A tick is appended only when it is newer than the last one
- * held, so events that repeat what the files already had change nothing. Events for another episode,
- * and events that carry no episode data, return the bundle as it was.
+ * held, and a record only when it is not held yet, so events that repeat what the files already had change
+ * nothing. Events for another episode, and events that carry no episode data, return the bundle as it was.
  */
 export function applyLiveEvent(bundle: EpisodeBundle, event: LiveEvent): EpisodeBundle {
   if (!('name' in event) || event.name !== bundle.name) return bundle
@@ -105,6 +120,11 @@ export function applyLiveEvent(bundle: EpisodeBundle, event: LiveEvent): Episode
       proposals: event.proposals,
       meta: event.actions ? { ...bundle.meta, actions: event.actions } : bundle.meta,
     }
+  }
+  if (event.type === 'reflection') {
+    const key = recordKey(event.record)
+    if (bundle.records.some((r) => recordKey(r) === key)) return bundle
+    return { ...bundle, records: [...bundle.records, event.record] }
   }
   if (event.type === 'end') return { ...bundle, meta: event.meta }
   return bundle

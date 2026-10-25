@@ -1,7 +1,5 @@
 // A tiny external store: one episode, one current tick, the screen, and the viewer's settings.
 import { useEffect, useSyncExternalStore } from 'react'
-import { TOUR } from './content/tour'
-import { type LevelId, featuredTickIndex } from './data/derive'
 import {
   LIVE_NAME,
   type LiveEvent,
@@ -11,30 +9,21 @@ import {
   mergedEpisodes,
   subscribeLive,
 } from './data/live'
-import { type EpisodeBundle, type EpisodeIndex, defaultEpisode, loadEpisode, loadIndex } from './data/loader'
+import {
+  type EpisodeBundle,
+  type EpisodeIndex,
+  SUPPORTED_SCHEMA_VERSION,
+  defaultEpisode,
+  loadEpisode,
+  loadIndex,
+} from './data/loader'
 import { END_HOLD_MS, PACE_MS, type Pace } from './data/playback'
 
-export type Depth = 'plain' | 'formula'
 export type Theme = 'dark' | 'light'
-export type Screen = 'watch' | 'overview' | 'tick' | 'hierarchy' | 'learning' | 'menu'
-/** The reference drawer's four tabs. */
-export type DrawerSection = 'glossary' | 'principles' | 'recording' | 'keys'
+export type Screen = 'watch' | 'instances' | 'slow' | 'learning' | 'menu' | 'reference'
 
-/**
- * The screens in order of depth, as the tabs and the keys 1 to 6 list them. The ids are the URL's, kept from
- * before the screens were renamed, so old links open what they opened.
- */
-export const SCREENS: Array<{ id: Screen; label: string }> = [
-  { id: 'watch', label: 'Watch' },
-  { id: 'hierarchy', label: 'The chain' },
-  { id: 'tick', label: 'The inspector' },
-  { id: 'overview', label: 'The diagram' },
-  { id: 'learning', label: 'Learning' },
-  { id: 'menu', label: 'Growing the menu' },
-]
-
-/** The tour's last step is on the hierarchy screen; the ones before it are the six beats. */
-const TOUR_STEPS = TOUR.length
+/** The screens in the order the tabs and the keys 1 to 6 list them; the ids are the URL's. */
+export const SCREENS: Array<{ id: Screen; label: string }> = [{ id: 'watch', label: 'Watch' }]
 
 export interface AppState {
   index: EpisodeIndex | null
@@ -44,10 +33,9 @@ export interface AppState {
   /** Position in bundle.ticks, not the tick number. */
   tickIndex: number
   screen: Screen
-  depth: Depth
   theme: Theme
-  /** An action the viewer is pointing at; every panel highlights it. */
-  hoveredAction: string | null
+  /** The instance open on The instances: a sense's name or `central`. */
+  instance: string
   playing: boolean
   /** Real time (one decision every 8 game frames) or slow (one a second). */
   pace: Pace
@@ -62,19 +50,9 @@ export interface AppState {
   ended: boolean
   /** Playback has run in this visit; until it has, Watch offers a large Play button on the frame. */
   played: boolean
-  /** The viewer has dismissed Watch's "How to read this" card. */
-  helpDismissed: boolean
-  /** A level of the chain to expand and flash once the chain is showing. */
-  focusLevel: LevelId | null
-  /** The tour's current step, or null when no tour is running. */
-  tour: number | null
-  /** The viewer has finished or skipped the tour once; only changes the overview's button label. */
-  tourSeen: boolean
   /** A panel to scroll to and flash once its screen is showing. */
   focusPanel: string | null
-  /** The reference drawer's open tab, or null when it is closed; not in the URL. */
-  drawer: DrawerSection | null
-  /** The glossary entry to scroll to and mark. */
+  /** The glossary entry the Reference screen scrolls to and marks; not in the URL. */
   term: string | null
   /** What `python -m system1_doom.serve` is playing; null when there is no live mode here. */
   live: LiveStatus | null
@@ -87,9 +65,9 @@ export interface AppState {
   liveOpen: string | null
 }
 
-type Settings = Partial<Pick<AppState, 'depth' | 'theme' | 'tourSeen' | 'pace' | 'helpDismissed'>>
+type Settings = Partial<Pick<AppState, 'theme' | 'pace'>>
 
-const SETTINGS_KEY = 'system1-doom-explainer'
+const SETTINGS_KEY = 'system1-doom-site'
 
 function readSettings(): Settings {
   try {
@@ -123,21 +101,15 @@ let state: AppState = {
   error: null,
   tickIndex: 0,
   screen: 'watch',
-  depth: saved.depth === 'formula' ? 'formula' : 'plain',
   theme: themePicked ? (saved.theme as Theme) : prefersLight ? 'light' : 'dark',
-  hoveredAction: null,
+  instance: 'survival',
   playing: false,
   pace: saved.pace === 'slow' ? 'slow' : 'real',
   playWhenReady: false,
   loop: false,
   ended: false,
   played: false,
-  helpDismissed: saved.helpDismissed === true,
-  focusLevel: null,
-  tour: null,
-  tourSeen: saved.tourSeen === true,
   focusPanel: null,
-  drawer: null,
   term: null,
   live: null,
   following: false,
@@ -153,20 +125,8 @@ export function getState(): AppState {
 export function setState(patch: Partial<AppState>): void {
   const next = { ...state, ...patch }
   if (next.theme !== state.theme) themePicked = true
-  if (
-    next.depth !== state.depth ||
-    next.theme !== state.theme ||
-    next.tourSeen !== state.tourSeen ||
-    next.pace !== state.pace ||
-    next.helpDismissed !== state.helpDismissed
-  ) {
-    writeSettings({
-      depth: next.depth,
-      tourSeen: next.tourSeen,
-      pace: next.pace,
-      helpDismissed: next.helpDismissed,
-      ...(themePicked ? { theme: next.theme } : {}),
-    })
+  if (next.theme !== state.theme || next.pace !== state.pace) {
+    writeSettings({ pace: next.pace, ...(themePicked ? { theme: next.theme } : {}) })
   }
   state = next
   listeners.forEach((listener) => listener())
@@ -182,11 +142,11 @@ export function useApp<T>(selector: (s: AppState) => T): T {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The URL hash: `#<episode name>/<tick>/<screen>`. Without a screen it means the tick inspector,
-// so links written before the other screens existed still open the same tick. `#live/<screen>`
-// follows the live episode, whichever it is; plain `#live` lands on Watch. While a recording plays,
-// the hash keeps the tick it started from and is written when playback stops: browsers limit how
-// often a page may rewrite its address, and real time is more than four decisions a second.
+// The URL hash: `#<episode name>/<tick>/<screen>`; without a screen it means The instances, so a link to a
+// decision opens that decision. `#live/<screen>` follows the live episode, whichever it is; plain `#live`
+// lands on Watch. While a recording plays, the hash keeps the tick it started from and is written when
+// playback stops: browsers limit how often a page may rewrite its address, and real time is more than four
+// decisions a second.
 
 const LIVE_HASH = 'live'
 
@@ -215,11 +175,10 @@ function writeHash(push = false): void {
   const { bundle, tickIndex, screen, following, live } = state
   if (!bundle) return
   const tick = bundle.ticks[tickIndex]?.tick ?? 0
-  const where = screen === 'tick' ? '' : `/${screen}`
   const hash =
     following && live?.current === bundle.name
       ? `#${LIVE_HASH}/${screen}`
-      : `#${encodeURIComponent(bundle.name)}/${tick}${where}`
+      : `#${encodeURIComponent(bundle.name)}/${tick}/${screen}`
   if (window.location.hash === hash) return
   if (push) window.history.pushState(null, '', hash)
   else window.history.replaceState(null, '', hash)
@@ -255,7 +214,7 @@ export function setScreen(screen: Screen): void {
   const autoplaying = state.loop || state.playWhenReady
   // The entry being left keeps the decision that was showing, which playback has not written.
   writeHash()
-  setState({ screen, hoveredAction: null, ...INTERACTED, ...(autoplaying ? { playing: false } : {}) })
+  setState({ screen, ...INTERACTED, ...(autoplaying ? { playing: false } : {}) })
   writeHash(true)
   window.scrollTo({ top: 0 })
 }
@@ -266,32 +225,21 @@ export function openPanel(screen: Screen, panel: string): void {
   setState({ focusPanel: panel })
 }
 
-/**
- * Open the reference drawer on one tab; for the glossary, optionally at one entry. Playback goes on, but the
- * landing stops looping: the viewer has taken over.
- */
-export function openDrawer(section: DrawerSection, term: string | null = null): void {
-  setState({ drawer: section, term, loop: false })
-}
-
-export function closeDrawer(): void {
-  if (state.drawer !== null) setState({ drawer: null, term: null })
-}
-
-export function openInInspector(panel: string): void {
-  openPanel('tick', panel)
-}
-
-/** Open the chain at the decision showing, with one level expanded and flashed; playback pauses there. */
-export function openLevel(level: LevelId): void {
-  setState({ playing: false, ended: false, ...INTERACTED, focusLevel: level })
-  setScreen('hierarchy')
+/** Open one instance of the decision showing on The instances; playback pauses there. */
+export function openInstance(name: string): void {
+  setState({ instance: name, playing: false, ended: false, ...INTERACTED })
+  setScreen('instances')
   writeHash()
 }
 
+/** Open the Reference screen at one glossary entry. */
+export function openTerm(term: string): void {
+  setScreen('reference')
+  setState({ term })
+}
+
 // ---------------------------------------------------------------------------------------------
-// Playback. The timer lives in usePlayback (App), so a recording plays on every screen, with or
-// without the timeline at the bottom.
+// Playback. The timer lives in usePlayback (App), so a recording plays on every screen.
 
 /** Play or pause. Play at the last decision starts again from the first. */
 export function togglePlay(): void {
@@ -391,10 +339,6 @@ export async function openRecording(name: string): Promise<void> {
   if (state.bundle?.name === name && !state.error) setState({ playWhenReady: play })
 }
 
-export function dismissHelp(): void {
-  setState({ helpDismissed: true })
-}
-
 /** Counts calls to openEpisode, so a slow load never replaces a later one. */
 let opening = 0
 /** Live events that arrive while the live episode's files load; applied once they have. */
@@ -409,15 +353,7 @@ export async function openEpisode(name: string, tick: number | null = null, foll
   const mine = ++opening
   const live = state.live?.current === name
   // Following holds while the files load, so an episode that starts meanwhile is still followed into.
-  setState({
-    loading: true,
-    error: null,
-    playing: false,
-    hoveredAction: null,
-    following: follow,
-    ended: false,
-    ...INTERACTED,
-  })
+  setState({ loading: true, error: null, playing: false, following: follow, ended: false, ...INTERACTED })
   pending = live ? [] : null
   try {
     let bundle = await loadEpisode(name, 'episodes', undefined, { live })
@@ -444,9 +380,8 @@ export async function openEpisode(name: string, tick: number | null = null, foll
  * episodes, the next one is opened when it starts.
  */
 export function followLive(): void {
-  const { live, bundle, tour } = state
+  const { live, bundle } = state
   if (!live?.running && !live?.current) return
-  if (tour !== null) endTour()
   setState({ ...INTERACTED, ended: false })
   if (!live.current) {
     setState({ following: true, playing: false })
@@ -494,8 +429,11 @@ function onLiveEvent(event: LiveEvent): void {
       }
     }
     setState(patch)
-  } else if (event.type === 'proposals') {
-    if (bundle?.name === event.name) setState({ bundle: applyLiveEvent(bundle, event) })
+  } else if (event.type === 'proposals' || event.type === 'reflection') {
+    if (bundle && bundle.name === event.name) {
+      const next = applyLiveEvent(bundle, event)
+      if (next !== bundle) setState({ bundle: next })
+    }
   } else if (event.type === 'end') {
     setState({
       live: {
@@ -533,12 +471,13 @@ export async function start(): Promise<void> {
     const [loaded, live] = await Promise.all([loadIndex().catch((error: unknown) => error), fetchLiveStatus()])
     // Live mode can run without shipped recordings; without live mode, the index is required.
     if (loaded instanceof Error && !live) throw loaded
-    const index: EpisodeIndex = loaded instanceof Error ? { schema_version: 1, episodes: [] } : (loaded as EpisodeIndex)
+    const index: EpisodeIndex =
+      loaded instanceof Error ? { schema_version: SUPPORTED_SCHEMA_VERSION, episodes: [] } : (loaded as EpisodeIndex)
     setState({ index, live })
     if (live?.running) await connectLive()
     const wanted = readHash()
-    // A fresh visit lands on Watch; a link without a screen opens the inspector.
-    const screen = wanted.screen ?? (wanted.episode && wanted.episode !== LIVE_HASH ? 'tick' : 'watch')
+    // A fresh visit lands on Watch; a link to a decision without a screen opens The instances.
+    const screen = wanted.screen ?? (wanted.episode && wanted.episode !== LIVE_HASH ? 'instances' : 'watch')
     setState({ screen })
     // While serve is playing, a visit without a link, or with #live, follows live play: the episode in
     // progress, or between two episodes the one that just ended, until the next starts.
@@ -575,14 +514,14 @@ export function onHashChange(): void {
   if (!wanted.episode) return
   if (wanted.episode === LIVE_HASH) {
     const screen = wanted.screen ?? 'watch'
-    if (screen !== state.screen) setState({ screen, hoveredAction: null, ...INTERACTED })
+    if (screen !== state.screen) setState({ screen, ...INTERACTED })
     if (!state.following) followLive()
     return
   }
-  const screen = wanted.screen ?? 'tick'
+  const screen = wanted.screen ?? 'instances'
   if (screen !== state.screen) {
     const autoplaying = state.loop || state.playWhenReady
-    setState({ screen, hoveredAction: null, ...INTERACTED, ...(autoplaying ? { playing: false } : {}) })
+    setState({ screen, ...INTERACTED, ...(autoplaying ? { playing: false } : {}) })
   }
   if (!bundle || bundle.name !== wanted.episode) {
     void openEpisode(wanted.episode, wanted.tick)
@@ -592,36 +531,4 @@ export function onHashChange(): void {
     const found = bundle.ticks.findIndex((t) => t.tick === wanted.tick)
     if (found >= 0 && found !== state.tickIndex) setState({ tickIndex: found, ended: false })
   }
-}
-
-// ---------------------------------------------------------------------------------------------
-// The guided tour: six beats on the inspector over the featured tick, then the hierarchy.
-
-export function startTour(): void {
-  const ticks = state.bundle?.ticks ?? []
-  if (ticks.length === 0) return
-  setState({
-    playing: false,
-    following: false,
-    hoveredAction: null,
-    ended: false,
-    ...INTERACTED,
-    tickIndex: featuredTickIndex(ticks),
-  })
-  setTourStep(0)
-}
-
-export function setTourStep(index: number): void {
-  if (index < 0) return
-  if (index >= TOUR_STEPS) {
-    endTour()
-    return
-  }
-  setState({ tour: index })
-  setScreen(index === TOUR_STEPS - 1 ? 'hierarchy' : 'tick')
-  writeHash()
-}
-
-export function endTour(): void {
-  setState({ tour: null, tourSeen: true })
 }

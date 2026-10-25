@@ -222,6 +222,24 @@ def test_index_lists_shippable_schema_2_bundles(bundle):
     assert [e.name for e in entries] == [bundle.name]
     index = json.loads((bundle.parent / "index.json").read_text())
     assert index["schema_version"] == 2 and index["episodes"][0]["value_networks"] == "none"
+    # What the app's cards say before a bundle is opened: the kills and the configuration versions.
+    meta = export.EpisodeMeta.model_validate_json((bundle / "episode.json").read_text())
+    line = index["episodes"][0]
+    assert line["kills"] == meta.result.kills and line["configuration_start"] == line["configuration_end"] == 1
+    # An index line written before these fields existed still loads.
+    old = {k: v for k, v in line.items() if k not in ("kills", "configuration_start", "configuration_end")}
+    assert export.BundleIndexEntry.model_validate(old).configuration_start == 1
+
+
+def test_the_schema_names_every_model_the_app_reads():
+    defs = export.bundle_json_schema()["$defs"]
+    for name in (
+        "EpisodeMeta", "TickTrace", "InstanceResult", "Message", "Pick", "ProposalTrace", "ReflectionTrace",
+        "TrialVerdictTrace", "TrialRecord", "TrialTable", "System2Note", "HistoryTestResult", "TestTick", "Metrics",
+        "Configuration", "SenseConfig", "Bounds", "RelevanceLedger", "RelevanceCounts", "BundleIndexEntry",
+        "TrustFile", "System2EpisodeSummary", "Proposal", "ConfigDiff", "AppliedChange", "Window",
+    ):
+        assert name in defs, name
 
 
 def test_an_episode_that_lost_the_connection_is_written_but_not_shippable(tmp_path, capsys):
@@ -241,11 +259,13 @@ def test_an_episode_that_lost_the_connection_is_written_but_not_shippable(tmp_pa
     assert export.write_index(out.parent) == []
 
 
-@pytest.mark.skipif(not (RECORDINGS / "index.json").is_file(), reason="no shipped recordings")
-def test_a_bundle_of_another_schema_version_is_reported_and_left_out_of_an_index(tmp_path):
-    shipped = next(p.parent for p in sorted(RECORDINGS.glob("*/episode.json")))
-    problems = export.check_bundle(shipped)
-    assert problems == [f"episode.json: schema_version 1, expected {TRACE_SCHEMA_VERSION}"]
+def test_a_bundle_of_another_schema_version_is_reported_and_left_out_of_an_index(bundle, tmp_path):
+    old = tmp_path / "eps" / "old"
+    shutil.copytree(bundle, old)
+    meta = json.loads((old / "episode.json").read_text())
+    (old / "episode.json").write_text(json.dumps({**meta, "schema_version": 1}))
+    assert export.check_bundle(old) == [f"episode.json: schema_version 1, expected {TRACE_SCHEMA_VERSION}"]
+    assert export.write_index(old.parent) == []
 
 
 def test_export_fails_fast_without_the_key(tmp_path, monkeypatch, capsys):

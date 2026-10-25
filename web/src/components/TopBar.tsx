@@ -1,27 +1,25 @@
 import { LIVE_COPY } from '../content/live'
+import { recordingName, resultWords, scenarioWords } from '../content/watch'
 import { type PickerEntry, mergedEpisodes } from '../data/live'
 import type { BundleIndexEntry } from '../schema/bundle'
-import { SCREENS, followLive, openDrawer, openEpisode, openRecording, setScreen, setState, useApp } from '../store'
-
-const scenarioWords = (scenario: string) => scenario.replace('.cfg', '').replaceAll('_', ' ')
+import { SCREENS, followLive, openEpisode, openRecording, setScreen, setState, useApp } from '../store'
 
 /** How a recording is named in the picker, in the words Watch's cards use. */
 function recordingLabel(e: BundleIndexEntry): string {
-  const brain = e.model === 'heuristics' ? 'heuristics only' : 'trained networks'
-  return `${scenarioWords(e.scenario)} · ${brain} · run ${e.seed} · ${e.cleared ? 'cleared' : e.died ? 'died' : 'survived'}`
+  return `${scenarioWords(e.scenario)} · ${recordingName(e).toLowerCase()} · ${e.cleared ? 'cleared' : e.died ? 'died' : 'survived'}`
 }
 
 function EpisodeOption({ item, scenario }: { item: PickerEntry; scenario: string }) {
   if (item.entry) {
     return (
-      <option value={item.name} title={item.entry.title}>
+      <option value={item.name} title={`${item.entry.title}: ${resultWords(item.entry)}`}>
         {recordingLabel(item.entry)}
       </option>
     )
   }
   return (
     <option value={item.name}>
-      live · {scenarioWords(scenario)} · run {item.seed} · tick {item.tick ?? 0}
+      live · {scenarioWords(scenario)} · seed {item.seed} · decision {(item.tick ?? 0) + 1}
     </option>
   )
 }
@@ -56,10 +54,7 @@ function LiveBadge() {
   )
 }
 
-/**
- * Five things on every screen: the name, the screens, the episode picker, the reference and the theme. The
- * tick counter sits in the timeline, Depth and the tour in the headers of the screens that use them.
- */
+/** Four things on every screen: the name, the screens, the episode picker and the theme. */
 export function TopBar() {
   const index = useApp((s) => s.index)
   const bundle = useApp((s) => s.bundle)
@@ -70,7 +65,7 @@ export function TopBar() {
   const items = mergedEpisodes(index, live)
   const liveItems = items.filter((e) => e.live !== null)
   const recordings = items.filter((e) => e.live === null)
-  // On Watch a recording picked here plays from the start, as a card does; elsewhere it opens at its first tick.
+  // On Watch a recording picked here plays from the start, as a card does; elsewhere it opens at its first decision.
   const pick = (name: string) => {
     if (name === live?.current) followLive()
     else if (screen === 'watch') void openRecording(name)
@@ -80,7 +75,7 @@ export function TopBar() {
     <header className={`topbar ${bundle && liveOpen === bundle.name ? 'is-live' : ''}`}>
       <div className="brand">
         <h1>System 1 Doom</h1>
-        <span>one decision at a time</span>
+        <span>every decision by d1-ultra</span>
       </div>
       <nav className="screens" aria-label="Screens">
         {SCREENS.map((s) => (
@@ -117,16 +112,6 @@ export function TopBar() {
           )}
         </select>
       </label>
-      <button
-        type="button"
-        className="icon-button topbar-ref"
-        data-opens="glossary"
-        aria-haspopup="dialog"
-        title="The glossary, the principles, how this recording was made, and the keys (g)"
-        onClick={() => openDrawer('glossary')}
-      >
-        Reference
-      </button>
       <button
         type="button"
         className="icon-button topbar-theme"

@@ -1,14 +1,12 @@
 import { type PointerEvent, useEffect, useRef } from 'react'
-import { ChainStrip } from '../components/ChainStrip'
 import { RecordingCards } from '../components/RecordingCards'
 import { Stage } from '../components/Stage'
 import { useWidth } from '../components/useWidth'
 import { WATCH, counterText } from '../content/watch'
-import { gameSeconds } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
-import type { Pace } from '../data/playback'
+import { type Pace, gameSeconds } from '../data/playback'
 import type { TickTrace } from '../schema/bundle'
-import { dismissHelp, openDrawer, setPace, setTickIndex, togglePlay, useApp } from '../store'
+import { setPace, setTickIndex, togglePlay, useApp } from '../store'
 
 const BAR_HEIGHT = 26
 const BAR_PAD = 2
@@ -99,26 +97,7 @@ function Transport({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick: T
   )
 }
 
-/** The first visit's three lines on how to read the screen; dismissed once, it stays away. */
-function HelpCard() {
-  const dismissed = useApp((s) => s.helpDismissed)
-  if (dismissed) return null
-  return (
-    <aside className="help-card" aria-labelledby="help-title">
-      <h3 id="help-title">{WATCH.help.title}</h3>
-      <ol>
-        {WATCH.help.lines.map((line) => (
-          <li key={line}>{line}</li>
-        ))}
-      </ol>
-      <button type="button" className="icon-button" onClick={dismissHelp} title={WATCH.help.dismissTitle}>
-        {WATCH.help.dismiss}
-      </button>
-    </aside>
-  )
-}
-
-/** The landing: the recording plays at the agent's own pace, with the six levels of its chain beside it. */
+/** The landing: the recording plays at the agent's own pace. */
 export function Watch({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick: TickTrace; tickIndex: number }) {
   const live = useApp((s) => s.live?.current === bundle.name)
   const top = useRef<HTMLElement | null>(null)
@@ -139,29 +118,8 @@ export function Watch({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
           <Stage bundle={bundle} tick={tick} tickIndex={tickIndex} />
           <Progress ticks={bundle.ticks} tickIndex={tickIndex} />
           <Transport bundle={bundle} tick={tick} tickIndex={tickIndex} />
-          <p className="watch-honesty">
-            {live ? (
-              WATCH.liveHonesty
-            ) : (
-              <>
-                {WATCH.honesty}{' '}
-                <button
-                  type="button"
-                  className="link-button"
-                  data-opens="recording"
-                  aria-haspopup="dialog"
-                  onClick={() => openDrawer('recording', 'live')}
-                >
-                  {WATCH.honestyLink}
-                </button>
-              </>
-            )}
-          </p>
+          <p className="watch-honesty">{live ? WATCH.liveHonesty : WATCH.honesty}</p>
         </section>
-        <div className="watch-right">
-          <ChainStrip bundle={bundle} tick={tick} tickIndex={tickIndex} />
-          <HelpCard />
-        </div>
       </div>
       <RecordingCards />
     </main>

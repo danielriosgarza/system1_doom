@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DOOM_FPS, gameSeconds } from './derive'
-import { DECISION_MS, END_HOLD_MS, PACE_MS, READY_FRAMES } from './playback'
+import { DECISION_MS, DOOM_FPS, END_HOLD_MS, PACE_MS, READY_FRAMES, gameSeconds } from './playback'
 
 describe('the pace of playback', () => {
   it('plays in real time at one decision per 8 game frames, about 0.229 s', () => {

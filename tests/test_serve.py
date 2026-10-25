@@ -9,6 +9,7 @@ import pytest
 
 from system1_doom import export, llm_worker, serve
 from system1_doom.logger import TickTrace
+from system1_doom.relevance import RelevanceLedger
 from tests.fake_d1 import FakeD1, default_policy
 
 RECORDINGS = Path(__file__).resolve().parents[1] / "web" / "public" / "episodes"
@@ -108,6 +109,7 @@ def session(tmp_path_factory) -> Dict[str, Any]:
                 middle["meta"] = _get(port, "/episodes/live-1/episode.json")
                 middle["ticks"] = _get(port, "/episodes/live-1/ticks.jsonl")
                 middle["reflections"] = _get(port, "/episodes/live-1/reflections.jsonl")
+                middle["relevance"] = _get(port, "/episodes/live-1/relevance.json")
                 middle["tick"] = tick
                 hub.release.set()
         elif kind == "end":
@@ -193,6 +195,11 @@ def test_the_episode_in_progress_is_served_from_memory(session):
     assert [t.tick for t in ticks] == [0, 1]
     status, headers, body = session["middle"]["reflections"]
     assert status == 200 and headers["Cache-Control"] == "no-store" and body == b""  # no cycle in two decisions
+    # The ledger every tick's relevance channel reads is there from the start; the finished bundle holds the one after.
+    status, _, body = session["middle"]["relevance"]
+    assert status == 200 and RelevanceLedger.model_validate_json(body).episodes == 0
+    after = RelevanceLedger.model_validate_json((session["config"].out / "live-1" / "relevance.json").read_text())
+    assert after.episodes == 1
 
 
 def test_a_finished_episode_is_a_valid_bundle(session):

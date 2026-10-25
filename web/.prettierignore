@@ -1,5 +1,5 @@
 dist
 public
 src/schema/bundle.ts
-src/data/__fixtures__
+e2e/fixtures
 schema
