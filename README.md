@@ -9,12 +9,16 @@ deterministic admission.
 
 ## Web explainer
 
-**<https://danielriosgarza.github.io/system1_doom/>** replays recorded
-episodes tick by tick and explains every level of each decision: what the
-controller saw, which actions were legal, what each module wanted, how the
-arbiter picked, what the motor pressed and what came back. One recording
-has d1-ultra's advice at every tick. The app and its screens are described
-in [`web/README.md`](web/README.md); the bundles it reads, the recordings
+**<https://danielriosgarza.github.io/system1_doom/>** opens on a
+recording of the agent clearing the deadly corridor, played at its own
+pace of four decisions a second, with its decision chain beside the game:
+six rows, from the rare addition of a new move at the top to the keys it
+presses at the bottom, each changing as that level decides. Pause
+anywhere, or click a row, and the other screens explain every level of
+that decision: what the controller saw, which actions were legal, what
+each module wanted, how the arbiter picked, what the motor pressed and
+what came back. One recording has d1-ultra's advice at every tick. The
+app and its screens are described in [`web/README.md`](web/README.md); the bundles it reads, the recordings
 and how they were made are in
 [`docs/DOCUMENTATION.md` §8.15](docs/DOCUMENTATION.md#815-episode-bundles--the-web-explainer--tracingpy-exportpy-web).
 

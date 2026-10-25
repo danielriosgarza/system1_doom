@@ -1003,12 +1003,41 @@ validates a bundle and every file `episode.json` lists against the
 models and checks that every tick has a frame; `--index DIR` writes `DIR/index.json`, the
 list the app's episode picker reads.
 
-The app (`web/`, see `web/README.md`) has five screens over one shared
-timeline, picked from tabs in the top bar. The URL hash is
-`#<episode>/<tick>/<screen>`; a link without a screen opens the tick
-inspector, and a fresh visit opens the overview.
+The app (`web/`, see `web/README.md`) has six screens, picked from tabs
+in the top bar (keys 1 to 6): Watch, The chain, The inspector, The
+diagram, Learning and Growing the menu. The URL hash is
+`#<episode>/<tick>/<screen>`, with the screen ids `watch`, `hierarchy`,
+`tick`, `overview`, `learning` and `menu`; a link without a screen opens
+the inspector, and a fresh visit lands on Watch with the first recording
+that cleared the corridor (`#deadly_corridor-learned-9/0/watch`). Every
+screen but Watch shares the timeline at the bottom, with the tick counter
+and the pace.
 
-**Overview** is the whole controller on one diagram: the six-beat fast
+**Watch** plays the recording at the controller's own pace, one decision
+every 8 game frames (8 ÷ 35 s, about 0.23 s; Slow is one a second), with
+its frames fetched and decoded ahead and a 100 ms crossfade from one to
+the next. Beside the game, the decision chain reads the tower below as
+six rows in plain words, slowest at the top: growing the menu (nothing
+proposed, a module asked, a macro added or turned away), steering
+(continue, switch, explore a variation, ask for a new playbook, with the
+chosen option's probability), the menu (legal of known actions), the five
+opinions (how many modules named the pick first), the decision (the
+action and the pick rule in words) and act (the keys held over the four
+steps). A row pulses when its words change from the decision before; on
+the cleared recording the top row never changes and the bottom one
+changes on 40 of the 51 decisions after the first. A click on a row pauses and opens The
+chain at that decision with that level expanded. Under the game are
+Play/Pause, the pace, the counter (decision N of M and the game time) and
+a progress bar with the health line that seeks; below, a card per
+recording (who played it and how it ended), each playing from its first
+decision. Watch plays on its own only on a fresh visit or a link to its
+first decision, never under reduced motion, and then loops, holding the
+result 2.5 s at the end; anything the viewer does ends the loop, and a
+link to a later decision waits for Play. A line under the game says it
+is a recording replayed at the agent's pace and opens This recording at
+the serve command that plays the same game live.
+
+**The diagram** (`overview`) is the whole controller on one diagram: the six-beat fast
 path down the middle (freeze the world, shorten the menu, five opinions,
 one decision, act, see and remember), the slow path on the right (a
 module asks, the slow worker writes, the admission gate, the macro joins
@@ -1021,9 +1050,10 @@ dotted ones d1-ultra. During playback a pulse runs down the fast path
 once per tick (not under reduced motion). The **tour** walks the six
 beats on the inspector over a featured tick (the first kill with an
 enemy in view, else the first tick with one), one coach mark per beat
-naming the invariant it shows, then ends on the hierarchy.
+naming the invariant it shows, then ends on The chain; it starts from the
+headers of The chain and The inspector, or the key t.
 
-**Tick** (the inspector) shows, for the tick under the timeline cursor:
+**The inspector** (`tick`) shows, for the tick under the timeline cursor:
 the frame with enemy/pickup boxes, the ±12° aim band and
 wall-distance arcs drawn from the trace; the world state and its five
 context buckets; the menu (legal, pruned with the failed precondition,
@@ -1035,17 +1065,19 @@ gate module-weight rings, and the pick rule in words; the motor's steps
 in words, with reflexes marked; and the outcome, its five module rewards
 and where it is filed.
 
-**Hierarchy** draws the same tick as a tower of six levels, slowest at
+**The chain** (`hierarchy`) draws the same tick as a tower of six levels, slowest at
 the top, each as the same decision card (its menu, a score per option,
 the rule that chose, its bounds, what it reads and writes): growing the
 menu (the admission gate's five stages, or the macros admitted so far),
 steering (the archive's four-way choice, decided after the action with
 that tick's pressure, and the 12 archive slots), the menu (legal and
 pruned), the five opinions, the arbiter's decision, and the motor's
-steps. Side cards feed the levels with drawn connectors: exploration
+steps. Side cards feed the levels with drawn connectors: what it saw
+(the frame at that decision, with its overlays), exploration
 pressure (its four terms, the dampers and the clamp, recomputed from
 `exploration_state` — the arbiter of tick t uses the state left by tick
-t − 1), d1-ultra, the learned networks and the simulator.
+t − 1), d1-ultra, the learned networks and the simulator. Opened from a
+row on Watch, it expands that level's card and flashes it.
 
 **Learning** answers how the networks earned their say and what they
 do with it at this tick. Across episodes: the evaluation table (each
@@ -1085,8 +1117,9 @@ time it ran, and when steering adopted its strategy, whose +0.15 the
 arbiter adds to the legal actions of its sequence from the next tick.
 On a recording without a request, the strips still show the counters
 and the closest call, with a link to the recording of the same seed that
-asked. A Plain/Formula toggle hides or shows the arithmetic on every
-screen.
+asked. A Plain/Formula toggle, in the header of The chain, The
+inspector, Learning and Growing the menu, hides or shows the arithmetic
+on every screen.
 
 **The recordings.** Four bundles ship in `web/public/episodes/`, two
 per seed, so the Learning screen's side-by-side pairs each recording
@@ -1132,17 +1165,18 @@ needs Settings → Pages → Build and deployment → Source: GitHub Actions.
 Live mode is not on Pages: a static site cannot stream, and without
 `live/status.json` the app is the recordings only.
 
-**The reference drawer** opens over any screen from the Glossary button,
-the ⓘ button beside the episode picker, or the keys g, i and ?. Its four
+**The reference drawer** opens over any screen from the Reference button
+in the top bar, or the keys g, i and ?. Its four
 tabs are the glossary (the terms of §18 and the words the app's own copy
 leans on, each with its meaning, this tick's value where there is one,
 links to the panels that show it, and its place in the code; every
 explanation links its glossary words, once each), the seven principles
 of §1 with where the app shows each, this recording (from `episode.json`
 and the index: which brains were on, how it was played, the checkpoint,
-the result, the files, and the `python -m system1_doom.export` command
-that makes it again), and the keyboard (1 to 5 switch screens, t starts
-the tour, f toggles the depth). It is a modal dialog: focus stays inside
+the result, the files, the `python -m system1_doom.export` command
+that makes it again, and the `python -m system1_doom.serve` command that
+plays the same game live), and the keyboard (1 to 6 switch screens, t
+starts the tour, f toggles the depth). It is a modal dialog: focus stays inside
 until Esc or a click outside closes it, and it is not in the URL hash.
 
 **Live mode.** `python -m system1_doom.serve` plays episodes with the
@@ -1165,9 +1199,10 @@ whose queue fills is dropped (its browser reconnects and reloads the
 files), and the pacing (`--pace`, 0.23 s per tick by default, eight game
 frames) is a wait after a tick, never inside one. The app asks for
 `live/status.json` at start, and a 404 means there is no live mode: a
-static deployment looks exactly as before. With a status, the picker
+static deployment looks exactly as before. With a status, a visit with
+no hash or with `#live` lands on Watch with the live episode, the picker
 gains a Live group, the bar a LIVE badge, and the cursor follows the
-newest tick, riding into each new episode, until the viewer moves it;
+newest tick (Watch never loops while it follows), riding into each new episode, until the viewer moves it;
 Follow or the key l resumes, and `#live/<screen>` links to whatever is
 playing. A slow-path request still in flight when an episode ends is
 waited for (at most the Codex timeout), so its proposal is logged in the
