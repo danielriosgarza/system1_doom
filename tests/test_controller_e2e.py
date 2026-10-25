@@ -243,3 +243,140 @@ def test_live_one_tick_with_six_instances_answering(tmp_path):
     assert trace.pick.kind == "top" and trace.executed_action in trace.available_actions
     assert trace.instances["combat"].image_ref is not None
     assert all(r.usage.input_tokens > 0 for r in trace.instances.values())
+
+
+# ------------------------------------------------------------------------------------------------
+# The same hierarchy on Jev: every instance's call goes to TypeSafe, with the screen as an asset.
+
+# System 2 every 8 decisions with 8-decision trials, so a short episode holds its cycles, a trial and a verdict.
+SHORT_SYSTEM2 = dict(system2_cadence=8, trial_decisions=8, cooling_decisions=8, history_test_sample=12, history_test_noise=2, safety_followed=40)
+# The reflectors the fake tells apart by their instructions (the menu reflector only runs with the slow path on).
+REFLECTORS = [f"{s}_auditor" for s in INSTANCES] + ["strategy_reflector", "exploration_reflector"]
+
+
+def _asset_image(asset: dict):
+    import base64
+    import io
+
+    from PIL import Image
+
+    return Image.open(io.BytesIO(base64.b64decode(asset["data_base64"])))
+
+
+def test_the_same_hierarchy_plays_on_jev_with_every_call_at_typesafe(tmp_path):
+    from system1_doom.d1_client import JEV_IMAGES_HEADER, TYPESAFE_SYSTEMONE_URL
+    from system1_doom.reflection import ReflectionTrace, TrialVerdictTrace, load_reflections
+    from tests.fake_d1 import SYSTEM2_CENTRAL, TRIAL_JUDGE, explore_level_system2, is_system2
+
+    # The exploration reflector proposes the explore level, System 2's central takes it, and the judge keeps it.
+    fake = FakeD1(default_policy, decider="jev", system2_policy=explore_level_system2)
+    env = ViZDoomBridge(scenario="basic.cfg", window_visible=False, seed=9)
+    cfg = ControllerConfig(
+        decider="jev", log_dir=str(tmp_path / "logs"), enable_slow_llm=False, enable_system2=True,
+        configuration=default_configuration().with_bounds(**SHORT_SYSTEM2),
+    )
+    ctrl = DoomDecisionController(env=env, config=cfg, api_key="ts_test_key", transport=fake)
+    try:
+        assert ctrl.decider.name == "jev" and ctrl.d1_client.decider is ctrl.slow_client.decider is ctrl.decider
+        result = ctrl.run_episode(max_ticks=24)
+        assert ctrl.wait_system2(60)
+        models = ctrl.models_answered()
+    finally:
+        ctrl.close()
+    traces = result["traces"]
+    assert len(traces) == 24 and result["misses"] == {"total": 0, "missed_ticks": 0, "by_instance": {}}
+
+    # Every call of every instance, System 1's and System 2's, went to TypeSafe's endpoint with the Jev key.
+    assert len(fake.requests) == len(fake.calls) == sum(models.values()) and models == {"jev-1.14.0": len(fake.calls)}
+    for (name, payload), (url, headers) in zip(fake.calls, fake.requests):
+        assert url == TYPESAFE_SYSTEMONE_URL and headers["Authorization"] == "Bearer ts_test_key", name
+        assert payload["model"] == "jev-latest" and "images" not in payload, name
+        assert (JEV_IMAGES_HEADER in headers) == ("assets" in payload) == (name == "combat"), name
+    names = {name for name, _ in fake.calls}
+    assert set(REFLECTORS) | {SYSTEM2_CENTRAL, TRIAL_JUDGE} <= names, names - set(INSTANCES)
+    records = load_reflections(ctrl.logger.reflections_path.read_text())
+    cycles = [r for r in records if isinstance(r, ReflectionTrace)]
+    assert len(cycles) >= 2 and cycles[0].calls >= 9, [(c.trigger, c.calls) for c in cycles]
+    assert any(isinstance(r, TrialVerdictTrace) for r in records) and result["configuration_end"].version == 2
+
+    # What each instance saw is the state sent; the combat sense's screen follows its text as the one asset.
+    for i, trace in enumerate(traces):
+        assert list(trace.instances) == INSTANCES and trace.pick.kind in ("top", "drawn")
+        for name, instance in trace.instances.items():
+            payload = fake.payloads(name)[i]
+            if name == "combat":
+                assert instance.image_ref is not None and "frame" in instance.scope
+                ((ref, asset),) = payload["assets"].items()
+                assert payload["state"] == f"{instance.evidence}\n\n[screen image]\n{ref}"
+                with _asset_image(asset) as image:
+                    assert image.size == (640, 480) and image.format == "JPEG"
+            else:
+                assert payload["state"] == instance.evidence and "assets" not in payload, name
+        # Jev reports no cost: every call's cost is its input tokens at the published price.
+        assert trace.usage.cost > 0 and trace.usage.cost == pytest.approx(trace.usage.input_tokens * 0.042e-6, rel=1e-6)
+    assert result["cost"]["usd"] > 0 and result["cost"]["usd"] == pytest.approx(result["cost"]["input_tokens"] * 0.042e-6, rel=1e-3)
+    assert sum(1 for name, _ in fake.calls if is_system2(name)) >= 10
+
+
+def test_a_controller_on_jev_needs_the_typesafe_key(tmp_path):
+    env = ViZDoomBridge(scenario="basic.cfg", window_visible=False, seed=1)
+    try:
+        with pytest.raises(MissingAPIKey, match="TYPESAFE_API_KEY is not set. jev makes every decision"):
+            DoomDecisionController(env=env, config=ControllerConfig(log_dir=str(tmp_path), decider="jev"), api_key="")
+    finally:
+        env.close()
+
+
+@pytest.mark.live
+def test_live_one_tick_with_six_instances_answering_on_jev(tmp_path):
+    from system1_doom.d1_client import load_api_key
+
+    key = load_api_key("jev")
+    if not key:
+        pytest.skip("needs TYPESAFE_API_KEY")
+    env = ViZDoomBridge(scenario="deadly_corridor.cfg", window_visible=False, seed=7)
+    cfg = ControllerConfig(decider="jev", log_dir=str(tmp_path / "logs"), enable_slow_llm=False, call_budget_sec=15.0)
+    ctrl = DoomDecisionController(env=env, config=cfg, api_key=key)
+    try:
+        trace = ctrl.step()
+        models = ctrl.models_answered()
+    finally:
+        ctrl.close()
+    assert list(trace.instances) == INSTANCES
+    answered = [name for name, r in trace.instances.items() if not r.missed]
+    assert answered == INSTANCES, {n: (r.miss_reason, r.error) for n, r in trace.instances.items()}
+    assert trace.pick.kind == "top" and trace.executed_action in trace.available_actions
+    assert trace.instances["combat"].image_ref is not None
+    assert all(r.usage.input_tokens > 0 and r.usage.cost > 0 for r in trace.instances.values())
+    assert models and all(m.startswith("jev-") for m in models), models
+
+
+@pytest.mark.live
+def test_live_jev_plays_a_corridor_stretch_with_system2(tmp_path):
+    """The full hierarchy on the real Jev: 16 decisions on the corridor, with a System 2 cycle every 8."""
+    from system1_doom.d1_client import load_api_key
+    from system1_doom.reflection import ReflectionTrace, load_reflections
+
+    key = load_api_key("jev")
+    if not key:
+        pytest.skip("needs TYPESAFE_API_KEY")
+    env = ViZDoomBridge(scenario="deadly_corridor.cfg", window_visible=False, seed=9)
+    cfg = ControllerConfig(
+        decider="jev", log_dir=str(tmp_path / "logs"), enable_slow_llm=False, call_budget_sec=15.0, enable_system2=True,
+        configuration=default_configuration().with_bounds(**SHORT_SYSTEM2),
+    )
+    ctrl = DoomDecisionController(env=env, config=cfg, api_key=key)
+    try:
+        result = ctrl.run_episode(max_ticks=16)
+        assert ctrl.wait_system2(180)
+        models = ctrl.models_answered()
+    finally:
+        ctrl.close()
+    traces = result["traces"]
+    assert len(traces) >= 1 and result["finished_reason"] in ("max_ticks", "episode_end"), result["finished_reason"]
+    assert result["misses"]["missed_ticks"] == 0, result["misses"]
+    assert all(not r.missed for t in traces for r in t.instances.values()), result["misses"]
+    cycles = [r for r in load_reflections(ctrl.logger.reflections_path.read_text()) if isinstance(r, ReflectionTrace)]
+    assert cycles and all(c.calls >= 8 for c in cycles), [(c.trigger, c.calls) for c in cycles]
+    assert models and all(m.startswith("jev-") for m in models), models
+    assert result["cost"]["usd"] > 0

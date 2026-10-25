@@ -57,8 +57,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import unquote, urlsplit
 
 from system1_doom.configuration import ExplorationLevel
-from system1_doom.controller import NO_KEY_MESSAGE
-from system1_doom.d1_client import TransportFn, load_api_key
+from system1_doom.controller import no_key_message
+from system1_doom.d1_client import DeciderName, TransportFn, load_api_key
 from system1_doom.export import (
     RELEVANCE_FILE,
     BundleIndexEntry,
@@ -79,7 +79,7 @@ from system1_doom.logger import TRACE_SCHEMA_VERSION, ProposalTrace, TickTrace
 from system1_doom.reflection import REFLECTIONS_FILE
 from system1_doom.relevance import save_ledger
 from system1_doom.system2 import Record
-from system1_doom.train import ConfigurationFileError, RunStore, add_configuration_flags, default_run_dir
+from system1_doom.train import ConfigurationFileError, RunStore, add_configuration_flags, add_decider_flag, default_run_dir
 
 LIVE_NAME = re.compile(r"^live-(\d+)$")
 LIVE_FILES = ("episode.json", "ticks.jsonl", "proposals.jsonl", REFLECTIONS_FILE)
@@ -107,6 +107,7 @@ NO_APP = (
 class ServeConfig:
     scenario: str = "deadly_corridor.cfg"
     seed: int = 7
+    decider: DeciderName = "d1-ultra"
     networks: Networks = "none"
     run_dir: Optional[Path] = None
     max_ticks: int = 500
@@ -125,7 +126,7 @@ class ServeConfig:
     out: Path = Path("live")
     app: Path = Path("web/dist")
     recordings: Path = Path("web/public/episodes")
-    # Answers d1-ultra calls in tests; None posts to the real endpoint with LIQUID_API_KEY.
+    # Answers the decider's calls in tests; None posts to the real endpoint with the decider's key.
     transport: Optional[TransportFn] = None
     api_key: Optional[str] = None
 
@@ -134,7 +135,7 @@ class ServeConfig:
         return {
             "scenario": self.scenario,
             "seed": self.seed,
-            "decider": "d1-ultra",
+            "decider": self.decider,
             "networks": self.networks,
             "call_budget_sec": self.call_budget_sec,
             "exploration_level": self.exploration_level,
@@ -508,6 +509,7 @@ def play(config: ServeConfig, hub: LiveHub, stop: threading.Event, log: bool = F
         config.system2,
         config.configuration,
         config.fresh_configuration,
+        decider=config.decider,
     )
     player.ctrl.add_reflection_listener(hub.add_reflection)
     try:
@@ -543,6 +545,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
     parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
     add_configuration_flags(parser)
+    add_decider_flag(parser)
     parser.add_argument("--episodes", type=int, default=None, help="Episodes to play (default: until Ctrl+C)")
     parser.add_argument(
         "--pace", type=float, default=0.23, help="Least wall time per tick in seconds (default 0.23: 8 frames at 35 fps; 0 runs flat out)"
@@ -564,6 +567,7 @@ def config_from_args(args: argparse.Namespace) -> ServeConfig:
     return ServeConfig(
         scenario=args.scenario,
         seed=args.seed,
+        decider=args.decider,
         networks=args.networks,
         run_dir=Path(args.run_dir) if args.run_dir else None,
         max_ticks=args.max_ticks,
@@ -588,8 +592,8 @@ def config_from_args(args: argparse.Namespace) -> ServeConfig:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not load_api_key():
-        print(NO_KEY_MESSAGE, file=sys.stderr)
+    if not load_api_key(args.decider):
+        print(no_key_message(args.decider), file=sys.stderr)
         return 2
     config = config_from_args(args)
     try:
@@ -618,7 +622,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not (config.app / "index.html").is_file():
         print(NO_APP.format(app=config.app))
     seeds = f"seed {config.seed}" + ("" if config.episodes == 1 else " onwards")
-    print(f"Playing {config.scenario} with d1-ultra deciding, {config.networks} value networks, {seeds}, into {config.out}/")
+    print(f"Playing {config.scenario} with {config.decider} deciding, {config.networks} value networks, {seeds}, into {config.out}/")
     try:
         try:
             play(config, hub, stop, log=True)

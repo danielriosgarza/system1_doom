@@ -58,14 +58,14 @@ from system1_doom.actions import ActionSpec
 from system1_doom.configuration import CENTRAL_NAME, SENSE_NAMES, Configuration, ExplorationLevel
 from system1_doom.controller import (
     BUILTIN_ACTION_IDS,
-    NO_KEY_MESSAGE,
     ControllerConfig,
     DoomDecisionController,
     EpisodeCost,
     EpisodeMisses,
     FinishedReason,
+    no_key_message,
 )
-from system1_doom.d1_client import InstanceCounters, TransportFn, load_api_key
+from system1_doom.d1_client import DeciderName, InstanceCounters, TransportFn, load_api_key
 from system1_doom.features import encode_action
 from system1_doom.history import HISTORY_FILE, TickRecord
 from system1_doom.history_test import HistoryTestResult
@@ -82,7 +82,14 @@ from system1_doom.reflection import (
 )
 from system1_doom.relevance import RelevanceLedger, save_ledger
 from system1_doom.state import WorldState
-from system1_doom.train import ConfigurationFileError, RunStore, add_configuration_flags, default_run_dir, starting_configuration
+from system1_doom.train import (
+    ConfigurationFileError,
+    RunStore,
+    add_configuration_flags,
+    add_decider_flag,
+    default_run_dir,
+    starting_configuration,
+)
 from system1_doom.vizdoom_env import ViZDoomBridge
 
 if TYPE_CHECKING:
@@ -185,7 +192,7 @@ class EpisodeMeta(BaseModel):
     title: str
     scenario: str
     seed: int
-    decider: Literal["d1-ultra"] = Field(default=DECIDER, description="Every decision is made by d1-ultra instances")
+    decider: DeciderName = Field(default=DECIDER, description="The decision model every decision was made by: d1-ultra, or jev")
     value_networks: Networks = Field(description="Which value networks served the values evidence channel")
     checkpoint: Optional[CheckpointInfo] = None
     slow_path: Literal["off", "templates", "codex"]
@@ -422,6 +429,7 @@ def build_player(
     system2: bool = True,
     configuration_path: Optional[Path] = None,
     fresh_configuration: bool = False,
+    decider: DeciderName = DECIDER,
 ) -> Player:
     """The bridge and controller a bundle is played with, writing its frames and logs into `out`.
 
@@ -435,6 +443,7 @@ def build_player(
     print(start.line, file=sys.stderr, flush=True)
     env = RecordingBridge(frames_dir=out / "frames", scenario=scenario, window_visible=False, seed=seed)
     cfg = ControllerConfig(
+        decider=decider,
         call_budget_sec=call_budget_sec,
         seed=seed,
         configuration_path=str(start.path) if start.path else None,
@@ -501,10 +510,10 @@ def copy_run_files(player: Player, out: Path) -> Tuple[List[str], Optional[Check
     return files, checkpoint
 
 
-def default_title(scenario: str, networks: Networks, seed: int) -> str:
+def default_title(scenario: str, networks: Networks, seed: int, decider: DeciderName = DECIDER) -> str:
     stem = Path(scenario).stem
     evidence = "no value networks" if networks == "none" else f"{networks} value networks"
-    return f"{stem.replace('_', ' ')}, d1-ultra with {evidence}, seed {seed}"
+    return f"{stem.replace('_', ' ')}, {decider} with {evidence}, seed {seed}"
 
 
 def episode_meta(
@@ -527,6 +536,7 @@ def episode_meta(
     return EpisodeMeta(
         name=name,
         title=title,
+        decider=player.cfg.decider,
         scenario=player.scenario,
         seed=seed,
         value_networks=player.networks,
@@ -602,14 +612,16 @@ def record_bundle(
     system2: bool = True,
     configuration_path: Optional[Path] = None,
     fresh_configuration: bool = False,
+    decider: DeciderName = DECIDER,
 ) -> EpisodeMeta:
-    """Play one seeded episode with d1-ultra deciding and write it as a bundle in `out`."""
+    """Play one seeded episode with the decider deciding and write it as a bundle in `out`."""
     store = RunStore(run_dir or default_run_dir(scenario))
     learner, model_path = load_networks(store, networks)
     _prepare_out_dir(out)
     player = build_player(
         scenario, seed, out, networks, store, learner, model_path, max_ticks, slow_path, codex,
         call_budget_sec, exploration_level, transport, api_key, system2, configuration_path, fresh_configuration,
+        decider=decider,
     )
     try:
         result, traces = play_episode(player, seed)
@@ -620,7 +632,7 @@ def record_bundle(
         player,
         out,
         name or out.name,
-        title or default_title(scenario, networks, seed),
+        title or default_title(scenario, networks, seed, decider),
         seed,
         result,
         traces,
@@ -840,6 +852,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
     parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
     add_configuration_flags(parser)
+    add_decider_flag(parser)
     parser.add_argument("--check", metavar="BUNDLE", default=None, help="Validate a bundle and exit")
     parser.add_argument("--index", metavar="DIR", default=None, help="Write DIR/index.json listing its bundles and exit")
     parser.add_argument("--schema", metavar="OUT.json", default=None, help="Write the bundle JSON Schema and exit")
@@ -847,7 +860,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] = None) -> int:
-    """`transport` answers d1-ultra calls in tests; real recordings need LIQUID_API_KEY."""
+    """`transport` answers the decider's calls in tests; real recordings need the decider's key."""
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.schema:
@@ -866,10 +879,10 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
         entries = write_index(Path(args.index))
         print(f"Indexed {len(entries)} bundle(s) in {Path(args.index) / 'index.json'}")
         return 0
-    api_key = load_api_key()
+    api_key = load_api_key(args.decider)
     if not api_key:
         if transport is None:
-            print(NO_KEY_MESSAGE, file=sys.stderr)
+            print(no_key_message(args.decider), file=sys.stderr)
             return 2
         api_key = "test-transport"
 
@@ -903,6 +916,7 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
                 # configuration the one before saved in the run folder, as serve's episodes carry on.
                 configuration_path=Path(args.configuration) if args.configuration and i == 0 else None,
                 fresh_configuration=args.fresh_configuration and i == 0,
+                decider=args.decider,
             )
         except (FileNotFoundError, FileExistsError, ConfigurationFileError) as exc:
             print(exc, file=sys.stderr)
@@ -920,7 +934,7 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
             f"configuration version {meta.configuration_start.version} -> {meta.configuration_end.version}{reflections}"
         )
         if meta.result.finished_reason == NOT_SHIPPABLE:
-            print(f"{out}: the connection to d1-ultra was lost (three central misses in a row); not shippable.", file=sys.stderr)
+            print(f"{out}: the connection to {args.decider} was lost (three central misses in a row); not shippable.", file=sys.stderr)
             status_code = 1
     return status_code
 

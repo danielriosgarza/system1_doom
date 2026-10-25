@@ -32,8 +32,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Union
 from system1_doom.actions import ActionSpec
 from system1_doom.charts import render_learning_curves, rolling_mean
 from system1_doom.configuration import Configuration
-from system1_doom.controller import NO_KEY_MESSAGE, ControllerConfig, DoomDecisionController
-from system1_doom.d1_client import TransportFn, load_api_key
+from system1_doom.controller import ControllerConfig, DoomDecisionController, no_key_message
+from system1_doom.d1_client import DECIDER_NAMES, DeciderName, TransportFn, load_api_key
 from system1_doom.vizdoom_env import ViZDoomBridge
 
 if TYPE_CHECKING:
@@ -155,6 +155,14 @@ def add_configuration_flags(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--fresh-configuration", action="store_true",
         help="Start from the design's version 1: the run folder's saved configuration and System 2 state are forgotten",
+    )
+
+
+def add_decider_flag(parser: argparse.ArgumentParser) -> None:
+    """`--decider {d1-ultra,jev}`, shared by every entry point that plays: the model every instance is a call to."""
+    parser.add_argument(
+        "--decider", choices=DECIDER_NAMES, default="d1-ultra",
+        help="The decision model every instance calls: d1-ultra (Liquid AI, LIQUID_API_KEY; the default) or jev (TypeSafe, TYPESAFE_API_KEY)",
     )
 
 
@@ -282,8 +290,9 @@ def evaluate(
     transport: Optional[TransportFn] = None,
     api_key: Optional[str] = None,
     start: Optional[StartingConfiguration] = None,
+    decider: DeciderName = "d1-ultra",
 ) -> Dict[str, Dict[str, float]]:
-    """Play identical seeded episodes with d1-ultra deciding, with no, the latest and the best value networks as evidence.
+    """Play identical seeded episodes with the decider deciding, with no, the latest and the best value networks as evidence.
 
     Every contender plays under the same configuration (`start`, by default the run folder's saved one) with
     System 2 off and nothing saved, so the episodes differ only by the networks.
@@ -301,7 +310,7 @@ def evaluate(
     for label, model in contenders:
         env = ViZDoomBridge(scenario=scenario, window_visible=False)
         cfg = ControllerConfig(
-            seed=EVAL_SEED_BASE, enable_slow_llm=False, log_dir=str(store.root / "eval" / label),
+            decider=decider, seed=EVAL_SEED_BASE, enable_slow_llm=False, log_dir=str(store.root / "eval" / label),
             configuration_path=str(start.path) if start.path else None,
         )
         ctrl = DoomDecisionController(env=env, config=cfg, learner=model, transport=transport, api_key=api_key)
@@ -330,9 +339,9 @@ def evaluate(
     return report
 
 
-def format_evaluation(report: Dict[str, Dict[str, float]], scenario: str, episodes: int) -> str:
+def format_evaluation(report: Dict[str, Dict[str, float]], scenario: str, episodes: int, decider: DeciderName = "d1-ultra") -> str:
     lines = [
-        f"Evaluation on {scenario}: {episodes} identical seeded episodes each, d1-ultra deciding, no learning.",
+        f"Evaluation on {scenario}: {episodes} identical seeded episodes each, {decider} deciding, no learning.",
         f"  {'networks':12s}{'reward':>9s}{'cleared':>9s}{'survived':>10s}{'kills':>7s}{'health':>8s}{'ticks':>7s}",
     ]
     for label, m in report.items():
@@ -370,6 +379,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--codex", action="store_true", help="Let the slow Codex worker propose new macros")
     parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
     add_configuration_flags(parser)
+    add_decider_flag(parser)
     parser.add_argument(
         "--evaluate",
         type=int,
@@ -381,7 +391,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] = None) -> int:
-    """`transport` answers d1-ultra calls in tests; real play needs LIQUID_API_KEY."""
+    """`transport` answers the decider's calls in tests; real play needs the decider's key."""
     args = build_parser().parse_args(argv)
     try:
         from system1_doom.learning import CheckpointMismatch
@@ -389,10 +399,10 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
     except ImportError:
         print(INSTALL_HINT, file=sys.stderr)
         return 2
-    api_key = load_api_key()
+    api_key = load_api_key(args.decider)
     if not api_key:
         if transport is None:
-            print(NO_KEY_MESSAGE, file=sys.stderr)
+            print(no_key_message(args.decider), file=sys.stderr)
             return 2
         api_key = "test-transport"
 
@@ -406,11 +416,14 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
             return 2
         print(start.line, file=sys.stderr, flush=True)
         try:
-            report = evaluate(args.scenario, store, args.evaluate, args.max_ticks, transport=transport, api_key=api_key, start=start)
+            report = evaluate(
+                args.scenario, store, args.evaluate, args.max_ticks, transport=transport, api_key=api_key, start=start,
+                decider=args.decider,
+            )
         except CheckpointMismatch as exc:
             print(f"{exc}\nRetrain with --fresh.", file=sys.stderr)
             return 2
-        print(format_evaluation(report, args.scenario, args.evaluate), flush=True)
+        print(format_evaluation(report, args.scenario, args.evaluate, args.decider), flush=True)
         return 0
     if args.fresh:
         store.reset()
@@ -437,6 +450,7 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
 
     env = ViZDoomBridge(scenario=args.scenario, window_visible=False, seed=args.seed)
     cfg = ControllerConfig(
+        decider=args.decider,
         call_budget_sec=args.call_budget,
         seed=args.seed or 0,
         configuration_path=str(start.path) if start.path else None,
@@ -460,7 +474,7 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
 
     resumed = learner.episodes
     print(
-        f"Training the value networks on {args.scenario} in {store.root}, d1-ultra deciding "
+        f"Training the value networks on {args.scenario} in {store.root}, {args.decider} deciding "
         f"({'resuming after episode ' + str(resumed) if resumed else 'fresh start'})",
         flush=True,
     )

@@ -283,7 +283,7 @@ def test_a_bundle_of_another_schema_version_is_reported_and_left_out_of_an_index
 
 
 def test_export_fails_fast_without_the_key(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(export, "load_api_key", lambda: None)
+    monkeypatch.setattr(export, "load_api_key", lambda *a, **k: None)
     assert export.main(["--scenario", "basic.cfg", "--out", str(tmp_path / "x")]) == 2
     assert "LIQUID_API_KEY" in capsys.readouterr().err and not (tmp_path / "x").exists()
     # --check, --index and --schema read files only and need no key.
@@ -300,3 +300,22 @@ def test_failing_condition_names_the_precondition_is_satisfied_rejects():
         for action in vocabulary.all_actions():
             failing = action.preconditions.failing_condition(state)
             assert (failing is None) == action.preconditions.is_satisfied(state), (action.id, failing)
+
+
+def test_a_bundle_played_by_jev_names_its_decider_and_validates(tmp_path):
+    from system1_doom.d1_client import TYPESAFE_SYSTEMONE_URL
+
+    fake = FakeD1(shoot_when_aimed, decider="jev")
+    out = tmp_path / "basic-jev-3"
+    meta = export.record_bundle(
+        scenario="basic.cfg", seed=3, out=out, run_dir=tmp_path / "no_run", max_ticks=3,
+        transport=fake, api_key="ts_test_key", system2=False, decider="jev",
+    )
+    assert meta.decider == "jev" and meta.title == "basic, jev with no value networks, seed 3"
+    assert all(url == TYPESAFE_SYSTEMONE_URL for url, _ in fake.requests) and len(fake.requests) == meta.cost.calls
+    assert meta.cost.usd > 0 and meta.cost.usd == pytest.approx(meta.cost.input_tokens * 0.042e-6, rel=1e-3)
+    assert export.check_bundle(out) == [] and export.main(["--check", str(out)]) == 0
+    schema = export.bundle_json_schema()
+    jsonschema.validate(json.loads((out / "episode.json").read_text()), {"$defs": schema["$defs"], "$ref": "#/$defs/EpisodeMeta"})
+    assert schema["$defs"]["EpisodeMeta"]["properties"]["decider"]["enum"] == ["d1-ultra", "jev"]
+    assert export.write_index(out.parent)[0].name == out.name

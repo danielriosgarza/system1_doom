@@ -156,7 +156,7 @@ def test_train_has_no_exploration_schedule_and_fails_fast_without_the_key(monkey
     assert not hasattr(train, "exploration_schedule")
     with pytest.raises(SystemExit):
         train.build_parser().parse_args(["--explore-start", "0.5"])
-    monkeypatch.setattr(train, "load_api_key", lambda: None)
+    monkeypatch.setattr(train, "load_api_key", lambda *a, **k: None)
     assert train.main(["--episodes", "1"]) == 2 and "LIQUID_API_KEY" in capsys.readouterr().err
 
 

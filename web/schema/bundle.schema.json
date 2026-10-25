@@ -905,9 +905,12 @@
           "type": "integer"
         },
         "decider": {
-          "const": "d1-ultra",
           "default": "d1-ultra",
-          "description": "Every decision is made by d1-ultra instances",
+          "description": "The decision model every decision was made by: d1-ultra, or jev",
+          "enum": [
+            "d1-ultra",
+            "jev"
+          ],
           "title": "Decider",
           "type": "string"
         },
@@ -4258,7 +4261,7 @@
       "type": "object"
     },
     "Usage": {
-      "description": "Token usage and cost of one call, as the response's `usage` block reports it.",
+      "description": "Token usage and cost of one call, as the response's `usage` block reports it.\n\nWhen the block names no `cost` (Jev's does not) and the decider has a published input price, the cost\nis the input tokens at that price; output tokens are free there.",
       "properties": {
         "input_tokens": {
           "default": 0,

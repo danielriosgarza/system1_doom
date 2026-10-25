@@ -21,13 +21,14 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Sequence
 
-from system1_doom.controller import NO_KEY_MESSAGE, ControllerConfig, DoomDecisionController
+from system1_doom.controller import ControllerConfig, DoomDecisionController, no_key_message
 from system1_doom.d1_client import TransportFn, load_api_key
 from system1_doom.train import (
     INSTALL_HINT,
     ConfigurationFileError,
     RunStore,
     add_configuration_flags,
+    add_decider_flag,
     default_run_dir,
     format_row,
     learn_from_episode,
@@ -54,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     level.add_argument("--exploit", dest="level", action="store_const", const="exploit", help="Start at the exploit level (default)")
     parser.add_argument("--seed", type=int, default=None, help="ViZDoom seed, and System 1's seed for draws under explore")
     add_configuration_flags(parser)
+    add_decider_flag(parser)
     parser.add_argument("--disable-slow-llm", action="store_true", help="Disable the slow macro-proposal worker")
     parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
     parser.add_argument("--visible", action="store_true", help="Show live 640x480 ViZDoom window on your display")
@@ -94,12 +96,12 @@ def _episode_summary(index: int, result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] = None) -> int:
-    """`transport` answers d1-ultra calls in tests; real play needs LIQUID_API_KEY."""
+    """`transport` answers the decider's calls in tests; real play needs the decider's key."""
     args = build_parser().parse_args(argv)
-    api_key = load_api_key()
+    api_key = load_api_key(args.decider)
     if not api_key:
         if transport is None:
-            print(NO_KEY_MESSAGE, file=sys.stderr)
+            print(no_key_message(args.decider), file=sys.stderr)
             return 2
         api_key = "test-transport"
 
@@ -131,6 +133,7 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
     delay_ms = args.step_delay_ms if args.step_delay_ms is not None else (120 if args.visible else 0)
     env = ViZDoomBridge(scenario=args.scenario, window_visible=args.visible, step_delay_ms=delay_ms, seed=args.seed)
     cfg = ControllerConfig(
+        decider=args.decider,
         call_budget_sec=args.call_budget,
         seed=args.seed or 0,
         configuration_path=str(start.path) if start.path else None,
@@ -180,7 +183,8 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
         counters = ctrl.counters()
         summary = {
             "scenario": args.scenario,
-            "decider": "d1-ultra",
+            "decider": args.decider,
+            "models": ctrl.models_answered(),
             "configuration_version": ctrl.configuration.version,
             "exploration_level": ctrl.configuration.exploration_level,
             "call_budget_sec": ctrl.configuration.bounds.call_budget_sec,

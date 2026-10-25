@@ -393,9 +393,9 @@ export interface EpisodeMeta {
   scenario: string
   seed: number
   /**
-   * Every decision is made by d1-ultra instances
+   * The decision model every decision was made by: d1-ultra, or jev
    */
-  decider?: 'd1-ultra'
+  decider?: 'd1-ultra' | 'jev'
   /**
    * Which value networks served the values evidence channel
    */
@@ -843,6 +843,9 @@ export interface Metrics {
 }
 /**
  * Token usage and cost of one call, as the response's `usage` block reports it.
+ *
+ * When the block names no `cost` (Jev's does not) and the decider has a published input price, the cost
+ * is the input tokens at that price; output tokens are free there.
  *
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
  * via the `definition` "Usage".
@@ -1473,6 +1476,9 @@ export interface TickTrace {
 }
 /**
  * Token usage and cost of one call, as the response's `usage` block reports it.
+ *
+ * When the block names no `cost` (Jev's does not) and the decider has a published input price, the cost
+ * is the input tokens at that price; output tokens are free there.
  */
 export interface Usage1 {
   input_tokens?: number

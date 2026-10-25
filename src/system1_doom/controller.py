@@ -30,7 +30,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -38,7 +38,7 @@ from system1_doom.actions import BUILTIN_IDS, ActionSpec, ActionVocabulary
 from system1_doom.admission import AdmissionDecisionResult, ProposalAdmissionPipeline
 from system1_doom.archive import StrategyArchive, StrategyEntry
 from system1_doom.configuration import SENSE_NAMES, Configuration, ExplorationLevel, default_configuration
-from system1_doom.d1_client import D1UltraClient, InstanceCounters, TransportFn, load_api_key
+from system1_doom.d1_client import D1UltraClient, Decider, DeciderName, InstanceCounters, TransportFn, decider_of, load_api_key
 from system1_doom.evidence import ChannelCaps, EvidenceCounters, StrategyLine, ValueLine, build_inputs
 from system1_doom.features import encode_action, encode_actions, encode_state
 from system1_doom.history import HISTORY_FILE, HistoryStore, make_record
@@ -66,15 +66,23 @@ if TYPE_CHECKING:
 
 BUILTIN_ACTION_IDS = BUILTIN_IDS
 FinishedReason = Literal["episode_end", "max_ticks", "stopped", "connection_lost"]
-NO_KEY_MESSAGE = (
-    "LIQUID_API_KEY is not set. d1-ultra makes every decision of this agent, so play needs the key "
-    "(in the environment or a .env file)."
-)
 MOVEMENT_PRIMITIVES = ("move_", "strafe_")
 
 
+def no_key_message(decider: Union[str, Decider] = "d1-ultra") -> str:
+    """Why play stops without the decider's key: nothing else could decide."""
+    d = decider_of(decider)
+    return (
+        f"{d.key_env} is not set. {d.name} makes every decision of this agent, so play needs the key "
+        "(in the environment or a .env file)."
+    )
+
+
+NO_KEY_MESSAGE = no_key_message("d1-ultra")
+
+
 class MissingAPIKey(RuntimeError):
-    """Play was asked for without a d1-ultra key: there is nothing else that could decide."""
+    """Play was asked for without the decider's key: there is nothing else that could decide."""
 
 
 class ControllerConfig(BaseModel):
@@ -82,6 +90,7 @@ class ControllerConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    decider: DeciderName = Field(default="d1-ultra", description="The decision model every instance is a call to: d1-ultra, or jev")
     call_budget_sec: Optional[float] = Field(default=None, gt=0.0, description="Per-call budget; None keeps the configuration's")
     seed: int = Field(default=0, description="Seeds System 1's generator for draws under the explore level")
     configuration: Optional[Configuration] = Field(default=None, description="The initial configuration")
@@ -179,9 +188,11 @@ class DoomDecisionController:
         custom_llm_generator: Optional[Callable[[ExpansionRequest], str]] = None,
         learner: Optional["Learner"] = None,
     ) -> None:
-        key = api_key if api_key is not None else load_api_key()
+        decider = decider_of(config.decider)
+        key = api_key if api_key is not None else load_api_key(decider)
         if not key:
-            raise MissingAPIKey(NO_KEY_MESSAGE)
+            raise MissingAPIKey(no_key_message(decider))
+        self.decider = decider
         self.env = env
         self.config = config
         self.learner = learner
@@ -193,10 +204,10 @@ class DoomDecisionController:
 
         # System 1's calls and System 2's (the admit instance, later the reflectors) have pools of their own.
         self.d1_client = D1UltraClient(
-            api_key=key, default_timeout=bounds.call_budget_sec, max_workers=bounds.system1_pool, transport=transport
+            api_key=key, decider=decider, default_timeout=bounds.call_budget_sec, max_workers=bounds.system1_pool, transport=transport
         )
         self.slow_client = D1UltraClient(
-            api_key=key, default_timeout=bounds.call_budget_sec, max_workers=bounds.system2_pool, transport=transport
+            api_key=key, decider=decider, default_timeout=bounds.call_budget_sec, max_workers=bounds.system2_pool, transport=transport
         )
         self.system1 = System1(self.d1_client, pool_size=bounds.system1_pool, seed=config.seed)
         self.vocabulary = ActionVocabulary.default()
@@ -649,6 +660,13 @@ class DoomDecisionController:
                     cost=merged[name].cost + c.cost,
                 )
             merged[name] = c
+        return merged
+
+    def models_answered(self) -> Dict[str, int]:
+        """Answers per model name as the responses reported it, System 1's and the slow path's together."""
+        merged = dict(self.d1_client.models_answered())
+        for model, n in self.slow_client.models_answered().items():
+            merged[model] = merged.get(model, 0) + n
         return merged
 
     def run_ticks(self, num_ticks: int) -> List[TickTrace]:

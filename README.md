@@ -59,6 +59,17 @@ central) and costs about $0.0002 at the measured usage. `cli`, `train`,
 `--codex` lets the slow path ask the Codex CLI for proposals instead of
 its templates.
 
+The same hierarchy runs on TypeSafe's Jev, a System One decision model
+that answers the same `noul`, `choice` and `score` questions, with
+`--decider jev` on `cli`, `train`, `export` and `serve`. Every
+instance's call then goes to `api.typesafe.ai` (it needs
+`TYPESAFE_API_KEY`), the screen goes as an image asset scaled up to
+Jev's minimum side, and the cost is counted at Jev's published $0.042
+per million input tokens, since its usage block names none. Nothing
+else changes: the same evidence, questions, bounds and misses, and a
+bundle or a summary says which decider played (`decider`) and which
+model version answered (`models`).
+
 ## Web explainer
 
 **<https://danielriosgarza.github.io/system1_doom/>** opens on the agent
@@ -105,7 +116,7 @@ python -m system1_doom.serve --scenario deadly_corridor.cfg --networks best
 - [`web/README.md`](web/README.md): the web explainer.
 
 ```bash
-python -m pytest -k "not live"     # the Python suite, on a fake d1-ultra, no key needed
-python -m pytest -m live           # the four live tests, with LIQUID_API_KEY
+python -m pytest -k "not live"     # the Python suite, on a fake d1-ultra (and a fake Jev), no key needed
+python -m pytest -m live           # the seven live tests: four on d1-ultra (LIQUID_API_KEY), three on Jev (TYPESAFE_API_KEY)
 (cd web && npm test && npm run e2e) # the app's unit and browser tests
 ```
