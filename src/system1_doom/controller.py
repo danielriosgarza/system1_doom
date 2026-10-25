@@ -366,14 +366,17 @@ class DoomDecisionController:
         }
 
     def _frame_ref(self, tick: int, frame_b64: Optional[str]) -> Optional[str]:
-        """Keep the screen d1 saw as `frames/<tick>.jpg` in the log folder; its reference goes in the evidence."""
+        """Keep the screen d1 saw as `frames/<tick>.jpg` in the log folder; its reference goes in the evidence.
+
+        The file is always rewritten: tick numbers restart with each episode, and a log folder that holds
+        several episodes keeps the latest episode's screens rather than an earlier episode's.
+        """
         if not frame_b64:
             return None
         ref = f"frames/{tick:05d}.jpg"
         path = self.logger.log_dir / ref
-        if not path.is_file():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(base64.b64decode(frame_b64))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(base64.b64decode(frame_b64))
         return ref
 
     def step(self) -> TickTrace:

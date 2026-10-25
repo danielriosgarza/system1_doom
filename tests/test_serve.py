@@ -205,7 +205,7 @@ def test_status_lists_the_finished_episodes_and_the_shipped_index_is_untouched(s
     assert code == 200 and body == (RECORDINGS / "index.json").read_bytes()
 
 
-def test_the_flags_reach_the_status_and_live_play_needs_the_key(monkeypatch, capsys):
+def test_the_flags_reach_the_status_and_serving_needs_the_key(monkeypatch, capsys):
     config = serve.config_from_args(serve.build_parser().parse_args(["--networks", "best", "--explore", "--call-budget", "3"]))
     assert (config.networks, config.exploration_level, config.call_budget_sec) == ("best", "explore", 3.0)
     status = serve.LiveHub(config).status()["config"]

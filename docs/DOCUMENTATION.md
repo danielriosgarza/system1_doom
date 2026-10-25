@@ -1,61 +1,64 @@
 # system1-doom — Full Package Documentation
 
-> **Bounded decision controller for ViZDoom** with five independent decision
-> modules, a finite arbiter, bounded simulation, explicit exploration, a
-> strategy archive, per-module learned value networks, **Liquid AI d1-ultra**
-> on a cached/synchronous decision path, and an asynchronous **Codex** slow
-> path that can propose new macro-actions — which may only enter play after
-> deterministic admission.
+> **Every decision this agent makes is made by a Liquid AI d1-ultra
+> instance.** The code renders evidence, keeps the bounds and presses the
+> keys; it never ranks, scores, blends, thresholds or picks an action
+> itself. Five senses (survival, combat, navigation, resource, goal) each
+> see only the evidence in their scope and decide whether to send a
+> message; a central instance hears the messages and chooses the action;
+> the motor executes that action's fixed primitives. A missed answer is
+> recorded as a miss, never filled in by a rule.
 >
-> This document explains *how everything works*: architecture, every module,
-> every formula and threshold that matters, both entry points, all files on
-> disk, failure behaviour, and how to extend the system.
+> This document explains *how everything works*: the architecture, every
+> module, every bound that matters, the entry points, the files on disk,
+> what happens when d1-ultra does not answer, and how to extend the system.
 >
-> Normative background: [`spec.md`](spec.md) (the original 21-section
-> implementation spec) and
+> Design: [`superpowers/specs/2026-10-25-d1-decision-maker-design.md`](superpowers/specs/2026-10-25-d1-decision-maker-design.md)
+> (“the design”; System 1 is built, System 2 is the next pull request).
+> Background: [`spec.md`](spec.md) (the original 21-section spec, whose
+> §21 invariant still holds) and
 > [`superpowers/specs/2026-10-23-learning-controller-design.md`](superpowers/specs/2026-10-23-learning-controller-design.md)
-> (the learning extension). This document describes the code as it is;
-> section references like “Spec §9” point back to `spec.md`.
+> (the value networks). This document describes the code as it is.
 
 **Package:** `system1-doom` 0.3.0 · **Python:** ≥ 3.11 · **Source layout:**
-`src/system1_doom/` (24 modules, ≈ 7,400 LOC) · **Tests:** `tests/`
-(15 files, 70 tests) · **Web explainer:** `web/` (Vite + React + TypeScript;
-74 Vitest and 29 Playwright tests), online at
-<https://danielriosgarza.github.io/system1_doom/>
+`src/system1_doom/` (27 modules, ≈ 8,200 LOC) · **Tests:** `tests/`
+(21 files, 170 tests, 2 of them live) · **Web explainer:** `web/` (Vite +
+React + TypeScript; still on trace schema 1 until the third pull request
+of the design), online at <https://danielriosgarza.github.io/system1_doom/>
 
 ---
 
 ## Table of contents
 
-1. [The one invariant & design principles](#1-the-one-invariant--design-principles)
+1. [The one rule & design principles](#1-the-one-rule--design-principles)
 2. [Architecture at a glance](#2-architecture-at-a-glance)
 3. [Installation & external dependencies](#3-installation--external-dependencies)
 4. [Quick start](#4-quick-start)
 5. [Repository & module map](#5-repository--module-map)
 6. [Core vocabulary: state, actions, context](#6-core-vocabulary-state-actions-context)
-7. [The fast path, tick by tick](#7-the-fast-path-tick-by-tick)
+7. [System 1, tick by tick](#7-system-1-tick-by-tick)
 8. [Subsystem deep dives](#8-subsystem-deep-dives)
    - 8.1 [Environment bridge — `vizdoom_env.py`](#81-environment-bridge--vizdoom_envpy)
    - 8.2 [Tactical motor — `motor.py`](#82-tactical-motor--motorpy)
    - 8.3 [Bounded simulator — `simulator.py`](#83-bounded-simulator--simulatorpy)
-   - 8.4 [Five decision modules — `modules.py`](#84-five-decision-modules--modulespy)
-   - 8.5 [Final arbiter — `arbiter.py`](#85-final-arbiter--arbiterpy)
-   - 8.6 [Exploration — `exploration.py`](#86-exploration--explorationpy)
-   - 8.7 [Strategy archive — `archive.py`](#87-strategy-archive--archivepy)
-   - 8.8 [Feature encoding — `features.py`](#88-feature-encoding--featurespy)
-   - 8.9 [Learning — `learning.py`](#89-learning--learningpy)
+   - 8.4 [The configuration — `configuration.py`](#84-the-configuration--configurationpy)
+   - 8.5 [Evidence channels — `evidence.py`](#85-evidence-channels--evidencepy)
+   - 8.6 [Instances and senses — `instance.py`, `senses.py`](#86-instances-and-senses--instancepy-sensespy)
+   - 8.7 [The central instance and the pick — `system1.py`](#87-the-central-instance-and-the-pick--system1py)
+   - 8.8 [Relevance and history — `relevance.py`, `history.py`](#88-relevance-and-history--relevancepy-historypy)
+   - 8.9 [Value networks and features — `learning.py`, `features.py`](#89-value-networks-and-features--learningpy-featurespy)
    - 8.10 [d1-ultra client — `d1_client.py`](#810-d1-ultra-client--d1_clientpy)
    - 8.11 [Slow LLM worker — `llm_worker.py`](#811-slow-llm-worker--llm_workerpy)
    - 8.12 [Admission pipeline — `admission.py`](#812-admission-pipeline--admissionpy)
-   - 8.13 [Controller orchestration — `controller.py`](#813-controller-orchestration--controllerpy)
-   - 8.14 [Logging & visualisation — `logger.py`, `visualizer.py`, `charts.py`](#814-logging--visualisation--loggerpy-visualizerpy-chartspy)
-   - 8.15 [Episode bundles & the web explainer — `tracing.py`, `export.py`, `web/`](#815-episode-bundles--the-web-explainer--tracingpy-exportpy-web)
+   - 8.13 [Controller and strategy archive — `controller.py`, `archive.py`](#813-controller-and-strategy-archive--controllerpy-archivepy)
+   - 8.14 [Traces & visualisation — `logger.py`, `tracing.py`, `visualizer.py`, `charts.py`](#814-traces--visualisation--loggerpy-tracingpy-visualizerpy-chartspy)
+   - 8.15 [Episode bundles & the web explainer — `export.py`, `serve.py`, `web/`](#815-episode-bundles--the-web-explainer--exportpy-servepy-web)
 9. [The slow path end-to-end](#9-the-slow-path-end-to-end)
 10. [The learning loop end-to-end](#10-the-learning-loop-end-to-end)
 11. [Entry points & CLI reference](#11-entry-points--cli-reference)
 12. [Configuration reference](#12-configuration-reference)
 13. [Files on disk: logs, runs, checkpoints](#13-files-on-disk-logs-runs-checkpoints)
-14. [Failure modes & graceful degradation](#14-failure-modes--graceful-degradation)
+14. [Misses, budgets & failure modes](#14-misses-budgets--failure-modes)
 15. [Measured results](#15-measured-results)
 16. [Testing](#16-testing)
 17. [Extending the system](#17-extending-the-system)
@@ -63,89 +66,74 @@
 
 ---
 
-## 1. The one invariant & design principles
+## 1. The one rule & design principles
 
 > **Generative systems may propose possibilities; bounded decision systems
 > decide what enters the controller and what is executed.** (Spec §21)
 
-Everything else follows from that sentence:
+The design sharpens that sentence into one rule: *hand-written rules that
+choose are cheating.* Every choice is a d1-ultra instance: one call with
+its own evidence (a scope) and its own finite questions. What stays
+hand-written is bounds and evidence only.
 
 | Principle | How it is enforced in code |
 |---|---|
-| **Every behaviour terminates in a finite decision over a finite set** | The only thing ever executed is an `ActionSpec` drawn from `ActionVocabulary.available_actions(state)` and chosen by `FinalArbiter.arbitrate()`. Modules, the simulator, exploration, the archive, d1-ultra and Codex never execute game actions directly. |
-| **The real-time loop never blocks** | No LLM call, network I/O, disk search or unbounded planning on the fast path. d1-ultra is read from cache (`async_cached`) by default; Codex runs on a 1-thread background executor; learning trains *between* episodes. See §7 and §14. |
-| **LLM output cannot execute** | Codex/d1 output must parse into the typed `MacroActionProposal` schema, reference only known primitives, satisfy duration bounds, survive a sandbox rollout and (if enabled) a d1-ultra admission gate before `register_admitted_macro()` is called. Free-form text never reaches the motor. |
-| **Boundedness everywhere** | Macros ≤ 16 primitives (`MAX_ALLOWED_MACRO_DURATION`); projections ≤ 16 candidates × depth 4 × branching 2 × 15 ms; archive ≤ 12 strategies; replay ≤ 100 k transitions; empirical cache ≤ 50 samples per (context, action); module evaluation inside a thread-pool deadline. |
-| **Modules are replaceable** | All five modules implement the same `DecisionModule` contract (`DecisionInput → DecisionOutput`). `DoomDecisionController.replace_module(name, module)` swaps one without touching the rest (Spec §16/§20, exercised by an acceptance test). |
-| **Everything is traceable** | Every tick writes one `TickTrace` JSON line with the state hash, context, all module outputs, projections used, the arbiter distribution and its component breakdown, the selected action, exploration state and learning shares. Every proposal writes a `ProposalTrace`. |
-| **Learning is advisory and data-gated** | Learned value networks only override a module's heuristic in proportion to how often *that action in that context* has actually been tried (`λ = n/(n+25)`). Untried actions stay purely heuristic, so learning can never hijack play on extrapolation alone. |
+| **Every decision is a d1-ultra instance** | The executed action is the central instance's answer to a `choice` over the legal menu (`system1.pick_action`); a macro enters the menu only on the admit instance's yes (`instance.run_admit`). `tests/test_architecture.py` checks that keys are pressed only in `controller.py`, from the pick or the typed miss, and that only `system1.py` builds a `Pick` or draws a random number. |
+| **Code renders evidence, keeps bounds and presses keys** | `evidence.py` renders channels as plain text; `configuration.Bounds` holds every limit (per-call budget, pool sizes, scope size, channel caps, history ring, miss limit); `motor.py` executes the chosen action's fixed primitives. None of them ranks, scores or picks an action. |
+| **An instance sees only its scope** | The payload's `state` is the rendered scope and nothing else; `images` carries the frame only when `frame` is in scope; the choice criteria are exactly the legal menu, so projections and values never become criteria (`tests/test_instance.py`). |
+| **A miss is a miss** | A sense that times out, fails, names an off-menu action or returns malformed probabilities is silent; a central miss holds no keys for the decision's 8 frames; three central misses in a row end the episode as `connection_lost`. Nothing stands in for a missing answer (§14). |
+| **What is learned is evidence** | The value networks' predictions and the relevance ledger's counts are channels (`values`, `relevance`); nothing learned is multiplied into a decision. The gate network that used to blend module weights is gone. |
+| **Boundedness everywhere** | Scopes ≤ 7 channels; channel caps of 6 enemies, 6 pickups, 6 history steps, 3 summaries; 6 calls in flight for System 1 and 2 for the slow path; macros ≤ 16 primitives; projections ≤ 16 candidates × depth 4 × 2 branches × 15 ms; archive ≤ 12 strategies; history ring 2,000 ticks; replay ≤ 100 k transitions. |
+| **Everything is traceable** | Every tick writes a schema-2 `TickTrace` with the six instances' scopes, verbatim evidence, image references, full answers, timing and usage, the messages, the pick and the executed primitives; every tick is also stored whole in `history.jsonl`, from which any instance's evidence re-renders byte for byte. |
 
-There is deliberately **no** end-to-end policy, no chain-of-thought in the
-loop, no self-modifying code, and no single monolithic network — the five
-modules learn *independently*, each against its own reward signal (§8.9).
+There is deliberately **no** fallback policy, no hand-written arbiter, no
+exploration formula and no admission threshold. Without `LIQUID_API_KEY`
+there is nothing that could decide, so `cli`, `train`, `export` and
+`serve` refuse to play and say so.
 
 ---
 
 ## 2. Architecture at a glance
 
 ```text
-                         SLOW PATH (async, seconds, never blocks play)
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │  module requests expansion                                           │
-  │        │  ExpansionRequest                                           │
-  │        ▼                                                             │
-  │  SlowLLMWorker ── codex exec ──► raw JSON ──► AdmissionPipeline      │
-  │        │ (or deterministic fallback template)    │ parse → validate  │
-  │        │                                         │ sandbox → d1 gate │
-  │        │                                         ▼                   │
-  │        │                              ActionVocabulary.register ─────┼─► new macro
-  │        │                              StrategyArchive.admit ─────────┼─► new strategy
-  │        └──── AdmissionDecisionResult drained at start of next tick   │
-  └──────────────────────────────────────────────────────────────────────┘
+ Evidence channels (evidence.py): vitals · threats · incoming · outgoing · pickups · geometry
+      position · progress · history · frame · menu · projections (simulator) · values (networks)
+      novelty · archive                      central only: exploration · messages · relevance
+        │           │            │             │            │
+   ┌────▼───┐  ┌────▼───┐  ┌─────▼─────┐  ┌────▼────┐  ┌───▼──┐   five senses (senses.py): one
+   │survival│  │ combat │  │navigation │  │resource │  │ goal │   d1-ultra call each, in parallel,
+   └────┬───┘  └────┬───┘  └─────┬─────┘  └────┬────┘  └───┬──┘   each seeing its scope only
+        └───────────┴──── messages: action, reason, strength ──┘   (speak ≥ 0.5 is d1's own yes)
+                                 │
+                       ┌─────────▼──────────┐   one d1-ultra call (system1.py): hears the
+                       │  Central instance  │   messages, each sense's relevance record, the
+                       └─────────┬──────────┘   exploration level, vitals and the menu
+                                 │ pick: top (exploit) · drawn (explore, seeded) · missed
+                       ┌─────────▼──────────┐
+                       │ Act: the action's  │   motor.py: fixed primitives over 8 frames,
+                       │ fixed primitives   │   or no keys when the central missed
+                       └─────────┬──────────┘
+                                 ▼
+   History (history.jsonl, ring of 2,000) ──► relevance ledger (end of episode, relevance.json)
+   Value networks (learning.py) ◄── executed decisions, trained between episodes
 
-                         FAST PATH (every control tick, budgeted)
-  ViZDoom ──► ViZDoomBridge.acquire_world_state() ──► WorldState S_t (frozen)
-                                                             │
-              ┌──────────────────────────────────────────────┤
-              │ (full budget only) BoundedSimulator          │
-              │   project_candidates(): ≤16 actions, depth 4,│
-              │   2 branches, 15 ms, + empirical cache       │
-              │                       │ ProjectedOutcome ×N  │
-              ▼                       ▼                      ▼
-        ┌─────────────────────────────────────────────────────────┐
-        │ BatchModuleEvaluator: 5 modules in parallel threads     │
-        │  survival · combat · navigation · resource · goal       │
-        │  each: heuristic utilities                              │
-        │        ⊕ learned value net (blended by per-context λ)   │
-        │        ⊕ d1-ultra probabilities (cached or sync)        │
-        │  → DecisionOutput (distribution, confidence, requests)  │
-        └──────────────────────────┬──────────────────────────────┘
-                                   ▼
-        FinalArbiter: score = expected_value (confidence×gate-weighted
-          module votes + 0.20·projection + 0.15·strategy + 0.30·d1)
-          + exploration_bonus + novelty_bonus − risk_penalty − exec_cost
-          → softmax(temperature) → pick (greedy / committed / explored)
-                                   ▼
-        TacticalMotor.burst(selected.primitive_expansion)
-          assisted primitives: aim-before-fire, tracking strafes,
-          pickup steering ──► ViZDoom buttons (2 tics per step)
-                                   ▼
-        bookkeeping: empirical cache, archive outcome, exploration
-        update, module failure counters, Learner.record_step(),
-        DecisionLogger.log_tick() ──► logs/ticks.jsonl
+   Slow path (async, its own pool of 2): request_expansion → Codex or template → parse →
+   legality → sandbox → admit instance (d1-ultra noul) → the macro joins the configuration
+   at the next tick boundary
 ```
 
-**Two optional “brains” sit on top of the same skeleton:**
+**What is hand-written, and what is not.** The legal menu
+(preconditions), the simulator, the value networks, the motor's reflexes
+inside a primitive, and every bound are code. They produce evidence or
+limits. Every choice among actions (what each sense recommends, whether
+it speaks, which action is executed, whether a macro is admitted) is a
+d1-ultra answer.
 
-1. **d1-ultra** (Liquid AI's decision model, `d1_client.py`) — a *decision*
-   model, not a chat model. It answers typed questions (`choice` / `noul` /
-   `score`) about the current state and can influence module distributions,
-   the arbiter, exploration and admission. It can be fully disabled and the
-   game still plays (`--disable-d1`).
-2. **Learned value networks** (`learning.py`, PyTorch) — one small MLP per
-   module plus an arbiter gate, trained between episodes from a replay
-   buffer. They can be fully absent (no torch installed) and the game still
-   plays on heuristics.
+**System 2** (the design, §8–9) will reflect on the history and change
+the configuration one step at a time. It is the next pull request; in
+this version the configuration changes during play only when the admit
+instance admits a macro, through the same tick-boundary hook System 2
+will use (§8.4).
 
 ---
 
@@ -155,9 +143,9 @@ modules learn *independently*, each against its own reward signal (§8.9).
 
 | Group | Packages | Needed for |
 |---|---|---|
-| core (always) | `numpy`, `pillow`, `pydantic ≥2.6`, `requests`, `vizdoom ≥1.2` | everything: state/action models (pydantic), frames (pillow), d1 HTTP (requests), the game itself |
-| `learn` (optional) | `torch ≥2.2` (CPU index), `matplotlib ≥3.8` | `train.py`, learned play in `cli.py`, learning curves. Without torch the controller silently plays on heuristics; `train` prints the install hint and exits `2`. |
-| `dev` (optional) | `pytest ≥8` | test suite |
+| core (always) | `numpy`, `pillow`, `pydantic ≥2.6`, `requests`, `vizdoom ≥1.2` | everything: state, evidence and trace models (pydantic), frames (pillow), d1-ultra HTTP (requests), the game itself |
+| `learn` (optional) | `torch ≥2.2` (CPU index), `matplotlib ≥3.8` | the value networks (`train.py`, the `values` channel in play), learning curves. Without torch play goes on and the `values` channel says no networks are loaded; `train` prints the install hint and exits `2`. |
+| `dev` (optional) | `pytest ≥8`, `jsonschema` | test suite |
 
 Python ≥ 3.11. Source layout is `src/` (`setuptools`, `where = ["src"]`);
 pytest is configured with `pythonpath = ["src", "."]`, so tests run from the
@@ -175,8 +163,8 @@ uv pip install -e ".[learn,dev]"    # + torch (CPU), matplotlib, pytest
 | Dependency | Required? | Notes |
 |---|---|---|
 | ViZDoom scenarios + an IWAD | **Yes** | Scenario `.cfg` files ship with the `vizdoom` wheel (`vzd.scenarios_path`); an absolute path may also be passed. `_vizdoom.ini` in the repo root is the engine config ViZDoom generates/uses. `basic.cfg`, `deadly_corridor.cfg`, `defend_the_center.cfg`, `health_gathering*.cfg` are the scenarios referenced by code/tests. |
-| `LIQUID_API_KEY` | Only for d1-ultra | Read from env var `LIQUID_API_KEY`, else from `.env` in CWD or repo root (`d1_client.load_api_key()`). No key ⇒ `D1UltraClient.enabled=False` ⇒ pure local play, zero network calls. |
-| `codex` CLI (OpenAI Codex) | Only for the slow LLM path | Detected with `shutil.which("codex")`. Absent ⇒ deterministic fallback templates are used instead (§8.11). Disable entirely with `--disable-slow-llm`. |
+| `LIQUID_API_KEY` | **Yes, to play** | Read from env var `LIQUID_API_KEY`, else from `.env` in CWD or repo root (`d1_client.load_api_key()`). d1-ultra makes every decision, so `cli`, `train`, `export` and `serve` exit `2` without it. `export --check`, `--index` and `--schema` read files only and need no key. Tests answer from a fake transport and need no key except the two live ones. |
+| `codex` CLI (OpenAI Codex) | Only for real slow-path proposals | Detected with `shutil.which("codex")`. Absent ⇒ deterministic fallback templates are used instead (§8.11). Disable entirely with `--disable-slow-llm` / `--no-slow-path`. |
 | `ffmpeg` | Only for `--save-mp4` | GIF export needs only Pillow. |
 | Tkinter + a display | Only for the live dashboard | Enabled by `--visible` (unless `--no-dashboard`); any failure disables the dashboard silently and play continues. |
 | DejaVu fonts | Optional | Used by the dashboard renderer if present; falls back to Pillow's default font. |
@@ -186,39 +174,37 @@ uv pip install -e ".[learn,dev]"    # + torch (CPU), matplotlib, pytest
 ## 4. Quick start
 
 ```bash
-# 1) Watch it play on heuristics only — no API keys, no torch needed.
-#    (sync_d1 is the default mode; --disable-d1 makes it purely local)
-python -m system1_doom.cli --scenario basic.cfg --episodes 3 \
-    --disable-d1 --disable-slow-llm
+export LIQUID_API_KEY=...   # or put it in .env; every decision is a d1-ultra call
 
-# 2) Train the learned modules (headless; resumes automatically).
-python -m system1_doom.train --scenario deadly_corridor.cfg --episodes 200
+# 1) Play 15 decisions of basic.cfg and print a JSON summary: per-episode
+#    result, cost, misses, mean tick time, and each instance's counters.
+python -m system1_doom.cli --scenario basic.cfg --disable-slow-llm
 
-# 3) Fair comparison: heuristics vs latest vs best checkpoint,
-#    identical held-out seeds, no learning, no exploration.
-python -m system1_doom.train --scenario deadly_corridor.cfg --evaluate 30
-
-# 4) Play with the trained model (best.pt if present, else checkpoint.pt).
-python -m system1_doom.cli --scenario deadly_corridor.cfg --episodes 3 --disable-d1
-
-# 5) Watch it play, with the live decision dashboard.
-python -m system1_doom.cli --scenario deadly_corridor.cfg --episodes 1 \
-    --visible --disable-d1
-
-# 6) Full system: d1-ultra in the loop + Codex proposing macros.
-#    (requires LIQUID_API_KEY and the codex CLI)
+# 2) Watch it play, with the six instances in a side window.
 python -m system1_doom.cli --scenario deadly_corridor.cfg --episodes 1 --visible
 
-# 7) Watch it decide in the browser, live: each tick streamed to the web
-#    explainer as it is played. Build the app once, then open
-#    http://127.0.0.1:8765/ (Ctrl+C stops it; §8.15, §11).
-(cd web && npm install && npm run build)
-python -m system1_doom.serve --scenario deadly_corridor.cfg --model latest
+# 3) Train the value networks on episodes d1-ultra plays (headless, resumes;
+#    about 6 calls per decision, so 50 episodes are thousands of calls).
+python -m system1_doom.train --scenario deadly_corridor.cfg --episodes 50
+
+# 4) Compare no, latest and best networks as evidence on identical seeds.
+python -m system1_doom.train --scenario deadly_corridor.cfg --evaluate 10
+
+# 5) Record a bundle (schema 2) and check it.
+python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --networks best \
+    --out bundles/deadly_corridor-best-9
+python -m system1_doom.export --check bundles/deadly_corridor-best-9
+
+# 6) Play live and stream each tick to a local server (the web app renders
+#    schema-2 ticks from the design's third pull request on).
+python -m system1_doom.serve --scenario deadly_corridor.cfg --networks best
 ```
 
-Training writes to `runs/<scenario-stem>/` by default; re-running the same
-command resumes from `checkpoint.pt` — add `--fresh` to start over.
-Ctrl+C during training saves first. Full flag reference: §11.
+Play writes `ticks.jsonl`, `history.jsonl`, `proposals.jsonl` and the
+frames d1-ultra saw under `--log-dir` (default `logs/`), and updates the
+relevance ledger in `runs/<scenario-stem>/relevance.json`. Training writes
+to `runs/<scenario-stem>/`; re-running the same command resumes from
+`checkpoint.pt` — add `--fresh` to start over. Full flag reference: §11.
 
 ---
 
@@ -231,48 +217,54 @@ system1_doom/
 │   ├── spec.md                     # original 21-section implementation spec
 │   ├── DOCUMENTATION.md            # ← this file
 │   └── superpowers/
+│       ├── specs/2026-10-25-d1-decision-maker-design.md   # the design this code follows
 │       ├── specs/2026-10-23-learning-controller-design.md
 │       └── plans/2026-10-23-d1-ultra-doom-controller.md
 ├── src/system1_doom/               # the package (see table below)
-├── tests/                          # 15 files, 67 tests (§16)
+├── tests/                          # 21 files, 170 tests, and fake_d1.py (§16)
 ├── web/                            # the web explainer: Vite + React app and demo bundles (§8.15)
-├── runs/<scenario>/                # training output, per scenario (§13)
+├── runs/<scenario>/                # training output and the relevance ledger, per scenario (§13)
 ├── bundles/                        # episode bundles from `system1_doom.export` (§13)
-├── logs/                           # default decision logs (ticks/proposals.jsonl)
+├── logs/                           # default decision logs (ticks, history, proposals, frames)
 └── _vizdoom.ini, _vizdoom/         # ViZDoom engine config / WAD search dir
 ```
 
 | File | Lines | Responsibility (one line) |
 |---|---:|---|
-| `state.py` | 153 | Immutable `WorldState`/`Observation` pydantic models; state hash, context signature, d1 text rendering |
-| `actions.py` | 322 | Finite action vocabulary: 13 primitives + 6 built-in macros, preconditions, `ActionSpec` validation |
-| `vizdoom_env.py` | 429 | ViZDoom ⇄ controller bridge: builds `WorldState` from labels/depth/game vars, executes actions via the motor, level-clear rules |
-| `motor.py` | 332 | Closed-loop reflex execution of a primitive plan (aim, tracking strafe, pickup steering) |
-| `simulator.py` | 276 | Bounded analytic short-horizon projections + empirical transition cache |
-| `modules.py` | 482 | The five `DecisionModule`s (survival/combat/navigation/resource/goal) + parallel `BatchModuleEvaluator` |
-| `arbiter.py` | 268 | `FinalArbiter`: combines module votes, projections, exploration, archive, d1 and learned gate into one pick |
-| `exploration.py` | 136 | Visitation/novelty/failure tracking → `exploration_pressure` + sampler temperature |
-| `archive.py` | 201 | Bounded (≤12) strategy archive with an explicit 4-way strategy meta-decision |
-| `features.py` | 104 | Fixed-size encodings: `WorldState → float32[32]`, `ActionSpec → float32[12]` |
-| `learning.py` | 411 | Per-module value MLPs + arbiter gate, replay buffer, n-step returns, checkpoints (PyTorch) |
-| `d1_client.py` | 248 | Liquid AI d1-ultra HTTP client: typed questions, sync `decide()`, async cache, graceful disable |
-| `llm_worker.py` | 236 | Async slow path: builds a bounded expansion prompt, runs `codex exec`, falls back to templates |
-| `admission.py` | 230 | Deterministic + sandbox + d1 admission gate for LLM macro proposals |
-| `controller.py` | 516 | `DoomDecisionController`: orchestrates one tick and one episode; budget degradation; module swapping |
-| `logger.py` | 121 | `TickTrace`/`ProposalTrace` JSONL logging |
-| `tracing.py` | 425 | Typed decision-anatomy records for traces (state, pruning, module and arbiter arithmetic, rollout, steering, outcome), read-only |
-| `export.py` | 712 | Episode bundles for the web explainer, bundle checks, index, JSON Schema (`python -m system1_doom.export`) |
-| `serve.py` | 574 | Live mode: plays episodes as `export` does, writes each as a bundle and streams every tick to the web explainer (`python -m system1_doom.serve`) |
-| `visualizer.py` | 386 | Split-screen HUD frames, GIF/MP4 recorder, live Tk decision dashboard |
-| `charts.py` | 118 | `learning_curves.png` from `metrics.jsonl` (matplotlib, dark theme) |
-| `cli.py` | 183 | Play/watch entry point (`python -m system1_doom.cli`) |
-| `train.py` | 378 | Training/evaluation entry point, `RunStore`, resume, best-checkpoint tracking (`python -m system1_doom.train`) |
+| `state.py` | 156 | Immutable `WorldState`/`Observation` pydantic models; state hash, context signature |
+| `actions.py` | 354 | Finite action vocabulary: 13 primitives + 6 built-in macros, preconditions, `ActionSpec` validation |
+| `vizdoom_env.py` | 454 | ViZDoom ⇄ controller bridge: builds `WorldState`, executes an action's primitives or an idle, level-clear rules |
+| `motor.py` | 378 | Closed-loop execution of a primitive plan (aim, tracking strafe, pickup steering); the idle burst |
+| `simulator.py` | 276 | Bounded analytic short-horizon projections + empirical transition cache: the `projections` channel |
+| `configuration.py` | 228 | The versioned configuration: scopes, concerns, reasons, exploration level, strategy, admitted macros, `Bounds` |
+| `evidence.py` | 462 | The 18 evidence channels rendered as plain text; `EvidenceInputs`; deterministic scope rendering |
+| `instance.py` | 239 | One d1-ultra instance: the payload, the finite questions per kind, reading answers, typed misses |
+| `senses.py` | 92 | The five senses: run in parallel, their messages |
+| `system1.py` | 168 | One System 1 tick: senses, the central's scope, the central, the pick (`top`/`drawn`/`missed`) |
+| `relevance.py` | 172 | The relevance ledger: each sense's record per context, pure update and rendering |
+| `history.py` | 159 | `TickRecord`, the history ring and `history.jsonl`, re-rendering a stored tick |
+| `archive.py` | 129 | Bounded (≤12) strategy archive, kept as evidence |
+| `features.py` | 137 | Fixed-size encodings (`WorldState → float32[32]`, `ActionSpec → float32[12]`), per-network rewards, n-step returns |
+| `learning.py` | 373 | Five value MLPs, replay buffer, trust counts, checkpoints (PyTorch) |
+| `d1_client.py` | 365 | d1-ultra HTTP client: typed questions, per-call budget, 429 handling, typed misses, usage and per-instance counters |
+| `llm_worker.py` | 242 | Async slow path: builds a bounded expansion prompt, runs `codex exec`, falls back to templates |
+| `admission.py` | 301 | Parse, legality and sandbox bounds, then the admit instance, for macro proposals |
+| `controller.py` | 653 | `DoomDecisionController`: one tick and one episode; configuration hook; misses; cost |
+| `logger.py` | 127 | Schema-2 `TickTrace`/`ProposalTrace` JSONL logging |
+| `tracing.py` | 276 | Typed trace records (state, pruning, projections, outcome, slow-path request), read-only |
+| `export.py` | 813 | Episode bundles, `--check`, `--index`, `--schema` (`python -m system1_doom.export`) |
+| `serve.py` | 605 | Live mode: plays episodes as `export` does and streams every tick (`python -m system1_doom.serve`) |
+| `visualizer.py` | 347 | Split-screen HUD frames, GIF/MP4 recorder, live Tk panel of the six instances |
+| `charts.py` | 117 | `learning_curves.png` from `metrics.jsonl` (matplotlib, dark theme) |
+| `cli.py` | 193 | Play/watch entry point (`python -m system1_doom.cli`) |
+| `train.py` | 383 | Training/evaluation entry point, `RunStore`, resume, best-checkpoint tracking (`python -m system1_doom.train`) |
 | `__init__.py` | 3 | Package docstring + `__version__` |
 
 Dependencies point “downwards” only: `controller` wires everything;
-`modules`/`arbiter` depend on `state`, `actions`, `simulator`, `d1_client`;
-`learning` depends only on `features`; `tracing` depends on `features`
-and only reads the others' records; nothing depends on `cli`/`train`/`export`.
+`system1` depends on `senses`, `instance`, `configuration` and
+`d1_client`; `instance` on `evidence` and `d1_client`; `evidence` on
+`configuration`, `relevance` and `tracing`; `learning` only on
+`features`; nothing depends on `cli`/`train`/`export`/`serve`.
 
 ---
 
@@ -280,8 +272,8 @@ and only reads the others' records; nothing depends on `cli`/`train`/`export`.
 
 ### 6.1 `WorldState` — the immutable snapshot (`state.py`)
 
-All pydantic models are `frozen=True`: within one tick every module sees the
-*identical* snapshot, so decisions are comparable (Spec §4).
+All pydantic models are `frozen=True`: within one tick every instance's
+evidence is rendered from the *identical* snapshot (Spec §4).
 
 ```text
 WorldState
@@ -313,11 +305,11 @@ Two derived keys are used everywhere:
   `empty 0 / low ≤8 / stocked`, enemy range `none / melee <140 / mid <420 /
   far` (by nearest enemy), damage `under_fire / clear`, pickups
   `pickup_visible / no_pickup`. This signature keys the simulator's
-  empirical cache, exploration counts, the strategy archive, d1 cache keys,
-  and the learner's per-context trust counts. It is the unit of
-  “have I been here before?” for the whole system.
-* **`to_d1_state_text()`** — the compact structured text snapshot sent to
-  d1-ultra (state + combat deltas + geometry + enemies/pickups + memory).
+  empirical cache, the novelty counts, the relevance ledger and the value
+  networks' tried counts. It is the unit of “have I been here before?”
+  for the whole system.
+* **`to_d1_state_text()`** — a compact text snapshot, now used only in the
+  slow worker's prompt; the instances see the evidence channels (§8.5).
 
 ### 6.2 Actions — primitives and macros (`actions.py`)
 
@@ -352,69 +344,68 @@ Each `ActionSpec` has **preconditions** (`PreconditionSpec`: ammo/health
 windows, `requires_visible_enemy/pickup`, wall-distance window, excluded
 weapons). `ActionVocabulary.available_actions(state)` filters by them; if
 *no* action passes, it falls back to `(turn_left, turn_right, move_forward)`
-so the arbiter always has a non-empty finite set. Examples: `shoot` needs
+so the menu is never empty. Examples: `shoot` needs
 ammo ≥ 1 and a visible enemy; `move_backward` only exists at health ≤ 45
 with an enemy visible (it is a retreat, not a general movement); `use`
 needs a wall within 64 units.
 
-`execution_cost = 0.02·len(expansion) + 0.02·(#shoot-like steps)` is the
-arbiter's per-action cost term. `register_admitted_macro()` is the single
-door through which new actions enter the vocabulary, and it refuses
-non-macros.
+`execution_cost = 0.02·len(expansion) + 0.02·(#shoot-like steps)` is a
+term of the simulator's projected value (§8.3). `register_admitted_macro()`
+is the single door through which new actions enter the vocabulary (the
+controller calls it when a configuration with a new admitted macro takes
+effect), and it refuses non-macros; `retire_macro()` removes one and
+refuses built-ins.
 
 ### 6.3 Where actions can be unavailable
 
 The vocabulary says what *may* be chosen; the scenario says what *can* be
 executed. `DoomDecisionController.step()` additionally filters candidates
 through `env.action_supported(action)` (e.g. a scenario without turn
-buttons cannot run `turn_left`), falling back to the precondition-filtered
-list if the motor filter would empty the set.
+buttons cannot run `turn_left`), keeping the precondition-filtered list
+if the motor filter would empty it. The result is the menu: the criteria
+of every action choice that tick.
 
 ---
 
-## 7. The fast path, tick by tick
+## 7. System 1, tick by tick
 
-`DoomDecisionController.step()` (`controller.py`) runs six phases. Default
-tick budget is `ControllerConfig.tick_budget_sec = 0.035 s` in
-`async_cached` mode; the CLI raises it to `5.0 s` in `sync_d1` mode (where
-blocking d1 calls are expected) and `0.04 s` otherwise.
+`DoomDecisionController.step()` (`controller.py`) runs one decision. There
+is no tick budget that degrades the decision: every tick waits for
+d1-ultra inside a per-call budget (5 s by default, `--call-budget`), and
+ViZDoom advances only when the controller steps it, so waiting does not
+change the game.
 
-```text
-budget_sec ──► budget_mode:  full      (> 0.012 s)
-                             reduced   (0.004 s < b ≤ 0.012 s)
-                             critical  (≤ 0.004 s)
-```
-
-| Phase | Full | Reduced | Critical |
-|---|---|---|---|
-| 0. Drain slow-LLM results → log `ProposalTrace`s | ✓ | ✓ | ✓ |
-| 1. `acquire_world_state()` → frozen `WorldState`; filter actions by preconditions + motor support | ✓ | ✓ | ✓ |
-| 2a. Encode state/actions; query `Learner` for per-module utilities, per-action trust, gate weights/share | ✓ | ✓ | — |
-| 2b. `BoundedSimulator.project_candidates()` | ✓ | — | — |
-| 2c. `BatchModuleEvaluator.evaluate_all()` (5 threads, deadline = 65% of budget) | ✓ | ✓ | — |
-| 2d. Forward any module's expansion request to the slow worker (if not busy) | ✓ | ✓ | — |
-| 2e. `FinalArbiter.arbitrate()` (35% of budget for its d1 call) | ✓ | ✓ | — |
-| 2f. — instead: replay the cached reactive action with uniform stub module outputs | — | — | ✓ |
-| 3. `env.execute_action(selected)` → motor burst in ViZDoom | ✓ | ✓ | ✓ |
-| 4. If learning enabled: `Learner.record_step(state_vec, action_vec, result, module_top_actions, …)` | ✓ | ✓ | ✓ |
-| 5. Bookkeeping: simulator empirical cache, archive outcome, exploration update + strategy meta-decision, module failure counters | ✓ | ✓ | ✓ |
-| 6. `DecisionLogger.log_tick(TickTrace)`; optional recorder/dashboard update | ✓ | ✓ | ✓ |
+| Step | What happens | Where |
+|---|---|---|
+| 1. Configuration | A pending configuration (an admitted macro, or `request_configuration`) takes effect here and nowhere else; the vocabulary and the active strategy follow it | `_apply_pending_configuration` |
+| 2. Slow path | Finished proposals are drained and logged as `ProposalTrace`s | `llm_worker.drain_completed_results`, `_handle_proposals` |
+| 3. State and menu | `acquire_world_state()` → frozen `WorldState`; the legal menu is the vocabulary's precondition filter, narrowed to actions the scenario's buttons support (the unnarrowed list if that would be empty); every other action is listed as pruned with the first precondition it failed | `_menu`, `tracing.pruned_actions` |
+| 4. Evidence | One `EvidenceInputs` for every channel: the simulator's projections of the menu, the value networks' predictions and tried counts, novelty counts, the archive, the relevance records for this context, counters (decisions, under-fire streak, stall streak, sectors), the frame saved as `frames/<tick>.jpg` | `evidence.build_inputs` |
+| 5. System 1 | Five senses in parallel (pool of 6), each its own d1-ultra call; then the central, one call over the messages that arrived; then the pick | `System1.tick` (§8.6, §8.7) |
+| 6. Act | The picked action's fixed primitives (`env.execute_action`), or, when the central missed, no keys for the decision's 8 frames (`env.execute_idle`) | the only two key-pressing calls, checked by `tests/test_architecture.py` |
+| 7. Value networks | When `record_experience` is on and an action was executed: `Learner.record_step(state_vec, action_vec, result, action_id, context)` | §8.9 |
+| 8. Counters | Novelty count, the simulator's empirical cache, the archive outcome of the active strategy, an admitted macro's follow-up reward, the stall streak; or, on a miss, the central-miss streak, which ends the episode as `connection_lost` at 3 | |
+| 9. History and trace | The tick is stored whole in the history (`history.jsonl`), and a schema-2 `TickTrace` is logged (`ticks.jsonl`); the recorder and dashboard are fed | §8.8, §8.14 |
 
 Three properties to notice:
 
-* **The game never waits for intelligence.** In `critical` mode the
-  controller replays its last selected (“cached reactive”) action and
-  fabricates uniform module outputs so the trace schema is unchanged.
-* **Expansion requests are fire-and-forget.** A module sets
-  `request_action_expansion=True` with a problem description; the
-  controller enqueues at most one request (the worker is single-flight)
-  and play continues. Results are drained at phase 0 of a later tick.
-* **`run_episode()`** loops `step()` until the ViZDoom episode ends or
-  `max_ticks` (default 500) decisions are made, then finalises the
-  learner's pending episode (`end_episode()`) and returns a summary dict
-  (`reward, kills, health, armor, cleared, died, ticks, transitions,
-  explored_steps, network_share, actions, traces`). What “cleared” means
-  is scenario-specific — see `ViZDoomBridge.level_cleared()` (§8.1).
+* **Nothing stands in for d1-ultra.** A silent or missed sense is
+  silence; a missed central is an idle tick recorded with pick `missed`;
+  three in a row end the episode. There is no cached action, no repeated
+  pick and no local policy.
+* **The configuration changes only at the tick boundary.** A change
+  queued while a tick runs (by the slow path's admit instance, or by
+  `request_configuration`) waits for step 1 of the next tick, so every
+  instance of a tick sees one configuration version, recorded in the trace.
+* **`run_episode()`** loops `step()` until the ViZDoom episode ends,
+  `max_ticks` decisions are made, play is stopped, or the connection is
+  lost; then it finalises the learner's pending episode, updates and
+  saves the relevance ledger, and returns a summary dict (`reward, kills,
+  health, armor, cleared, died, finished, finished_reason, ticks,
+  transitions, cost, misses, instances, actions, configuration_start,
+  configuration_end, traces`). `finished_reason` is one of `episode_end`,
+  `max_ticks`, `stopped`, `connection_lost`. What “cleared” means is
+  scenario-specific — see `ViZDoomBridge.level_cleared()` (§8.1).
 
 ---
 
@@ -451,7 +442,8 @@ so all downstream logic is button-set-aware.
 * **Depth buffer** → mean depth of the centre/left/right thirds ×4 →
   `wall_distance_front/left/right`.
 * **Screen buffer** → brightness, and a 320×240 JPEG (quality 75,
-  base64) for d1-ultra vision when `include_jpeg_frame` is on.
+  base64), the image of every instance with `frame` in scope, when
+  `include_jpeg_frame` is on (the default).
 * Memory: last 10 actions, last 5 one-line state summaries, last 16
   discovered 128-unit grid sectors, archive strategy refs.
 
@@ -465,6 +457,12 @@ the player < 12 units, that pickup is added to `motor.ignored_pickups`
 for the rest of the episode (otherwise a shotgun on a ledge would pin
 the player against a wall until timeout — found in training).
 
+**`execute_idle(frames)`** holds no keys for `frames // 2` motor steps
+(4 steps for a decision's 8 frames) and accounts the result exactly as
+an action's, labelled `missed` in the memory's state summaries: it is
+what a tick whose central missed executes. `episode_cells_discovered`
+feeds the `position` channel.
+
 **`level_cleared()`** is deliberately scenario-specific: `basic` ⇒ ≥1 kill
 alive; `deadly_corridor` ⇒ episode finished, alive, armor ≥ 100 (reached
 the vest); `health_gathering` (non-supreme) and `defend_*` ⇒ finished
@@ -476,10 +474,11 @@ acquire; `run_episode` disables it and manages restarts itself.
 
 ### 8.2 Tactical motor — `motor.py`
 
-The arbiter picks an *action*; the motor executes that action's **own**
-primitive list — the selected action genuinely drives play (this was the
-central change of the learning-controller design; before it, the motor ran
-a fixed reflex and the arbiter only set its length).
+The central instance picks an *action*; the motor executes that action's
+**own** primitive list. The assists below are reflexes *inside* a
+primitive (aim before firing, track while strafing), bounded by the plan;
+they never choose an action. `idle(frames)` presses nothing, for a missed
+decision.
 
 * **Timing.** Each primitive is held for `hold = max(1, 4 // len(plan))`
   motor steps, each step being `make_action(vector, frame_skip=2)`
@@ -512,8 +511,10 @@ a fixed reflex and the arbiter only set its length).
 ### 8.3 Bounded simulator — `simulator.py`
 
 An *analytic* forward model — not a learned one and not a ViZDoom clone.
-Its purpose is cheap short-horizon evidence (Spec §8), and its bounds are
-explicit and validated by pydantic:
+Its purpose is cheap short-horizon evidence (Spec §8): its numbers reach
+the instances only as the `projections` channel, headed “a rough
+projection from a hand-written simulator, not the game”, and never as a
+score of the decision. Its bounds are explicit and validated by pydantic:
 
 ```python
 ProjectionLimits(max_candidate_count=16,   # actions projected per tick
@@ -551,207 +552,244 @@ with experience: `V ← 0.6·V + 0.4·(mean_reward·0.1 − mean_dmg·0.05)`.
 `project_candidates()` honours the candidate cap and stops at the
 wall-clock deadline (always returning at least one projection).
 
-### 8.4 Five decision modules — `modules.py`
+### 8.4 The configuration — `configuration.py`
 
-**Contract (Spec §6).** `DecisionInput` = world state + available actions
-+ local memory + projected outcomes + time budget (+ optional learned
-utilities/trust injected by the controller). `DecisionOutput` = ranked
-actions, a probability distribution, raw utility estimates, confidence
-and uncertainty (from normalised Shannon entropy of the distribution:
-`uncertainty = H/log n`, `confidence = 1 − uncertainty`), the projections
-used, `request_additional_simulation` (set when uncertainty > 0.72 and
-projections are incomplete), `request_action_expansion` + problem
-description, a local-memory update, and d1 provenance fields.
+The configuration is everything that shapes what each instance sees, as
+versioned, frozen data — what System 2 will own. It is data only:
+nothing in it decides.
 
-**How a module decides** (`DecisionModule.build_output`), in order:
+```text
+Configuration (version ≥ 1)
+├── senses: {survival, combat, navigation, resource, goal} → SenseConfig
+│     scope (channels), concern (named in its instructions), reasons (finite ids)
+├── central: CentralConfig (scope, concern)
+├── exploration_level: exploit | explore
+├── active_strategy: an archive strategy id
+├── admitted_macros: (ActionSpec…)         # macros admitted into the menu
+└── bounds: Bounds                         # every hand-written limit, never a weight
+```
 
-1. `compute_local_utilities()` — the module's own fast heuristic (below).
-2. **Learned blend** (if the controller supplied predictions): per action,
-   `u ← (1−λ_a)·u_heuristic + λ_a·u_network`, where `λ_a` is the
-   per-(context, action) trust from the learner (§8.9). Actions the
-   network has never seen in this context keep `λ=0`.
-3. `softmax(utilities, T=0.35)` → local distribution.
-4. **d1-ultra blend** (if a d1 response is available): the module's
-   distribution is mixed with d1's per-action probabilities with weight
-   `0.75` normally, but only `0.25` when the local utility gap between
-   the top-2 actions is ≥ 0.45 — i.e. when geometry already settles the
-   question (aim/shoot/advance), d1 may advise but not override.
-5. Confidence/uncertainty from entropy; expansion check (below), possibly
-   overridden by d1: if d1's `noul` answer to “are current candidates
-   insufficient?” exceeds **0.78** and the module didn't already request
-   expansion, it does now.
+**Initial scopes** (version 1, `default_configuration()`, the design's
+tables):
 
-**The five heuristics** (each also adds its projection terms):
-
-| Module | Question it answers | Core heuristic signals |
+| Instance | Scope | Reasons |
 |---|---|---|
-| **survival** | Which action best reduces near-term probability of death? | `1.2·survival_prob − 0.22·low_hp_pressure·E[dmg_in]`; `low_hp_pressure = max(0.2, (100−HP)/60)` scales bonuses for retreat/orbit/weave macros (0.65·p), strafes/retreat (0.45·p), healing `approach_pickup` (0.55·p); advancing into visible enemies −0.40·p |
-| **combat** | Which combat action best improves the current fight? | `0.05·E[dmg_out] − 0.04·E[dmg_in]`; if an enemy is aimed (nearest \|angle\| ≤ 12°): `shoot` +2.4, `weave_fire` +2.2, aimed `peek_and_fire` +1.6; turn/strafe *toward* the signed target angle +2.1; generic combat macros +0.35; no enemy: `move_forward` +0.2 |
-| **navigation** | Which movement action best improves positional progress? | `0.45·E[pos_progress]`; `move_forward` +0.75 when front wall > 64; `approach_pickup` +0.55; `use` +0.80 when a wall is within 64; turn toward the more open side +0.70 |
-| **resource** | Which action best improves resource state without unacceptable risk? | `0.12·E[res_gain] − 0.05·E[dmg_in]`; `approach_pickup` +1.15 when HP < 75 or ammo < 15 else +0.75; `move_forward` toward pickups +0.55; any shoot-containing action with no enemy visible −0.65 (don't waste ammo) |
-| **goal** | Which action most increases probability of eventual level success? | `0.5·E[value]`; enemies visible ⇒ combat macros/`shoot`/`weave_fire` +0.60; none ⇒ `move_forward`/`approach_pickup` +0.70 |
+| survival | `vitals`, `threats`, `incoming`, `projections`, `menu` | health_critical, under_fire, enemy_too_close, recovering, no_threat |
+| combat | `threats`, `outgoing`, `vitals`, `frame`, `projections`, `menu` | target_aimed, target_off_centre, several_enemies, low_ammo, no_target |
+| navigation | `geometry`, `position`, `progress`, `projections`, `menu` | path_clear, wall_ahead, stalled, door_or_switch_ahead, unexplored_side |
+| resource | `pickups`, `vitals`, `menu` | health_pickup_near, ammo_pickup_near, pickup_guarded, nothing_needed, nothing_visible |
+| goal | `progress`, `archive`, `history`, `values`, `menu` | making_progress, plateau, strategy_fits, strategy_failing, nearly_done |
+| central | `messages`, `relevance`, `exploration`, `vitals`, `menu` (+ `novelty` while exploring, if there is room) | — |
 
-**Expansion triggers** (`check_expansion_needed`) — the bridge to the slow
-path; each is a concrete failure detector fed by controller-maintained
-counters (§8.13): survival — HP < 35 with ≥ 15 incoming damage, or ≥ 4
-consecutive damage ticks; combat — ≥ 3 repeated failures, or ≥ 4 damage
-ticks against ≥ 2 enemies; navigation — ≥ 4 consecutive movement stalls
-(chose to move but displaced < 4 units); resource — ammo ≤ 2 and HP ≤ 35
-with pickups visible; goal — ≥ 6 plateau ticks.
+**Validation** (a configuration that breaks any of these does not load):
+the senses are exactly the five, in order; every channel is known and
+appears once; every scope contains `menu`; a scope holds at most
+`max_scope_channels` (7) channels; a sense's scope never contains
+`messages`, `relevance` or `exploration`; reasons are unique lowercase
+snake_case ids; only macros can be admitted.
 
-**Parallel evaluation.** `BatchModuleEvaluator.evaluate_all()` builds all
-five inputs over the *same* snapshot, assembles the 10 d1 questions
-(5× `choice` + 5× `noul`), and either makes **one batched synchronous
-d1 call** (`sync_d1`) or reads the per-context cache and fires a
-non-blocking refresh (`async_cached`, cache key
-`batch_mods:<context_signature>`, frame image attached when available).
-The five `build_output` calls then run on a 5-thread pool inside the tick
-deadline; any module that misses the deadline is recomputed locally
-without d1 (graceful degradation — never a dropped module).
+**`Bounds`** holds every number of the design in one place: per-call
+budget 5 s; `yes_at` 0.5 (d1's own yes, for speaking and admitting);
+scope 7 channels; caps of 6 enemies, 6 pickups, 6 history steps and 3
+summaries; pools of 6 (System 1) and 2 (System 2); 1 trial in flight; 60
+decisions of cooling; a history ring of 2,000; a history-test sample of
+24; 40 System 2 calls per cycle; 3 consecutive central misses; 8 frames
+per decision; an 8-step return with discount 0.9; a probability
+tolerance of 0.02; a thin record under 5; a stall under 4 units.
 
-### 8.5 Final arbiter — `arbiter.py`
+**Versions.** `with_changes(**fields)` returns the next version, validated
+as a whole; `replace(**fields)` and `with_bounds(**fields)` keep the
+version and are for setting up the initial configuration before play
+(`--call-budget`, `--explore`, macros restored from a run folder).
+`save()`/`load()` round-trip JSON (`--configuration FILE`). The
+controller applies a queued configuration only at a tick boundary
+(`request_configuration`, §8.13); the trace records each tick's
+`configuration_version` and whether it changed, and the bundle the
+configuration at the start and the end of the episode.
 
-The arbiter is itself a bounded decision (Spec §9), not hand-written
-reasoning. For each candidate action it computes:
+### 8.5 Evidence channels — `evidence.py`
 
-```text
-score(a) = expected_value + exploration_bonus + novelty_bonus
-           − risk_penalty − execution_cost
+A channel renders one named piece of evidence as plain text. Every
+channel reads one `EvidenceInputs`, built once per tick by `build_inputs`
+from the world state, the legal menu, the projections, the value
+predictions, the novelty counts, the archive, the relevance records, the
+counters, the messages, the exploration level and the frame reference.
+A scope renders only its channels, in the fixed order of
+`configuration.CHANNELS`, each under a `[name]` header line.
 
-expected_value   = Σ_m w_m · P_m(a)              (module votes)
-                   + 0.20 · projection.expected_value
-                   + 0.15 if a ∈ active strategy's action_sequence
-                   + 0.30 · P_d1_arbiter(a)       (if d1 answered)
-exploration_bonus= pressure · (0.35 · module_disagreement(a)
-                   + 0.12 if a is a macro)
-novelty_bonus    = 0.25 · pressure · novelty(context, a)     (§8.6)
-risk_penalty     = 0.04 · E[dmg_in] · (1.8 if HP ≤ 35 else 0.8)
-execution_cost   = 0.02·len + 0.02·shots                     (§6.2)
-```
+| Channel | What it renders | Source |
+|---|---|---|
+| `vitals` | health, armor, ammo, weapon | observation |
+| `threats` | the visible enemies nearest first (at most 6): name, distance, angle, on-screen size, under the crosshair or attacking; the count | observation |
+| `incoming` | damage taken since the last decision; consecutive decisions under fire | observation, counter |
+| `outgoing` | damage dealt, hits and kills since the last decision | observation |
+| `pickups` | the visible pickups nearest first (at most 6): name, category, distance, angle | observation |
+| `geometry` | wall distance ahead, left, right; moving or still | depth buffer |
+| `position` | x, y, facing; sectors discovered this episode | observation, bridge |
+| `progress` | decisions so far, reward so far, kills, last displacement, stall streak | observation, counter |
+| `history` | the last 6 primitives executed and the last 3 decision summaries | memory |
+| `frame` | a one-line note; the 320 × 240 JPEG is attached as the call's image | screen buffer |
+| `menu` | the legal actions now, each with its description | preconditions |
+| `projections` | per legal action: expected value, damage in and out, survival, progress — headed “a rough projection from a hand-written simulator, not the game” | `simulator.py` |
+| `values` | per legal action: each value network's predicted return (standardised) and how often the action was tried here in training — headed “learned from past play”; “no value networks are loaded” without them | `learning.py` |
+| `novelty` | how often each legal action has been taken in this situation so far | controller counter |
+| `archive` | the strategies, the active one and each one's record | `archive.py` |
+| `exploration` | the level and what it asks of the chooser (central only) | configuration |
+| `messages` | one line per spoken sense: “survival says strafe_left, strength 0.82, reason under fire.” (central only) | System 1 |
+| `relevance` | each sense's record in this situation (central only, §8.8) | ledger |
 
-**Module weights `w_m`** blend two sources: (a) a context heuristic —
-fighting (enemies visible, ammo > 0): combat 2.2, goal 1.2, resource 0.7,
-survival 0.55, navigation 0.45; not fighting: navigation 1.7, survival
-1.4 if HP ≤ 40 else 0.8, goal 1.3, resource 1.3 if pickups visible else
-0.6, combat 0.35 — each scaled by `(0.4 + 0.6·confidence_m)` and
-normalised; and (b) the **learned gate** (§8.9): `softmax(gate(state)/0.5)`,
-mixed in with share `gate_trust(context)` (same `n/(n+25)` rule). Both
-the weights used and the full per-component breakdown are recorded in the
-decision/trace.
+Rendering is **deterministic**: the same inputs and scope give the same
+text, byte for byte (golden-text tests in `tests/test_evidence.py`), so
+a tick stored in the history re-renders exactly what each instance saw.
+Nothing in this module ranks or scores an action; the menu is listed in
+the vocabulary's order, and projections and values in the menu's order.
 
-**Picking the winner**, in priority order:
-
-1. **Committed pick.** If any module is overwhelmingly sure of one action
-   (top utility ≥ 5.0, margin ≥ 4.0 over its runner-up, probability
-   ≥ 0.9), that action is taken directly. This is the mechanism by which
-   a newly admitted macro gets *reused* once a module adopts it strongly.
-2. **Exploration floor.** With probability `exploration_floor` (set by
-   the training schedule or `--learn`), sample from the score softmax at
-   temperature ≥ 0.5 and flag the decision `explored=True`.
-3. **Greedy** if `deterministic` is set, or the top-2 score margin
-   ≥ 0.08, or exploration pressure < 0.45.
-4. Otherwise **sample** from `softmax(scores / temperature)` with the
-   exploration controller's temperature (§8.6).
-
-The arbiter also has its own optional d1 question (`arbiter_choice`,
-criteria annotated with every module's votes and the projection summary;
-cache key `arbiter:<context_signature>`, same sync/async pattern), whose
-distribution enters both as the 0.30 bonus above and `d1_distribution` in
-the trace. Every arbitration records the executed action in the
-exploration controller's visitation counts.
-
-### 8.6 Exploration — `exploration.py`
-
-`ExplorationController` maintains context visitation counts
-(`context::action` keys), per-strategy usage, an EMA of progress
-(`0.7·old + 0.3·delta`, where the controller passes
-`progress_delta = 8·Δkills + max(0, reward)`), a failure counter
-(±1 per step, clamped 0–20) and a stall streak (progress ≤ 0.05).
-
-`update_and_decide()` computes, per tick:
+A survival sense's evidence on the test fixture, verbatim:
 
 ```text
-novelty(context)  = 1 / (1 + 0.5·(visits − 1))
-pressure = 0.25·mean_module_uncertainty + 0.25·min(1, failures/4)
-           + 0.25·plateau + 0.25·novelty          (plateau: stall ≥ 3 or failures ≥ 3)
-pressure ×= 0.55  if progress EMA > 1.0   (a strategy is working)
-pressure ×= 0.35  if HP ≤ 30 or heavy fire (high risk → exploit)
-pressure ×= 0.25  if a near-term winning sequence is detected
-                      (a kill this step, or armor ≥ 100)
-pressure ∈ [0.02, 1];   temperature = 0.10 + 1.00·pressure ∈ [0.10, 1.10]
+[vitals]
+health 64, armor 25, ammo 17, weapon pistol
+
+[threats]
+2 enemies visible, nearest first:
+- Zombieman at distance 180, 2 deg left, size 24x56 px, under the crosshair
+- DoomImp at distance 410, 21 deg right, size 20x40 px, attacking
+
+[incoming]
+damage taken since the last decision 8; consecutive decisions under fire 2
+
+[menu]
+the legal actions now:
+- shoot: Aim and fire current weapon at visible enemy target
+- strafe_left: Sidestep left perpendicular to heading to dodge projectiles or reposition
+- approach_pickup: Sprint forward down the corridor toward visible armor, health, weapon, or goal pickup
+
+[projections]
+a rough projection from a hand-written simulator, not the game; per legal action:
+- shoot: expected value +3.34, damage in 3.2, damage out 31.0, survival 0.77, progress 0.00
+- strafe_left: expected value -0.25, damage in 2.4, damage out 0.0, survival 0.78, progress 0.15
+- approach_pickup: not projected
 ```
 
-In `sync_d1` full-budget mode an additional d1 `score` question (“exploit
-strictly / balanced / high exploration”) can move pressure halfway toward
-its answer. Per-action novelty for the arbiter is
-`action_novelty = 1/(1 + visits(context, action))`. The output
-`ExplorationState` (recent progress, failures, novelty, strategy usage,
-uncertainty, plateau flag, pressure, temperature) is embedded whole in
-every tick trace.
+### 8.6 Instances and senses — `instance.py`, `senses.py`
 
-Note there are **two distinct exploration mechanisms**: this
-pressure/temperature pair (shapes the arbiter's sampling distribution)
-and the learner-facing `exploration_floor` (§8.5, §10) — a flat
-probability of sampling from a tempered distribution instead of taking
-the top pick, scheduled by `train.py`.
+An **instance** is one d1-ultra call with its own scope and its own
+finite questions. `InstanceSpec` is data (name, kind, scope, concern,
+reasons); `run_instance` renders the scope, builds exactly one payload
+and reads the answers:
 
-### 8.7 Strategy archive — `archive.py`
+* `state` is the rendered scope text, and nothing else;
+* `images` carries the frame only when `frame` is in the scope;
+* the questions depend on the kind, and every instruction starts with
+  the instance's name, its concern and that it sees only the evidence
+  given — it never says how to weigh anything:
 
-A bounded memory of *named ways of playing* (Spec §11) that prevents
-permanent collapse into one local optimum. An entry holds
-`strategy_id, context_signature, action_sequence, observed_reward,
-success_rate, failure_modes (≤5), usage_count, novelty_signature`.
-Capacity is **12**; admitting beyond capacity evicts the lowest
-`observed_reward + 5·success_rate` non-active entry. Three strategies are
-seeded: `strat_tactical_combat` (peek-and-fire → circle-strafe → shoot),
-`strat_evasive_survival` (retreat → strafe → approach pickup),
-`strat_corridor_advance` (forward → approach pickup → use).
+| Kind | Question | d1 kind | Criteria |
+|---|---|---|---|
+| sense | `speak`: “Must the action chooser hear from you before the next decision?” | noul | — |
+| sense | `action`: “Which legal action do you recommend now?” | choice | exactly the legal menu, id → description, in menu order |
+| sense | `reason`: “Which reason best describes why?” | choice | the sense's reasons |
+| central | `choose`: “Choose the action the agent executes now.” | choice | exactly the legal menu |
+| admit | `admit`: “Should this proposed macro-action enter the agent's legal menu?” | noul | — |
 
-Every tick the controller records the executed action's outcome against
-the *active* strategy (EMA α = 0.3 on reward and success; a step “fails”
-on damage > 8 or death) and then runs an explicit 4-way meta-decision
-over `continue_current_strategy / switch_to_archived_strategy /
-explore_variation / request_new_strategy_proposal` with utility scores
-driven by the active strategy's success rate, recent failures and
-exploration pressure (optionally blended with a d1 `choice` in sync
-mode). Choosing “switch” activates the archived strategy with the best
-`success_rate + 0.1·observed_reward`. The active strategy influences play
-concretely: its `action_sequence` gives member actions +0.15 in the
-arbiter (§8.5). Admitted Codex macros also create archive entries
-(`novelty_signature = llm_admitted:<id>`, §8.12).
+`InstanceResult` keeps everything for the trace and the history: scope,
+verbatim evidence, image reference, every answer in full, `spoke`,
+`strength`, the top `action` and its distribution, the top `reason`,
+`missed` and `miss_reason`, the raw answer, latency and usage.
 
-### 8.8 Feature encoding — `features.py`
+**Misses.** An answer is a miss when the call times out, fails, the
+budget runs out waiting on an HTTP 429, the top action is not on the menu
+(`off_menu`), or a distribution is malformed — a negative probability, or
+a sum further than 0.02 from 1 (`malformed`). The raw answer is kept and
+nothing is repaired or substituted. Ties in a choice go to the first
+option in menu order.
 
-Scenario-agnostic, fixed-size, bounded encodings — the contract between
-the game-facing world and the learned networks. Sizes are part of the
-checkpoint format: changing them makes old checkpoints refuse to load.
+The five **senses** (`senses.py`) run in parallel on System 1's pool,
+each inside the per-call budget (the pool waits 2 s past the budget at
+most, against a starved thread, and then records a timeout). A sense
+speaks when its `speak` probability is at least `yes_at` (0.5): d1's own
+yes, not a tuned threshold. A spoken sense sends a `Message` (sense,
+action, reason, strength = the `speak` probability, unscaled) to the
+central's `messages` channel; a silent sense is logged with the same
+answers but reaches the central as silence, and a missed sense is silent
+and marked `missed`.
 
-**State → `float32[32]`** (`STATE_DIM`), all clipped:
+### 8.7 The central instance and the pick — `system1.py`
 
-| # | Features |
-|---|---|
-| 0–3 | health/100, armor/100, ammo/50 (each clipped to [0,2]), `ammo > 0` flag |
-| 4–10 | enemy count/5; nearest-enemy distance/1000 (1.0 if none), signed angle/45 ∈ [−1,1], \|angle\|/45, `aimed (≤12°)` flag, `≥2 enemies` flag, `nearest < 140` flag |
-| 11–18 | pickup count/5; nearest-pickup distance/1000, angle/45; 5 one-hots for its category (health/armor/ammo/weapon/item) |
-| 19–24 | wall_front/left/right /256 ([0,2]); incoming damage/50, outgoing damage/50, recent kills ([0,2]) |
-| 25–27 | `moving` flag; episode tick/100 ([0,3]); last displacement/64 |
-| 28–31 | fraction of the last 6 actions containing `shoot` / `move_forward` / `strafe` / `turn` |
+`System1.tick(configuration, inputs, frame_b64)` runs one decision: the
+five senses, the messages they sent (in sense order), then the central —
+one call whose evidence is its scope with the messages and the
+configuration's exploration level filled in. `central_scope()` adds
+`novelty` while the level is `explore`, if the scope has room within its
+7 channels.
 
-**Action → `float32[12]`** (`ACTION_DIM`): the fraction of the action's
-primitive steps equal to each of the 8 base primitives
-(`move_forward … use`; compound strafe-fire counts as *both* its strafe
-and `shoot`), plus switch-weapon fraction, `len/16`, `is_macro`, and
-“has `pickup_id` parameter”. Because actions are described by
-*composition*, a Codex macro admitted at runtime is scored by the
-networks immediately, with no retraining and no index bookkeeping.
+`pick_action()` turns the central's answer into the action, and is the
+only place a `Pick` is made:
 
-### 8.9 Learning — `learning.py`
+| Pick | When | Action |
+|---|---|---|
+| `top` | level `exploit` | the action d1 gave the highest probability; on a tie the first in menu order, with `tie` and `tied` logged |
+| `drawn` | level `explore` | one action drawn from d1's own distribution, walking the menu in order with a seeded `random.Random` (`--seed`); the uniform number is logged as `draw` |
+| `missed` | the central missed | none: the controller holds no keys for the decision's 8 frames |
 
-The learning design goal: each module improves *independently* against
-its own reward, the arbiter learns *whose advice to follow*, and none of
-it can destabilise play before it has data.
+There is no temperature and no bonus. The `exploration` channel tells
+the central what its level means, so d1 knows what is asked of it.
+`System1Result` carries the inputs, the five sense results, the
+central's result, the messages, the pick and the timings (`senses_ms`,
+`central_ms`), and sums the tick's usage.
 
-**Per-module rewards** for one executed decision (from `ExecutionStepResult`):
+### 8.8 Relevance and history — `relevance.py`, `history.py`
+
+**The relevance ledger** is each sense's track record per context
+signature, shown to the central as counts in the `relevance` channel;
+nothing in it is multiplied into a decision. At the end of every episode
+`update_ledger()` walks the episode's ticks; for every tick where a sense
+spoke:
+
+* **followed**: the central executed the sense's action; **paid off**:
+  the decision's n-step return (n = 8, γ = 0.9, over the per-decision
+  game reward, `features.n_step_returns`) was positive;
+* **overruled**: the central executed another action, and whether *that*
+  action paid off, so the central can see when ignoring a sense was right;
+* **calibration**: the sense's mean strength on ticks that paid off and on
+  ticks that did not.
+
+A tick whose central missed executed nothing, so it is neither followed
+nor overruled (its idle reward still counts in the returns of the
+decisions before it). The record renders as: “survival here: spoke 14,
+followed 9, paid off 7 of 9; overruled 5, the chosen action paid off 2
+of 5; mean strength 0.81 when it paid off, 0.64 when not.” A mean over
+fewer than 5 ticks is shown with its count; a sense with no record says
+so. Update and rendering are pure functions. The ledger
+(`RelevanceLedger`, entries keyed `<sense>|<context>`) is saved to
+`runs/<scenario>/relevance.json`, restored at start, grows across
+episodes, and is copied into every bundle.
+
+**The history** keeps every tick whole: a `TickRecord` holds the
+`EvidenceInputs` (messages included), the six `InstanceResult`s, the
+messages, the pick, the executed action and primitives, the reward, the
+configuration version, the level and the strategy. `HistoryStore` keeps
+the last 2,000 records in memory and appends every one to
+`history.jsonl` in the log folder. `rerender(record, scope)` renders a
+stored tick under any scope; under an instance's own scope it reproduces
+the instance's evidence byte for byte (tested on every tick of a
+recorded bundle). System 2's history test will use exactly this.
+
+### 8.9 Value networks and features — `learning.py`, `features.py`
+
+The five value networks keep training between episodes, now on episodes
+d1-ultra plays; their predictions are the `values` channel. They never
+weigh in on a decision.
+
+**Encodings** (`features.py`, sizes are part of the checkpoint format):
+state → `float32[32]` (`STATE_DIM`: vitals, nearest enemy and pickup,
+walls, damage, kills, motion, recent action mix) and action →
+`float32[12]` (`ACTION_DIM`: the fraction of the action's steps per base
+primitive, length, macro flag, pickup parameter). Because an action is
+described by its composition, an admitted macro gets predictions the
+moment it enters the menu.
+
+**Per-network rewards** for one executed decision (`module_rewards`):
 
 ```text
 survival    = −damage_taken/25 − 3·died
@@ -761,88 +799,69 @@ resource    =  health_gain/25 + armor_gain/25 + ammo_gain/10
 goal        =  scenario reward (the ViZDoom reward for the burst)
 ```
 
-**Targets.** At episode end, each step's target is the **8-step
-discounted return** of its module reward stream (γ = 0.9, truncated at
-episode end), standardised by running mean/std (`RunningStats`, Chan's
-parallel update, persisted in the checkpoint).
+**Targets.** At episode end, each step's target is the 8-step discounted
+return of its reward stream (γ = 0.9, truncated at episode end),
+standardised by running mean/std (`RunningStats`, persisted in the
+checkpoint).
 
-**Networks** (PyTorch; `LearnerConfig`: hidden 64, gate-hidden 32,
-lr 1e-3 Adam, batch 256, 200 steps/episode, seed 0, single-threaded —
-these nets are faster without thread synchronisation):
+**Networks** (PyTorch; `LearnerConfig`: hidden 64, lr 1e-3 Adam, batch
+256, 200 steps/episode, replay 100 k, trust count 25, seed 0): five MLPs
+`(state⊕action) 44 → 64 → 64 → 1`, batched as one `ModuleValueNets`.
+`predict_returns(state, actions)` gives every candidate's standardised
+prediction per network; `tried_counts(context, ids)` gives how often each
+was tried in this context — both are rendered in `values`. `action_trust`
+(`n/(n+25)`) and `network_share` remain as reports in metrics and charts.
 
-* Five value MLPs `(state⊕action) 44 → 64 → 64 → 1`, one per module,
-  implemented as a single batched `ModuleValueNets` (stacked
-  `baddbmm` weights) so all five are evaluated in one call.
-* An **arbiter gate** MLP `state 32 → 32 → 5`. It is trained only on
-  transitions where a module's top pick *was* the executed action
-  (the `gate_mask`), against the goal return — i.e. it learns “in
-  states like this, following module *m* paid off”. At play time
-  `softmax(gate/0.5)` becomes the learned module-weight distribution.
+**Experience.** `record_step()` is called only for executed decisions (a
+missed tick executed nothing to learn from). `end_episode()` turns the
+episode into returns, updates the running stats and the tried counts, and
+appends to the 100 k ring-buffer replay (`replay.npz`). Training runs
+200 Adam steps on batches of 256 between episodes, a no-op below 32
+transitions.
 
-**Trust (the stabiliser).** A network's say is gated per (context,
-action): `λ = n/(n + trust_count)`, `trust_count = 25` by default — an
-action tried 25 times in this context gets 50% network weight, 100
-tries ≈ 80%. The gate uses the same rule per context. This per-context
-rule replaced a global experience-based λ after experiments showed the
-global version first improved then degraded play (networks dominating
-and chasing overestimated, rarely-tried actions). `network_share` (the
-experience-weighted mean trust) is the headline “how much of play the
-networks now steer” metric in logs and charts.
-
-**Experience.** `record_step()` accumulates the pending episode
-(state/action vectors, module rewards, gate mask, `(context, action)`
-keys). `end_episode()` converts it to n-step returns, updates the
-running stats and trust counters, and appends to a **100 k-transition
-ring-buffer replay** (`states, actions, returns, gate_mask` as flat
-NumPy arrays; persisted separately as `replay.npz`).
-`discard_episode()` drops a half-finished episode (used on interruption
-and at `run_episode` start). Training (between episodes only) runs a
-fixed 200 Adam steps on batches of 256, MSE per network plus the masked
-gate MSE; it is a no-op below 32 transitions. Training cost is therefore
-constant per episode and never inside the tick loop.
-
-**Checkpoints** (`Learner.save/load`, `checkpoint.pt`, format v1):
-network + gate + optimiser state dicts, running stats, counters
-(episodes, transitions, updates, best score), per-action/context trust
-counts, last losses, and the `LearnerConfig`. `load()` raises
-`CheckpointMismatch` on format/feature-size/module-list mismatch —
-callers turn that into “retrain with `--fresh`” rather than playing with
-silently wrong weights. Architecture fields (`hidden`, `gate_hidden`)
-cannot be overridden after the fact; other config fields can.
+**Checkpoints** (`checkpoint.pt`, format 1): value networks, optimiser,
+running stats, counters, tried counts, last losses and `LearnerConfig`.
+The gate network is gone: a checkpoint written before its removal loads,
+its `gate` weights and gate loss are ignored (`LEGACY_GATE_KEYS`), and
+the optimiser state keeps only the value networks' parameters. A replay
+file with the old `gate_mask` column loads too. `load()` still raises
+`CheckpointMismatch` on a format, feature-size or network-list mismatch.
 
 ### 8.10 d1-ultra client — `d1_client.py`
 
-A thin, defensive client for Liquid AI's decision endpoint
-(`POST https://api.liquid.ai/decisions/v1/systemone`, model `d1-ultra`).
+`POST https://api.liquid.ai/decisions/v1/systemone`, model `d1-ultra`,
+payload `{model, state, questions, images}`; the answers come back by
+question name with a `usage` block (input and output tokens, cost).
 
-* **Typed questions.** Three pydantic question kinds — `noul`
-  (a probability that the instructed proposition holds), `choice`
-  (probabilities over named criteria), `score` (a score over an ordered
-  criteria list) — serialised via `to_payload()`; answers are validated
-  into `NoulAnswer`/`ChoiceAnswer`/`ScoreAnswer` through `D1Response`.
-  Callers pass a *dict of named questions* and read answers by name, so
-  modules, the arbiter, exploration, the archive and admission can share
-  one batched call.
-* **Synchronous** `decide(state, questions, images, timeout)` — used in
-  `sync_d1` mode and by admission; returns `None` (never raises) on any
-  transport error, counting it in `error_count`.
-* **Asynchronous** `submit_async(context_key, …)` + `get_cached(key)` —
-  a 2-thread pool refreshes a per-context cache in the background;
-  duplicate in-flight keys are dropped. This is the default
-  (`async_cached`): the loop reads whatever is cached for *this context
-  signature* (strictly no “latest answer for a different context” in
-  module/arbiter calls — `fallback_to_latest=False`) and keeps playing.
-* **Graceful disable.** `enabled = enabled ∧ api_key present`;
-  `LIQUID_API_KEY` comes from the environment or a `.env` file.
-  Disabled ⇒ every call returns `None` immediately and all callers fall
-  back to local logic. The JPEG frame (≤ 8 images) is attached so d1
-  answers are multimodal (vision + state text).
+* **Typed questions** — `noul` (the probability a proposition holds),
+  `choice` (probabilities over named criteria), `score`; answers are
+  validated into `NoulAnswer`/`ChoiceAnswer`/`ScoreAnswer`.
+* **`call(instance, state, questions, images, budget)`** never raises. It
+  returns a `D1CallResult`: the response, or a typed miss (`timeout`,
+  `error`, `http_429_exhausted`, `malformed` for a response without an
+  answers object), with the latency, the retries and the usage. The
+  budget bounds the call from start to answer, retries included.
+* **HTTP 429** waits per `Retry-After` (seconds or an HTTP date; 0.5 s
+  when absent) and counts a retry, but only while the budget lasts.
+* **Pools.** Calls run on a worker pool sized by the owner: the
+  controller's System 1 client has 6 workers (`system1_pool`), the slow
+  path's client its own 2 (`system2_pool`), so admission never starves
+  a tick.
+* **Counters.** `counters()` gives, per instance name, calls, answers,
+  misses by reason, retries, total latency, tokens and cost; the
+  controller sums them per episode into `cost`, `misses` and `instances`.
+* **Transport injection.** `TransportFn(url, headers, payload, timeout)`
+  replaces the HTTP post; `tests/fake_d1.py` answers from the payload it
+  receives, deterministically, and can be scripted to time out, raise,
+  answer off the menu or return malformed probabilities at chosen calls.
+* **The key** comes from `LIQUID_API_KEY` or `.env`; it is sent only as
+  the bearer token and never logged.
 
 ### 8.11 Slow LLM worker — `llm_worker.py`
 
-`SlowLLMWorker` (Spec §12) turns an `ExpansionRequest` (source module,
-problem description, world-state snapshot, existing action ids) into at
-most one new macro:
+`SlowLLMWorker` (Spec §12) turns an `ExpansionRequest` (source, problem
+description, world-state snapshot, existing action ids) into at most one
+new macro:
 
 * **Generator selection.** (1) a caller-supplied `custom_generator`
   (used by tests and embedders); else (2) the **Codex CLI**:
@@ -852,156 +871,164 @@ most one new macro:
   matching `PROPOSAL_JSON_SCHEMA` (id, description ≤ 200 chars,
   `maximum_duration` 2–8, termination phrase, 2–8 primitives drawn from
   the enum of allowed primitive ids, strategy id); else/on any failure
-  (3) a **deterministic fallback template** per source module
-  (e.g. survival/combat → `evasive_burst_n`: strafe-right, shoot,
-  strafe-left, backpedal; navigation → `corner_clear_step_n`: use, turn,
-  forward, strafe). The fallback guarantees the slow path is testable
-  and useful with no LLM at all.
+  (3) a **deterministic fallback template** per source
+  (e.g. survival/combat → `evasive_burst_n`; navigation →
+  `corner_clear_step_n`). Generation only proposes; it never decides.
 * **Concurrency.** One background thread, single-flight: `enqueue_request`
-  returns `False` while busy, and the controller only enqueues when not
-  busy. Results wait in a completed list until the controller drains
-  them at phase 0 of a tick. The worker never touches the vocabulary
-  itself — generation and admission are separate (next section).
+  returns `False` while busy. Results wait until the controller drains
+  them at the start of a tick. The worker never touches the vocabulary.
+* **Who asks.** Nothing in play asks for a proposal in this version: the
+  modules' expansion rules are gone, and System 2's menu reflector will
+  decide when a new move is needed. `DoomDecisionController.request_expansion(source,
+  description)` is the entry point it (and tests, and embedders) will use.
 
 ### 8.12 Admission pipeline — `admission.py`
 
-`ProposalAdmissionPipeline.evaluate_and_admit()` (Spec §13) — the gate
-every proposal must pass; rejection at any step returns
-`AdmissionDecisionResult(admitted=False, rejection_reason=…)`:
+`ProposalAdmissionPipeline.evaluate_and_admit()` (Spec §13). The first
+three stages are bounds a proposal must satisfy before any instance sees
+it; the decision is the admit instance's:
 
 1. **Parse**: extract the JSON object (fences tolerated) and validate
-   into `MacroActionProposal` (id 2–64 chars, description 5–256,
-   duration 1–16, ≥ 1 primitive).
-2. **Legality**: id must match `^[a-z][a-z0-9_]{1,62}$`, must not shadow
-   a built-in primitive, and must construct a valid `ActionSpec`
-   (known primitives only, expansion length ≤ duration) — this reuses
-   the same validator as hand-written actions.
+   into `MacroActionProposal`.
+2. **Legality**: id `^[a-z][a-z0-9_]{1,62}$`, no shadowing of a built-in,
+   and a valid `ActionSpec` (known primitives only, expansion ≤ duration).
 3. **Sandbox**: `BoundedSimulator.project_action()` on the reference
-   state; a rollout with survival probability 0 from a
-   non-critical (HP > 25) state is rejected as predicted-fatal.
-4. **d1-ultra gate** (only when d1 is enabled): a `noul` question
-   (“should this bounded macro be admitted as safe, finite and
-   tactically useful?”) plus a tactical-quality `score`. Rejected when
-   `noul < 0.40`, unless quality ≥ 0.85 *and* noul ≥ 0.20 (a strong
-   macro with a lukewarm safety vote survives; a weak one doesn't).
-5. **Admit**: `vocabulary.register_admitted_macro(spec)` and an archive
-   entry seeded with the sandbox expected value (success rate 0.65).
+   state; a rollout predicted fatal from a state above 25 health fails
+   the bound.
+4. **The admit instance** (`instance.run_admit`, on the slow path's own
+   client): one d1-ultra call whose state is `admit_evidence()` — the
+   proposal, the sandbox rollout labelled as a rough projection, the
+   request, and the current menu — and whose one question is the `admit`
+   noul. A yes (≥ 0.5) admits; anything else, a miss included, rejects.
+   There are no thresholds of our own.
+5. **Admit**: the result carries the admitted `ActionSpec` and its
+   strategy; the controller queues a configuration with the macro added,
+   which joins the menu (and the archive) at the next tick boundary.
 
-Only step 5 mutates anything. Admitted macros persist across runs via
-`runs/<scenario>/macros.json` and are re-validated on load (§13).
+Every stage's pass or fail and reason, the sandbox summary and the
+admit instance's full result are recorded in `proposals.jsonl`.
+Admitted macros persist via `runs/<scenario>/macros.json` and are
+re-validated on load (§13).
 
-### 8.13 Controller orchestration — `controller.py`
+### 8.13 Controller and strategy archive — `controller.py`, `archive.py`
 
-`DoomDecisionController` wires all of the above (§7) and owns the small
-amounts of cross-tick state:
+`DoomDecisionController(env, config, api_key, transport, custom_llm_generator,
+learner)` wires everything (§7). It raises `MissingAPIKey` without a key
+(tests pass a placeholder key with a fake transport). Besides the tick it owns:
 
-* **Per-module local memories** — the counters the expansion triggers
-  read: `consecutive_damage_ticks` (any incoming damage last tick),
-  `repeated_failures` (arbiter-executed step had damage > 8 or death),
-  `consecutive_stalls` (navigation only: chose a `move_*`-containing
-  action but displaced < 4 units), `plateau_ticks`. These are updated
-  from the executed result each tick, after module evaluation.
-* **Cached reactive action** — the last arbiter pick, reused in
-  `critical` budget mode.
-* **Dashboard/recorder hooks** — opt-in; dashboard failures are caught
-  and permanently disable the dashboard, never play.
-* **`replace_module(name, module)`** — validates the slot name and swaps
-  the module in the evaluator (used by the acceptance test to inject a
-  custom goal module that adopts an admitted macro).
-* **`restore_macros(specs)` / `admitted_macros()`** — round-trip
-  non-built-in vocabulary entries for persistence and for the
-  dashboard/metrics count.
-* **`close()`** — drains pending proposals (so their traces are logged),
-  shuts down the module pool, slow worker, d1 executor and the game.
+* **The configuration hook** — `request_configuration(new)` queues a
+  configuration; `_apply_pending_configuration()` applies it at the next
+  tick boundary and syncs the vocabulary (admitted macros registered,
+  dropped ones retired) and the active strategy. `restore_macros(specs)`
+  sets the initial configuration's macros before the first tick, or
+  queues them after. `admitted_macros()` and `known_actions()` (the
+  vocabulary plus a pending configuration's macros) serve metrics and
+  the bundle's action catalog.
+* **The slow path** — `request_expansion(source, description)` enqueues an
+  `ExpansionRequest` if the worker is idle; `drain_slow_path()` logs the
+  finished proposals now rather than at the next tick (used at the end of
+  a live episode).
+* **Counters** — decisions, novelty per `context|action`, the under-fire
+  and stall streaks, the central-miss streak, missed ticks.
+* **Episode accounting** — `run_episode` sums the client counters' deltas
+  into `cost` (calls, tokens, USD), `misses` (total, missed ticks, by
+  instance and reason) and `instances`.
+* **`use_log_dir(path)`** points the logs, history and frames at another
+  folder (each live episode is its own bundle); **`close()`** drains
+  proposals, shuts down System 1, both clients, the slow worker and the game.
 
-`ControllerConfig` (frozen pydantic) is the play-time configuration;
-see §12 for every field.
+**The strategy archive** (`archive.py`) is a bounded store of named ways
+of playing, kept as evidence for the `archive` channel: at most 12
+entries (`strategy_id`, context signature, action sequence, observed
+reward, success rate, failure modes, usage count, novelty signature);
+three are seeded. The controller records each executed decision's
+outcome against the active strategy (EMA α 0.3; a step “fails” on damage
+> 8 or death). Admitting beyond capacity evicts the oldest non-active
+entry. Which strategy is active is the configuration's, not the
+archive's: the four-way strategy meta-decision is gone, and System 2's
+strategy reflector will decide.
 
-### 8.14 Logging & visualisation — `logger.py`, `visualizer.py`, `charts.py`
+### 8.14 Traces & visualisation — `logger.py`, `tracing.py`, `visualizer.py`, `charts.py`
 
-**`DecisionLogger`** appends two JSONL streams (`ticks.jsonl`,
-`proposals.jsonl`) under `log_dir`. `TickTrace` fields: timestamp, tick,
-state hash, context signature, budget mode, available actions, per-module
-outputs (top action, confidence, uncertainty, expansion request, local
-*and* d1 probability maps, `used_d1_ultra`), projection summaries,
-arbiter distribution, selected action, primitive steps actually
-executed, full exploration state, active strategy, reward outcome, d1
-arbiter distribution, and a `learning` block (network share for the
-selected action, gate share, module weights, explored flag, exploration
-floor). `ProposalTrace` records request context, raw proposal, parsed
-proposal, validation/admission outcome, admitted id and d1 probability;
-`record_macro_performance()` additionally appends follow-up traces with
-the rewards later obtained by executing an admitted macro, so its
-subsequent performance is auditable.
+**`DecisionLogger`** appends `ticks.jsonl` and `proposals.jsonl` under
+the log folder. Trace schema version 2 (`logger.TRACE_SCHEMA_VERSION`):
 
-Since trace schema version 1 (`logger.TRACE_SCHEMA_VERSION`) each tick
-also carries the decision's *anatomy*, built by `tracing.py` from values
-the fast path already computes (nothing in it feeds back into control):
-`state` (vitals, position, walls, every visible enemy and pickup with
-angle, distance and screen box), `pruned_actions` (each vocabulary action
-left off the menu → the first precondition it failed, from
-`PreconditionSpec.failing_condition`, or `unsupported_by_scenario`),
-per-module `utility_heuristic` / `utility_learned` / `trust` /
-`utility_blended` / `d1_weight` / `memory` inside `module_outputs`,
-`arbiter` (scores, the full component breakdown including the module-vote
-and projection terms, table/gate/used module weights, gate share,
-temperature, `pick_rule` ∈ committed/explored/greedy/sampled/critical_cached,
-score margin, committing module), `projection_chain` (the selected
-action's rollout step by step), `steering` (the 4-way strategy decision
-with scores, probabilities, the active strategy before/after and the
-archive), `exploration_state.terms` (the four quarter-terms and three
-dampers), `outcome` (what the action changed plus the five per-module
-rewards), `slow_path_request`, `budget_sec` and `timing_ms`. All of these
-are optional, so traces written before them still parse. `ProposalTrace`
-gains the drain `tick`, `source` (codex/template/custom), `source_module`,
-per-stage `stage_results` (parse → legality → sandbox → d1 → admit, each
-with pass/skip and a reason), `sandbox_summary` and `admitted_strategy_id`.
+| `TickTrace` field | Contents |
+|---|---|
+| `tick`, `episode_id`, `timestamp` | which decision |
+| `configuration_version`, `configuration_changed` | the configuration the tick ran under |
+| `state_hash`, `context_signature`, `state` | the frozen snapshot (vitals, position, walls, every enemy and pickup) |
+| `available_actions`, `pruned_actions` | the legal menu; each other action → the first precondition it failed, or `unsupported_by_scenario` |
+| `instances` | the six `InstanceResult`s in order (five senses, then `central`): scope, verbatim evidence, `image_ref` (`frames/<tick>.jpg` when `frame` is in scope), answers in full, spoke, strength, action, reason, missed, miss reason, raw answer, latency, usage |
+| `messages` | the messages the central received |
+| `pick`, `executed_action`, `primitive_steps_executed`, `missed` | how the answer became the action, and what the motor pressed (`idle` steps on a miss) |
+| `outcome`, `reward_outcome` | what the action changed, with the five per-network rewards |
+| `exploration_level`, `active_strategy` | from the configuration |
+| `projection_results_used`, `projection_chain` | the simulator's numbers (also in the evidence), and the executed action's rollout |
+| `slow_path_request`, `timing_ms`, `usage` | the request in flight; acquire, evidence, senses, central, decision, motor, total; the tick's tokens and cost |
+
+`ProposalTrace` records request context, raw and parsed proposal, the
+per-stage results (parse → legality → sandbox → d1 → admit), the sandbox
+summary, the admission decision, the admitted id and strategy, and
+`admit_instance` with `d1_admission_probability` (the admit instance's
+probability). `record_macro_performance()` appends follow-up records of
+the rewards an admitted macro later earned.
 
 **`visualizer.render_hud_frame()`** composes a 1080×480 split-screen
-frame (640×480 game view with tick/HP/action banners + a right panel
-showing the five modules' top actions and confidences, the arbiter's
-top-6 distribution, projection and exploration readouts).
-`EpisodeRecorder` collects these when `record_frames` is on and exports
-GIF (Pillow) or MP4 (via `ffmpeg`). `render_decision_dashboard()` /
-`LiveDecisionDashboard` render the 560×760 Tk side window used with
-`--visible`: d1 status, per-module d1-vs-local picks, the d1 arbiter
-pick vs the executed action, and the latest Codex recommendations with
+frame: the game view, and a panel with the six instances (spoke or
+silent with the strength bar, the action and reason, missed; the
+central's pick and probability), the configuration version, the level,
+the strategy, the messages and the tick's cost. `EpisodeRecorder` collects
+frames for GIF (Pillow) or MP4 (`ffmpeg`). `render_decision_dashboard()`
+/ `LiveDecisionDashboard` draw the 560×760 Tk side window used with
+`--visible`: the same instance rows, then the latest proposals with
 ADMITTED/REJECTED tags.
 
-**`charts.render_learning_curves()`** reads `metrics.jsonl` and draws
-the 2×2 dark-themed `learning_curves.png`: episode reward, cleared/
-survived rates, health & kills, and network-share + per-module losses
-(log scale). Rolling means use the same `rolling_mean` helper that
-best-checkpoint selection uses.
+**`charts.render_learning_curves()`** draws `learning_curves.png` from
+`metrics.jsonl`: episode reward, cleared/survived rates, health & kills,
+and missed ticks with the value-network losses.
 
-### 8.15 Episode bundles & the web explainer — `tracing.py`, `export.py`, `web/`
+### 8.15 Episode bundles & the web explainer — `export.py`, `serve.py`, `web/`
 
 The web explainer is a static site that replays one recorded episode
-tick by tick and explains every level of the decision with a three-layer
-explainer (one sentence, a paragraph, and the formula with that tick's
-numbers substituted). The browser never talks to ViZDoom: it reads
-**episode bundles** written by `python -m system1_doom.export` (§11).
+tick by tick. The browser never talks to ViZDoom: it reads **episode
+bundles** written by `python -m system1_doom.export` (§11).
 
-A bundle is one folder per episode:
+**Bundles, schema version 2.** A bundle is one folder per episode, every
+decision in it made by d1-ultra:
 
 | File | Contents |
 |---|---|
-| `episode.json` | `EpisodeMeta`: schema version, scenario, seed, model (`heuristics`/`best`/`latest`), checkpoint info, which brains were on, play config, the `run_episode` result, tick range, the action catalog (description, primitives, preconditions, execution cost, 12-number encoding) and each module's question |
-| `ticks.jsonl` | One enriched `TickTrace` per tick (§8.14) |
-| `proposals.jsonl` | One `ProposalTrace` per slow-path proposal |
-| `frames/00042.jpg` | The 320×240 screen the controller saw when it **decided** tick 42 (captured at state acquisition by `RecordingBridge`, so overlays drawn from `state` line up with the picture); `frames/end.jpg` is the screen after the last action |
-| `metrics.jsonl`, `evaluation.json`, `macros.json` | Copied from the run folder when present: one `MetricsRow` per training episode, the `EvaluationSummary` of `train.evaluate`, and the admitted macros as `ActionSpec`s |
-| `trust.json` | `TrustFile`: `action_counts` (keyed `<context>\|<action>`), `context_counts`, `trust_count`, network share and episodes from the loaded checkpoint |
+| `episode.json` | `EpisodeMeta`: schema version 2, name, title, scenario, seed; `decider` (`d1-ultra`); `value_networks` (`none`/`best`/`latest`) and the checkpoint; the slow path; the play config (call budget, seed, max ticks); `configuration_start` and `configuration_end`; the `run_episode` result with `finished_reason`; `cost` (calls, tokens, USD), `misses` (total, missed ticks, by instance and reason) and per-instance counters; tick range, buttons, frames, the action catalog, the files, package version and time |
+| `ticks.jsonl` | One schema-2 `TickTrace` per tick (§8.14) |
+| `history.jsonl` | One `TickRecord` per tick (§8.8): the inputs every instance's evidence re-renders from |
+| `relevance.json` | The relevance ledger after the episode |
+| `proposals.jsonl` | One `ProposalTrace` per slow-path proposal, with the admit instance |
+| `frames/00042.jpg` | The 320×240 screen d1-ultra saw when it decided tick 42 (the image of every instance with `frame` in scope); `frames/end.jpg` is the screen after the last action |
+| `metrics.jsonl`, `evaluation.json`, `macros.json`, `trust.json` | Copied from the run folder when present: one `MetricsRow` per training episode (with finished reason, missed ticks and cost), the `EvaluationSummary` (no, latest and best networks), the admitted macros, and the tried counts as `TrustFile` |
 
-`--schema` dumps one JSON Schema (from the pydantic models) whose
-`$defs` hold `EpisodeMeta`, `TickTrace`, `ProposalTrace`,
-`BundleIndexEntry`, and the models of the copied run files
-(`MetricsRow`, `EvaluationSummary`, `TrustFile`, `ActionSpec`);
-`web/scripts/gen-types.mjs` turns it into `web/src/schema/bundle.ts`, so
-the Python models and the browser cannot drift apart. `--check`
-validates a bundle and every file `episode.json` lists against the
-models and checks that every tick has a frame; `--index DIR` writes `DIR/index.json`, the
-list the app's episode picker reads.
+`--check BUNDLE` validates `episode.json` and every file it lists against
+the models, and per tick: six instances with evidence, every
+`image_ref` on disk, the executed action equal to the pick, the
+configuration version within the episode's range, a frame. A bundle of
+another schema version gets one problem (`episode.json: schema_version 1,
+expected 2`); an episode that ended as `connection_lost` is reported and
+never shippable (`export` exits 1 after writing it). `--index DIR` writes
+`DIR/index.json`, listing only shippable schema-2 bundles. `--schema
+OUT.json` dumps one JSON Schema whose `$defs` hold `EpisodeMeta`,
+`TickTrace`, `ProposalTrace`, `TickRecord`, `RelevanceLedger`,
+`BundleIndexEntry` and the run-file models; the app's generated types
+(`web/scripts/gen-types.mjs` → `web/src/schema/bundle.ts`) are
+regenerated from it in the design's third pull request, together with
+the app's `SUPPORTED_SCHEMA_VERSION`.
+
+**The app is on schema version 1 until then.** Everything below
+describes the app and its four shipped recordings as they are: recorded
+by the architecture this design removed (five modules, an arbiter, an
+exploration controller, a learned gate), and read by an app that rejects
+any bundle whose schema version is not 1. The third pull request
+replaces the recordings with episodes d1-ultra plays and rewrites the
+screens around the instances (the design, §10).
 
 The app (`web/`, see `web/README.md`) has six screens, picked from tabs
 in the top bar (keys 1 to 6): Watch, The chain, The inspector, The
@@ -1127,10 +1154,10 @@ with the other brain on the same seed: `deadly_corridor-heuristics-9`
 and `deadly_corridor-learned-9` (the 300-episode checkpoint, which
 clears the corridor), and `deadly_corridor-heuristics-11` and
 `deadly_corridor-learned-d1-11`, the same checkpoint with d1-ultra's
-advice. Export normally plays in `async_cached` mode, where d1's answers
-come from a cache that is never awaited, so a recording would show d1
+advice. The export of that architecture normally played in `async_cached` mode, where d1's answers
+came from a cache that is never awaited, so a recording would show d1
 only on ticks whose situation had been answered before. The d1 recording
-was made with `--d1-sync` instead (§11): `execution_mode` `sync_d1` and a
+was made with its `--d1-sync` flag instead (since removed): `execution_mode` `sync_d1` and a
 tick budget of 5 s. The reduced and critical thresholds are absolute
 (a budget of 12 ms or 4 ms or less), so every tick keeps the full budget
 and waits for d1's batched answers: each module's action and whether it
@@ -1171,195 +1198,200 @@ tabs are the glossary (the terms of §18 and the words the app's own copy
 leans on, each with its meaning, this tick's value where there is one,
 links to the panels that show it, and its place in the code; every
 explanation links its glossary words, once each), the seven principles
-of §1 with where the app shows each, this recording (from `episode.json`
+of the recorded architecture with where the app shows each, this recording (from `episode.json`
 and the index: which brains were on, how it was played, the checkpoint,
 the result, the files, the `python -m system1_doom.export` command
-that makes it again, and the `python -m system1_doom.serve` command that
-plays the same game live), and the keyboard (1 to 6 switch screens, t
+that made it, and the `python -m system1_doom.serve` command that
+played the same game live, both in that architecture's flags), and the keyboard (1 to 6 switch screens, t
 starts the tour, f toggles the depth). It is a modal dialog: focus stays inside
 until Esc or a click outside closes it, and it is not in the URL hash.
 
 **Live mode.** `python -m system1_doom.serve` plays episodes with the
 same bridge, controller and configuration as `export` (`record_bundle`
-is split into the build, the episode and the finish that both use) and
-writes each one as a bundle in `live/live-<k>`, with seeds `seed,
-seed+1, …`. The controller is built once, so a macro admitted in one
-live episode stays on the menu for the next. One local server
-(127.0.0.1:8765 by default) answers on one origin: the built app, the
-shipped recordings, the live episodes (the one in progress from memory,
-so a reader never sees a half-written line; finished ones from disk),
-`live/status.json` (what is playing, the finished live episodes and the
-settings) and `live/events`, a stream of server-sent events: `hello` on
-connect; `start` with the opening `episode.json`; `tick` with each trace
-as it is decided, its frame already on disk; `proposals` with the whole
-list, and the action catalog, whenever they change; `end` with the final
-meta and its index line; `stopped` when play stops. The invariant holds
-in the server too: publishing a tick is a queue put per viewer, a viewer
-whose queue fills is dropped (its browser reconnects and reloads the
-files), and the pacing (`--pace`, 0.23 s per tick by default, eight game
-frames) is a wait after a tick, never inside one. The app asks for
-`live/status.json` at start, and a 404 means there is no live mode: a
-static deployment looks exactly as before. With a status, a visit with
-no hash or with `#live` lands on Watch with the live episode, the picker
-gains a Live group, the bar a LIVE badge, and the cursor follows the
-newest tick (Watch never loops while it follows), riding into each new episode, until the viewer moves it;
-Follow or the key l resumes, and `#live/<screen>` links to whatever is
-playing. A slow-path request still in flight when an episode ends is
-waited for (at most the Codex timeout), so its proposal is logged in the
-episode that asked. Ctrl+C finishes the current episode's files with
-`finished` false. A finished live episode is an ordinary bundle: `export --check
-live/live-1` passes and the app opens it like a shipped recording.
+is split into the build, the episode and the finish that both use), every
+decision made by d1-ultra, and writes each episode as a schema-2 bundle in
+`live/live-<k>`, with seeds `seed, seed+1, …`. The controller is built
+once, so a macro admitted in one live episode stays in the configuration
+for the next; `use_log_dir` points the logs, history and frames at each
+episode's folder in turn. One local server (127.0.0.1:8765 by default)
+answers on one origin: the built app, the shipped recordings, the live
+episodes (the one in progress from memory, so a reader never sees a
+half-written line; finished ones from disk), `live/status.json` (what is
+playing, the finished live episodes, the settings including `decider`
+and `networks`, and `schema_version` 2) and `live/events`, a stream of
+server-sent events: `hello` on connect; `start` with the opening
+`episode.json`; `tick` with each schema-2 trace as it is decided, its
+frame already on disk; `proposals` with the whole list, and the action
+catalog, whenever they change; `end` with the final meta and its index
+line; `stopped` when play stops. Publishing a tick is a queue put per
+viewer, a viewer whose queue fills is dropped, and the pacing (`--pace`,
+0.23 s per tick by default, eight game frames) is a wait after a tick,
+never inside one; a tick itself takes as long as its d1-ultra calls (about
+0.8 s measured, §15). The current app asks for `live/status.json` at
+start but reads schema version 1 only, so it does not render these
+ticks until the third pull request; the stream, the status and the
+bundles are already version 2. A slow-path proposal still in flight when
+an episode ends is waited for (at most the Codex timeout), so it is
+logged in the episode that asked. Ctrl+C finishes the current episode's
+files with `finished` false. A finished live episode is an ordinary
+bundle: `export --check live/live-1` passes.
 
 ---
 
 ## 9. The slow path end-to-end
 
 ```text
-module detects a failure pattern (e.g. navigation stalls ≥ 4)
-  → DecisionOutput.request_action_expansion = True (+ description)
-  → controller (if worker idle) enqueues ExpansionRequest   [tick N]
+request_expansion(source, description)          [any thread, e.g. System 2 later]
+  → ExpansionRequest enqueued if the worker is idle (single flight)
   → background thread: codex exec (20 s cap) or fallback template
-  → AdmissionPipeline: parse → legality → sandbox → d1 gate
-  → AdmissionDecisionResult queued
-  → controller drains it at phase 0 of a later tick, logs ProposalTrace
-  → if admitted: macro is in the vocabulary + archive from that tick on
-  → modules can rank it, the arbiter can pick it (committed-pick rule
-    lets a convinced module make it stick), the learner encodes and
-    scores it immediately, and its rewards flow into proposals.jsonl
+  → parse → legality → sandbox (bounds) → admit instance (one d1-ultra noul,
+    on the slow path's own pool of 2)
+  → AdmissionDecisionResult drained at the start of a later tick, ProposalTrace logged
+  → if admitted: a configuration with the macro is queued
+  → next tick boundary: the configuration version bumps, the macro joins the
+    vocabulary and the archive, appears on the menu when its preconditions
+    hold, the value networks encode it at once, and its rewards flow into
+    proposals.jsonl as follow-up records
 ```
 
-Invariants: the fast loop never waits for any of this; at most one
-request is in flight; nothing is admitted without passing the same
-`ActionSpec` validator as built-in actions; disabling the slow path
+Invariants: no tick waits for any of this; at most one request is in
+flight; nothing is admitted without passing the same `ActionSpec`
+validator as built-in actions and the admit instance's yes; the
+configuration changes only at a tick boundary; disabling the slow path
 (`enable_slow_llm=False`) removes the whole column with no other change.
+In this version nothing in play calls `request_expansion`: the design
+gives that decision to System 2's menu reflector.
 
 ---
 
 ## 10. The learning loop end-to-end
 
 ```text
-train.py / cli.py --learn
+train.py / cli.py --learn          (every decision made by d1-ultra)
   per episode:  controller.run_episode()
-                  └─ every tick: Learner.record_step(state_vec,
-                       action_vec, result, module_top_actions, context)
+                  └─ every executed tick: Learner.record_step(state_vec,
+                       action_vec, result, action_id, context)
                   └─ episode end: Learner.end_episode()
                        8-step γ=0.9 returns → RunningStats → ReplayBuffer
-                       trust counters (context|action, context) += 1
+                       tried counts (context|action, context) += 1
+                  └─ episode end: relevance ledger updated and saved
                 learn_from_episode(): Learner.train() — 200 Adam steps,
-                  batch 256 (value nets on own rewards; gate on goal
-                  return where its module's pick was executed)
-                metrics row appended; checkpoint.pt + replay.npz +
-                  macros.json saved; if rolling-20 reward beats
+                  batch 256, each value net on its own reward's returns
+                metrics row appended (reward, kills, finished reason,
+                  missed ticks, cost, d1 calls, losses …); checkpoint.pt +
+                  replay.npz + macros.json saved; if rolling-20 reward beats
                   best_score → checkpoint copied to best.pt
                 learning_curves.png redrawn every --chart-every episodes
-  per tick (play): Learner.module_utilities(state, actions) → per-module
-                  predictions; λ = n/(n+25) per (context, action) blends
-                  them into module utilities; gate_weights(state) blended
-                  into arbiter module weights by gate trust
+  per tick (play): Learner.predict_returns(state, menu) and
+                  tried_counts(context, menu) → the `values` channel
 ```
 
 Key behaviours: resume is automatic (`checkpoint.pt` + `replay.npz` +
-episode numbering continue); `best.pt` usually outperforms the latest
-checkpoint because value learning oscillates, so `cli.py` plays with
-`best.pt` by preference while `--learn` continues from `checkpoint.pt`;
-exploration during training is the `exploration_floor`, decayed linearly
-0.6 → 0.05 over the first 100 episodes (`exploration_schedule`);
-`--evaluate` replays identical seeds (`EVAL_SEED_BASE = 10_000 + i`)
-greedily with heuristics vs latest vs best and writes `evaluation.json`.
+episode numbering continue); `cli.py` shows `best.pt`'s predictions by
+preference while `--learn` continues from `checkpoint.pt`; there is no
+exploration schedule — the exploration level is part of the
+configuration (`--explore` plays the whole session at the explore level,
+where the central's answer is drawn from its own distribution);
+`--evaluate N` replays identical seeds (`EVAL_SEED_BASE = 10_000 + i`)
+with no networks, the latest and the best as evidence, and writes
+`evaluation.json`. Training is now a d1-ultra cost: about 6 calls per
+decision.
 
 ---
 
 ## 11. Entry points & CLI reference
+
+All four entry points that play (`cli`, `train`, `export`, `serve`) exit
+`2` with a message when `LIQUID_API_KEY` is missing, before touching the
+game; each takes `--call-budget SEC` (per-call budget, default 5),
+`--explore`/`--exploit` (the starting exploration level, default
+exploit) and `--seed` (the game's seed and System 1's draw seed).
 
 ### `python -m system1_doom.cli` — play / watch
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--scenario` | `deadly_corridor.cfg` | ViZDoom scenario cfg (name or path) |
-| `--episodes N` | 0 | Play N complete episodes (cap `--ticks` each, default 500); prints a JSON summary with per-episode cleared/reward/kills/actions |
-| `--ticks N` | 15 (or episode cap) | Control ticks to run when `--episodes` is unset |
-| `--mode` | `sync_d1` | `sync_d1` (blocking batched d1 per tick, budget 5 s) or `async_cached` (cache-only, budget 0.04 s) |
-| `--disable-d1` | — | No Liquid calls at all |
-| `--disable-slow-llm` | — | No Codex slow path |
-| `--visible` | — | 640×480 ViZDoom window + live dashboard (unless `--no-dashboard`); default step delay becomes 120 ms |
+| `--episodes N` | 0 | Play N complete episodes (cap `--ticks` each, default 500) |
+| `--ticks N` | 15 (500 with `--episodes`) | Decision cap: of the one episode played without `--episodes`, or per episode with it |
+| `--call-budget SEC` | 5 | Per-call budget for each d1-ultra call |
+| `--explore` / `--exploit` | exploit | Starting exploration level |
+| `--seed` | — | ViZDoom seed and System 1's draw seed |
+| `--configuration FILE` | the design's | A `configuration.json` to start from (§8.4) |
+| `--disable-slow-llm` | — | No slow path |
+| `--visible` | — | 640×480 ViZDoom window + the six-instance side window (unless `--no-dashboard`); default step delay becomes 120 ms |
 | `--step-delay-ms` | 0 (120 if visible) | Pause after each game step |
 | `--save-gif/--save-mp4` | — | Record HUD frames and export on exit |
-| `--log-dir` | `logs` | Where `ticks.jsonl`/`proposals.jsonl` go |
-| `--run-dir` | `runs/<scenario-stem>` | Run folder to load trained models/macros from |
-| `--no-learned` | — | Ignore `best.pt`/`checkpoint.pt`; pure heuristics |
-| `--learn` | — | Continue training between episodes (exploration floor 0.05); requires torch |
+| `--log-dir` | `logs` | Where `ticks.jsonl`, `history.jsonl`, `proposals.jsonl` and `frames/` go |
+| `--run-dir` | `runs/<scenario-stem>` | Run folder: trained networks, macros, the relevance ledger |
+| `--no-learned` | — | Load no value networks (the `values` channel says so) |
+| `--learn` | — | Keep training the value networks between episodes; requires torch |
 
-Output is a JSON summary on stdout (episode results, d1 call/error
-counts, log paths; per-episode training lines go to stderr when
-`--learn`). Without `--episodes` it runs the fixed tick count and
-reports total reward and the action sequence.
+Output is a JSON summary on stdout: `decider`, the configuration
+version, level and call budget, per-episode results (cleared, finished
+reason, ticks, reward, health, armor, kills, cost, misses, mean tick
+time, actions), each instance's counters (calls, answered, misses,
+retries, mean latency, tokens, cost) and the log paths. Exit code 1 when
+an episode ended as `connection_lost`.
 
 ### `python -m system1_doom.train` — train / evaluate
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--scenario` | `deadly_corridor.cfg` | Scenario to train on (any cfg; metrics/models are per run folder) |
-| `--episodes` | 100 | Episodes this session (numbering resumes) |
+| `--scenario` | `deadly_corridor.cfg` | Scenario to train on |
+| `--episodes` | 50 | Episodes this session (numbering resumes) |
 | `--max-ticks` | 500 | Decision cap per episode |
 | `--run-dir` | `runs/<scenario-stem>` | Run folder |
-| `--fresh` | — | Delete models/history in the run folder first |
+| `--fresh` | — | Delete the run folder's models, ledger and history first |
 | `--train-steps` | 200 | Gradient steps after each episode |
-| `--trust-count` | 25 | Tries of an action in a context before its network gets 50% weight |
-| `--explore-start/--explore-end/--explore-decay` | 0.6 / 0.05 / 100 | Linear exploration-floor schedule |
+| `--trust-count` | 25 | Tries at which the reported network share reaches 50% |
 | `--chart-every` | 5 | Redraw `learning_curves.png` every N episodes |
-| `--seed` | — | ViZDoom + network seed |
-| `--d1` | off | Use d1-ultra (`async_cached`) while training |
-| `--codex` | off | Let the slow Codex worker propose macros while training |
-| `--evaluate N` | 0 | Skip training; compare heuristics/latest/best on N identical seeded episodes and write `evaluation.json` |
+| `--seed` | — | ViZDoom, network and System 1 draw seed |
+| `--call-budget`, `--explore`/`--exploit` | 5 / exploit | As above |
+| `--codex` | off | Let the slow worker call the Codex CLI |
+| `--evaluate N` | 0 | Skip training; play N identical seeded episodes with no, the latest and the best networks as evidence and write `evaluation.json` |
 
-One line per episode is printed
-(`ep … reward … kills … hp … clear/dead/alive … net % … explore … loss … ticks … s`),
-followed by a session summary (first-vs-last window means, network share,
-replay size). Exit code 2 with the install hint when torch/matplotlib is
-missing, and on checkpoint mismatch (with a `--fresh` remedy).
+One line per episode is printed (reward, kills, health, outcome, network
+share, missed ticks, cost, loss, ticks, seconds), then a session summary.
+Exit code 2 without the key, without torch/matplotlib (with the install
+hint), or on a checkpoint mismatch (with a `--fresh` remedy).
 
-### `python -m system1_doom.export` — record episode bundles for the web explainer
+### `python -m system1_doom.export` — record episode bundles
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--scenario` | `deadly_corridor.cfg` | ViZDoom scenario cfg |
 | `--episodes N` | 1 | Episodes to record, with seeds `seed, seed+1, …` |
-| `--seed` | 7 | Seed of the first episode (`env.restart_episode(seed)` before each) |
-| `--model` | `heuristics` | `heuristics`, `best` (`best.pt`) or `latest` (`checkpoint.pt`) from the run folder |
-| `--run-dir` | `runs/<scenario-stem>` | Run folder with trained models, macros and metrics |
-| `--out` | `bundles/<stem>-<model>-<seed>` | Bundle folder (a parent folder when `--episodes` > 1) |
+| `--seed` | 7 | Seed of the first episode (also System 1's draw seed) |
+| `--networks` | `none` | Value networks for the `values` channel: `none`, `best` (`best.pt`) or `latest` (`checkpoint.pt`) from the run folder |
+| `--run-dir` | `runs/<scenario-stem>` | Run folder with trained networks, macros, metrics and the ledger |
+| `--out` | `bundles/<stem>-<networks>-<seed>` | Bundle folder (a parent folder when `--episodes` > 1) |
 | `--name`, `--title` | folder name / generated | How the app lists the episode |
 | `--max-ticks` | 500 | Decision cap per episode |
-| `--d1` | off | Use d1-ultra (needs `LIQUID_API_KEY`) |
-| `--d1-sync` | off | With `--d1`: play in `sync_d1` mode with a 5 s tick budget, so every tick waits for d1-ultra's answer instead of reading a cache (§8.15) |
-| `--codex` | off | Let the slow path call the Codex CLI; otherwise it runs on fallback templates |
+| `--call-budget`, `--explore`/`--exploit` | 5 / exploit | As above |
+| `--codex` | off | Let the slow path call the Codex CLI; otherwise it runs on templates |
 | `--no-slow-path` | — | Switch the slow path off |
-| `--deterministic` | off | Always take the arbiter's top score |
-| `--check BUNDLE` | — | Validate a bundle and exit (exit code 1 on problems) |
-| `--index DIR` | — | Write `DIR/index.json` listing its bundles and exit |
-| `--schema OUT.json` | — | Write the bundle JSON Schema and exit |
+| `--check BUNDLE` | — | Validate a bundle and exit (exit code 1 on problems); no key needed |
+| `--index DIR` | — | Write `DIR/index.json` listing its shippable bundles and exit; no key needed |
+| `--schema OUT.json` | — | Write the bundle JSON Schema and exit; no key needed |
 
-Recording uses `async_cached` mode with a 40 ms budget (`sync_d1` with
-5 s under `--d1-sync`; `--d1-sync` without `--d1` is an error), exploration
-floor 0 and `record_experience` off, so a replay only reads the
-networks. To publish a bundle in the app:
+Recording keeps `record_experience` off, so a recording only reads the
+networks; it does update the run folder's relevance ledger, which is
+copied into the bundle. Exit code 1 when an episode ended as
+`connection_lost` (the bundle is written, and reported as not shippable).
 
 ```bash
-python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --model latest \
-    --out web/public/episodes/deadly_corridor-learned-9
-python -m system1_doom.export --check web/public/episodes/deadly_corridor-learned-9
-python -m system1_doom.export --index web/public/episodes
-
-# The d1 recording: needs LIQUID_API_KEY, about a minute and 134 calls on seed 11.
-python -m system1_doom.export --scenario deadly_corridor.cfg --seed 11 --model latest --d1 --d1-sync \
-    --out web/public/episodes/deadly_corridor-learned-d1-11
+python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --networks best \
+    --out bundles/deadly_corridor-best-9
+python -m system1_doom.export --check bundles/deadly_corridor-best-9
+python -m system1_doom.export --index bundles
 ```
 
-### `python -m system1_doom.serve` — play live and stream to the web explainer
+### `python -m system1_doom.serve` — play live and stream ticks
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--scenario`, `--seed`, `--model`, `--run-dir`, `--max-ticks`, `--d1`, `--d1-sync`, `--codex`, `--no-slow-path`, `--deterministic` | as `export` | The brain and the play, as for `export`; episode k gets seed `seed + k - 1` |
+| `--scenario`, `--seed`, `--networks`, `--run-dir`, `--max-ticks`, `--call-budget`, `--explore`/`--exploit`, `--codex`, `--no-slow-path` | as `export` | How to play; episode k gets seed `seed + k - 1` |
 | `--episodes N` | until Ctrl+C | Episodes to play; afterwards the server keeps serving until Ctrl+C |
 | `--pace SEC` | 0.23 | Least wall time per tick (8 game frames at 35 fps); 0 plays flat out |
 | `--rest SEC` | 3 | Pause between episodes |
@@ -1370,9 +1402,8 @@ python -m system1_doom.export --scenario deadly_corridor.cfg --seed 11 --model l
 | `--recordings DIR` | `web/public/episodes` | The shipped recordings and their index |
 
 ```bash
-(cd web && npm run build)
-python -m system1_doom.serve --scenario deadly_corridor.cfg --model latest   # open http://127.0.0.1:8765/
-python -m system1_doom.export --check live/live-1                           # a finished live episode
+python -m system1_doom.serve --scenario deadly_corridor.cfg --networks best   # http://127.0.0.1:8765/
+python -m system1_doom.export --check live/live-1                            # a finished live episode
 ```
 
 There is no `python -m system1_doom` `__main__`; use the four module
@@ -1382,30 +1413,34 @@ entry points above (or embed `DoomDecisionController` directly — §17).
 
 ## 12. Configuration reference
 
-### `ControllerConfig` (`controller.py`, frozen)
+### `ControllerConfig` (`controller.py`, frozen) — how a controller plays
 
 | Field | Default | Effect |
 |---|---|---|
-| `execution_mode` | `async_cached` | `async_cached` (d1 from cache, non-blocking refresh) vs `sync_d1` (one batched blocking d1 call per stage) |
-| `enable_d1_ultra` | `True` | Master d1 switch (still inert without an API key) |
-| `enable_slow_llm` | `True` | Master Codex-slow-path switch |
+| `call_budget_sec` | `None` | Overrides the configuration's per-call budget (`--call-budget`) |
+| `seed` | `0` | Seeds System 1's generator for draws under the explore level |
+| `configuration` | `None` | The initial `Configuration` (else `configuration_path`, else the design's) |
+| `configuration_path` | `None` | A `configuration.json` to start from |
+| `exploration_level` | `None` | Overrides the initial level |
+| `enable_slow_llm` | `True` | Master slow-path switch |
 | `use_codex_cli` | `True` | Use `codex exec` when available; else fallback templates |
-| `tick_budget_sec` | `0.035` | Per-tick budget driving the budget-mode thresholds |
-| `reduced_budget_threshold_sec` | `0.012` | At/below ⇒ reduced mode (no projections) |
-| `critical_budget_threshold_sec` | `0.004` | At/below ⇒ critical mode (cached reactive action) |
-| `log_dir` | `logs` | JSONL log directory |
-| `deterministic_arbiter` | `False` | Always take the arbiter's top-scored action |
-| `show_dashboard` | `False` | Live Tk dashboard (set by `--visible`) |
-| `exploration_floor` | `0.0` | Per-tick probability of a tempered exploratory pick (mutated by the training schedule via `ctrl.exploration_floor`) |
-| `record_experience` | `False` | Record learner transitions each tick (on during training/`--learn`) |
+| `log_dir` | `logs` | Traces, history and frames |
+| `relevance_path` | `None` | The ledger to restore and save (`runs/<scenario>/relevance.json` from the entry points) |
+| `record_experience` | `False` | Record executed decisions for the value networks (training, `--learn`) |
 | `record_frames` | `False` | Capture HUD frames for GIF/MP4 export |
+| `show_dashboard` | `False` | Live Tk side window (set by `--visible`) |
+
+### `Configuration` and `Bounds` (`configuration.py`) — what each instance sees
+
+See §8.4 for every field and bound. A configuration file is the
+`Configuration` model as JSON; `default_configuration().save(path)`
+writes the design's version 1 to start from.
 
 ### `LearnerConfig` (`learning.py`, frozen)
 
-`gamma=0.9`, `n_step=8`, `hidden=64`, `gate_hidden=32`, `lr=1e-3`,
-`batch_size=256`, `train_steps=200`, `replay_capacity=100_000`,
-`trust_count=25.0`, `gate_temperature=0.5`, `seed=0`.
-(Architecture fields `hidden`/`gate_hidden` are frozen into checkpoints.)
+`gamma=0.9`, `n_step=8`, `hidden=64`, `lr=1e-3`, `batch_size=256`,
+`train_steps=200`, `replay_capacity=100_000`, `trust_count=25.0`,
+`seed=0`. (`hidden` is frozen into checkpoints.)
 
 ### `ProjectionLimits` (`simulator.py`)
 
@@ -1414,159 +1449,172 @@ entry points above (or embed `DoomDecisionController` directly — §17).
 
 ### Environment variables & files
 
-`LIQUID_API_KEY` (env or `.env` in CWD/repo root) enables d1-ultra.
+`LIQUID_API_KEY` (env or `.env` in CWD/repo root) is required to play.
 Presence of the `codex` binary enables real slow-path generation.
-Everything else is CLI/config driven — there is no other global config.
+Everything else is CLI, `ControllerConfig` or configuration-file driven.
 
 ---
 
 ## 13. Files on disk: logs, runs, checkpoints
 
-**`logs/` (or `--log-dir`)** — `ticks.jsonl` (one `TickTrace`/tick),
-`proposals.jsonl` (one `ProposalTrace`/admission + follow-up
-performance records). These are append-only and are the audit trail:
-any executed action can be replayed as state → module outputs →
-projections → arbiter distribution → pick.
+**`logs/` (or `--log-dir`)** — `ticks.jsonl` (one schema-2 `TickTrace`
+per tick), `history.jsonl` (one `TickRecord` per tick), `proposals.jsonl`
+(one `ProposalTrace` per proposal + follow-up performance records), and
+`frames/<tick>.jpg` (the screen d1-ultra saw; a folder holding several
+episodes keeps the latest episode's screens). These are append-only and
+are the audit trail: any executed action can be traced to the central's
+answer, the messages it heard and the evidence each instance saw.
 
-**`runs/<scenario-stem>/`** (training run folder, `RunStore` in `train.py`):
+**`runs/<scenario-stem>/`** (run folder, `RunStore` in `train.py`):
 
 | File | Contents |
 |---|---|
-| `checkpoint.pt` | Latest learner: value nets, gate, optimiser, running stats, trust counters, best score (format v1, §8.9) |
+| `checkpoint.pt` | Latest learner: value nets, optimiser, running stats, tried counts, best score (format 1, §8.9) |
 | `best.pt` | Copy of the checkpoint with the best rolling-20 mean episode reward (≥ 5 episodes required) |
-| `replay.npz` | Replay buffer arrays (`states, actions, returns, gate_mask`), chronological |
-| `macros.json` | Admitted Codex macros as `ActionSpec` JSON; **re-validated on load**, so a hand-edited file cannot smuggle in an illegal action |
-| `metrics.jsonl` | One row/episode: reward, kills, health, armor, ticks, cleared/died, transitions, replay size, network share, exploration floor, explored steps, per-module + gate losses, macro count, timings, d1 calls |
-| `learning_curves.png` | The 2×2 chart of §8.14 |
-| `evaluation.json` | Latest `--evaluate` report (heuristics/latest/best means over identical seeds) |
-| `ticks.jsonl`, `proposals.jsonl` | The run's own decision logs (log_dir is pointed at the run folder during training); `eval/` holds evaluation logs |
+| `replay.npz` | Replay buffer arrays (`states, actions, returns`), chronological |
+| `macros.json` | Admitted macros as `ActionSpec` JSON; **re-validated on load** |
+| `relevance.json` | The relevance ledger, restored at start and saved after every episode played with this run folder (play, training, recording) |
+| `metrics.jsonl` | One row per training episode: reward, kills, health, armor, ticks, cleared/died, finished reason, missed ticks, cost, d1 calls, transitions, replay size, network share, per-network losses, macros, timings |
+| `learning_curves.png` | The chart of §8.14 |
+| `evaluation.json` | Latest `--evaluate` report (no/latest/best networks over identical seeds) |
+| `ticks.jsonl`, `history.jsonl`, `proposals.jsonl`, `frames/` | The run's own logs (log_dir is the run folder during training); `eval/` holds evaluation logs |
 
 The repo ships example runs for `deadly_corridor` (300 episodes) and
-`defend_the_center` (200 episodes) — see §15.
+`defend_the_center` (200 episodes), trained under the old architecture;
+their checkpoints load (the gate keys are ignored) and serve the
+`values` channel.
 
-**`bundles/<stem>-<model>-<seed>/`** — episode bundles written by
-`python -m system1_doom.export` (§8.15); gitignored. Bundles the web app
-should show are written to `web/public/episodes/<name>/` instead and
-committed, with `web/public/episodes/index.json` listing them.
+**`bundles/<stem>-<networks>-<seed>/`** — episode bundles written by
+`python -m system1_doom.export` (§8.15); gitignored.
 
 ---
 
-## 14. Failure modes & graceful degradation
+## 14. Misses, budgets & failure modes
 
-| Failure | Behaviour |
-|---|---|
-| No `LIQUID_API_KEY` / `--disable-d1` | d1 client disabled; modules, arbiter, exploration and admission fall back to local logic; play is unaffected (this is an acceptance criterion, covered by tests). |
-| d1 network error / timeout | `decide()` returns `None`, `error_count += 1`; cached answers simply age; no tick ever fails because of d1. |
-| No `codex` binary / Codex times out (20 s) | Deterministic fallback template proposal instead; admission still applies. `--disable-slow-llm` removes the path entirely. Slow worker busy ⇒ new expansion requests are dropped, not queued unboundedly. |
-| Illegal LLM proposal | Rejected with a reason at parse/legality/sandbox/d1 step; vocabulary unchanged; rejection is logged in `proposals.jsonl`. |
-| No PyTorch | `cli.py` plays on heuristics (warning on stderr); `train.py` exits 2 with the install hint. The core package never imports torch at module load (the learner is injected). |
-| Checkpoint mismatch (format/feature sizes/modules) | `CheckpointMismatch` → `train` exits 2 advising `--fresh`; `cli --learn` exits 2; plain `cli` falls back to heuristics. |
-| Training error mid-run | Design intent: logged, play continues on current weights. Ctrl+C: the pending episode is discarded, progress is saved, and the same command resumes. Save/load of checkpoints and replay uses write-to-temp + `os.replace` (atomic). |
-| Tick budget collapses | Reduced mode drops projections; critical mode replays the cached reactive action with stub module outputs (same trace schema). A module missing its thread deadline is recomputed locally without d1. |
-| Dashboard/Tk failure | Caught once, dashboard disabled for the session, play continues. MP4 export requires `ffmpeg` and raises if frames are empty — only when explicitly requested. |
-| Episode finished mid-burst | The motor burst stops early (`terminated_early`), and the bridge returns a well-formed result; `auto_restart` or `run_episode` handles the restart. |
-| No action passes preconditions | Vocabulary falls back to `(turn_left, turn_right, move_forward)`; if the scenario can't support a candidate, the precondition list is used instead — the arbiter always faces a non-empty finite set. |
+| Event | Behaviour | Recorded as |
+|---|---|---|
+| No `LIQUID_API_KEY` | `cli`, `train`, `export`, `serve` exit 2 with a message before the game starts; the controller raises `MissingAPIKey` | — |
+| A sense exceeds the call budget, errors, names an off-menu action, or returns malformed probabilities | Silent this tick; the central hears the others | `missed` on that sense, `miss_reason`, the raw answer |
+| The central does the same | No keys for the decision's 8 frames (`execute_idle`: 4 empty steps) | pick `missed`, `missed: true`, `executed_action: null`, actions `missed` |
+| Three consecutive central misses | The episode ends | `finished_reason: connection_lost`; `export` exits 1, `--check` reports it, `--index` leaves it out |
+| HTTP 429 | Wait per `Retry-After` while the budget lasts, then retry | a retry; `http_429_exhausted` if the wait would exceed the budget |
+| No `codex` binary / Codex times out (20 s) | Deterministic fallback template instead; admission still applies | proposal `source` |
+| Illegal proposal | Rejected with a reason at parse, legality or sandbox, before any instance sees it | `proposals.jsonl` |
+| The admit instance misses | Rejected: a miss is not a yes | stage `d1` failed |
+| No PyTorch | Play goes on; the `values` channel says no networks are loaded; `train` and `cli --learn` exit 2 | — |
+| Checkpoint mismatch (format/feature sizes/networks) | `train` and `cli --learn` exit 2 advising `--fresh`; plain `cli` plays without networks | — |
+| Dashboard/Tk failure | Caught once, dashboard disabled for the session, play continues | — |
+| Episode finished mid-burst | The motor burst stops early, and the bridge returns a well-formed result | — |
+| No action passes preconditions | The vocabulary falls back to `(turn_left, turn_right, move_forward)`, so the menu is never empty | — |
+
+Every miss is counted per instance and reason in the client, summed per
+episode into `misses`, and kept in the trace with the raw answer. There
+is no budget-mode degradation, no cached reactive action and no
+local fallback: a tick waits for d1-ultra or records that it did not
+answer.
 
 ---
 
 ## 15. Measured results
 
-From `docs/superpowers/specs/2026-10-23-learning-controller-design.md`
-(2026-10-23; `--evaluate 30`, identical held-out seeds, greedy, no
-exploration, d1/Codex off):
+**Live, d1-ultra deciding** (2026-10-25, `basic.cfg`, seed 3, slow path
+off, no value networks, default 5 s budget):
 
-| Scenario | Training | Heuristics only | Latest checkpoint | Best checkpoint |
-|---|---|---|---|---|
-| `deadly_corridor` | 300 ep | 13% cleared, reward 548 | 37% cleared, reward 1034 | **50% cleared, reward 1407** (ep. 220) |
-| `defend_the_center` | 200 ep | 8.5 kills | **17.4 kills** | — |
+| Run | Decisions | Result | Mean tick | Calls | Misses | Input tokens | Cost |
+|---|---:|---|---:|---:|---:|---:|---:|
+| `--ticks 8` | 8 | not cleared in 8 decisions (reward −84) | 816 ms | 48 | 0 | 34,370 | $0.00144 |
+| `--episodes 2`, episode 1 | 17 | cleared, 1 kill (reward −69) | 836 ms | 102 | 0 | 73,330 | $0.00308 |
+| `--episodes 2`, episode 2 | 26 | cleared, 1 kill (reward −177) | 796 ms | 156 | 0 | 116,158 | $0.00488 |
 
-The shipped run folders' `evaluation.json` files contain the same kind of
-comparison (e.g. deadly corridor: reward 548 → 1034, cleared 13.3% →
-36.7%; defend the center: 8.5 → 17.4 kills with episodes lasting
-68 → 117 ticks). Improvement is measured with `--evaluate` on identical
-seeds rather than by an automated test, because a meaningful run takes
-minutes and the heuristic baseline already solves `basic.cfg` (a test
-does assert that: `test_heuristic_controller_clears_basic_scenario`).
+A tick is about 0.8 s: the five senses in parallel take 0.40–0.65 s (the
+slowest sense sets it), the central 0.25–0.30 s, everything else about
+15 ms. Per-call mean latency was 360–400 ms for the senses and 255–270 ms
+for the central; there were no retries. The response's usage reports
+input tokens only (output 0), about 700 per call; a decision costs about
+$0.00018, so a 50-decision episode costs about a cent. On these runs
+d1-ultra mostly chose `weave_fire`, with the combat sense speaking every
+tick and the goal sense often.
 
-Two empirical findings worth knowing before tuning:
-
-* **Per-context trust matters.** A single global λ (network weight by
-  total experience) improved reward for ~75 episodes then degraded it;
-  `λ = n/(n+25)` per (context, action) is the fix (§8.9).
-* **`weave_fire` matters.** The compound strafe-fire primitives exist
-  because no single primitive could move and fire in one step; a scripted
-  check cleared 8/20 deadly-corridor seeds with `weave_fire` vs 2/20
-  with `peek_and_fire`.
+**The value networks** were measured under the old architecture
+(`docs/superpowers/specs/2026-10-23-learning-controller-design.md`,
+`--evaluate 30`, identical seeds): on `deadly_corridor` after 300
+episodes, cleared 13% with heuristics only, 37% with the latest
+checkpoint and 50% with the best; on `defend_the_center` after 200
+episodes, 8.5 → 17.4 kills. Those numbers describe the removed
+modules and arbiter steering by the networks; under this design the
+networks are evidence, and their effect on d1-ultra's play is measured
+with `train --evaluate` (no, latest and best networks on the same seeds).
 
 ---
 
 ## 16. Testing
 
 ```bash
-python -m pytest            # 70 tests, 15 files, from the repo root
-python -m pytest -k "not live"   # the 65 that need no key, as CI runs them
+python -m pytest                 # 170 tests, 21 files, from the repo root
+python -m pytest -k "not live"   # the 168 that need no key, as CI runs them
 ```
 
-Tests use real ViZDoom headlessly, so the suite takes longer than a pure
-unit suite; a few tests are **live** (marked `test_live_*`) and assert on
-a real `LIQUID_API_KEY`/d1-ultra — run them only with a key available,
-and expect them to fail (by assertion, not skip) without one.
+Every behaviour is exercised without a key through `tests/fake_d1.py`:
+`FakeD1` answers from the payload it receives, deterministically, with a
+scripted policy (`default_policy`; `shoot_when_aimed`, under which the
+combat sense speaks when an enemy is aimed and the central follows the
+first message), records every payload so a test can assert exactly what
+each instance saw, and can be told to time out, raise, return an action
+outside the menu or malformed probabilities at chosen calls. The two
+live tests (`@pytest.mark.live`, named `test_live_*`) call the real
+API and skip without `LIQUID_API_KEY`. Tests use real ViZDoom
+headlessly; the suite takes about half a minute.
 
 | File | Covers |
 |---|---|
-| `test_state_and_actions.py` | `WorldState` immutability, hash/text rendering, `ActionSpec` rejection of unbounded/illegal expansions, precondition filtering of the default vocabulary |
-| `test_features.py` | State/action encoder sizes, bounds, threat/pickup sensitivity, strafe-fire decomposition, new-macro encodability |
-| `test_modules.py` | All five modules satisfy the `DecisionOutput` contract without network; expansion request on repeated failure; live batched d1 evaluation |
-| `test_arbiter.py` | Arbiter combines modules/projections/exploration without network; live d1 arbiter decision |
-| `test_simulator.py` | Projection bounds enforcement; combat-vs-retreat-vs-pickup outcome ordering; empirical cache effect |
-| `test_exploration_and_archive.py` | Pressure rises on stall / falls under high risk; archive capacity bound + explicit strategy decision |
-| `test_d1_client.py` | Request serialisation with a mock transport; async non-blocking cache; disabled mode; live API call |
-| `test_llm_and_admission.py` | Admission rejects illegal/unbounded proposals; admits a valid one (live d1 + sandbox); async Codex worker generation + admission |
-| `test_learning.py` | n-step returns; per-module rewards; running stats vs NumPy; bounded replay round-trip; each value net learns its own signal; gate learns whom to trust; episode→replay credit assignment; discard; checkpoint round-trip/overrides/mismatch |
-| `test_training.py` | `train` writes the full run folder and resumes with continued numbering; admitted macros persist and are re-validated; exploration schedule shape |
-| `test_controller_e2e.py` | **Acceptance**: plays normally with LLMs disabled, traces every tick, budget degradation; module replacement + discover→admit→retain→reuse a new macro; live ViZDoom in sync + async d1 modes |
-| `test_level_clearance.py` | Heuristic controller clears `basic.cfg`; every executed step follows the selected action's own plan; learning controller records every decision |
-| `test_visualizer.py` | HUD frame render + GIF save; dashboard shows d1/Codex sections |
-| `test_export.py` | A 5-tick `basic.cfg` bundle has every file and a frame per tick; pruned + legal actions partition the vocabulary; each arbiter breakdown adds up to its score; module anatomy and outcome are recorded; the schema dump validates a trace; pre-anatomy traces still parse; `failing_condition` agrees with `is_satisfied`; admission records each stage; `--d1-sync` waits for d1 at every tick and needs `--d1` |
-| `test_serve.py` | Two live `basic.cfg` episodes in-process: the event order (start, ticks from 0 in order, proposals only on change, end), every frame on disk before its tick event, the episode in progress served from memory, each finished episode a valid bundle equal to its `end` event, the next seed, the status and the untouched index; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog; a slow-path answer still in flight at the end logged in its own episode; `--d1-sync` reaching the status and needing `--d1` |
+| `test_evidence.py` | Each channel's golden text on a fixture state; a scope renders only its channels (the survival text has no pickup); the caps; deterministic re-rendering; labels of `projections` and `values` |
+| `test_configuration.py` | The design's initial configuration; every validation rule; versions; save and load |
+| `test_instance.py` | A sense's one payload: its scope, its questions, the frame only when in scope; speaking at 0.5 with action, reason and strength; a failed call is a miss and nothing stands in; an off-vocabulary reason is malformed; rate limits wait within the budget and count as retries; usage and latency; the central's one choice over the menu; the admit instance's one noul |
+| `test_senses.py` | The five from the configuration, each seeing only its scope; spoken senses become messages in sense order; a missed sense is silence and the others still speak; the five run in parallel within the budget; over budget is a timeout miss; the speak line is d1's own yes |
+| `test_system1.py` | The central's payload holds only its scope and hears the messages; `top` under exploit, ties to the first in menu order and logged; `drawn` under explore reproduces with the seed and follows d1's distribution; `novelty` added while exploring, only with room; a decision when no sense spoke; a central miss is a `missed` pick; a rate-limited central within budget still answers; usage summed over the six |
+| `test_relevance.py` | Ledger counts and calibration from synthetic histories; the n-step return; missed ticks left out; rendering; save and restore |
+| `test_history.py` | The ring bound; persistence; re-rendering a stored tick under its own scope reproduces the text seen at the time |
+| `test_d1_client.py` | Request serialisation through an injected transport; typed misses counted per instance; `Retry-After` parsing; the default transport's typed 429; one live call |
+| `test_controller_e2e.py` | On `basic.cfg` with the fake: six instances per tick with the payload's state equal to the evidence; a fake that shoots when aimed clears the level; a scripted outage gives missed ticks with idle steps, then `connection_lost`; isolated misses do not end the episode; every motor step follows the action's plan; the value networks learn and appear in `values`; the ledger updates and is restored; a pending configuration applies at the boundary; explore draws reproduce; an admitted macro enters at the next boundary; play needs the key; one live tick with six instances answering |
+| `test_architecture.py` | The removed `modules.py`, `arbiter.py` and `exploration.py` are gone and nothing in `src/` or `tests/` imports them; keys are pressed only in `controller.py`, from the pick or the typed miss; only `system1.py` builds a `Pick` or imports `random`; at run time the executed action is the central's answer and a miss idles |
+| `test_llm_and_admission.py` | The bounds reject before any call; the admit instance admits at its yes; a missed admit rejects; the admit evidence and its determinism; the background worker |
+| `test_archive.py` | The archive holds no decision; the active strategy follows the configuration; a full archive makes room by age, never by score; outcomes update the record shown as evidence |
+| `test_learning.py` | n-step returns; per-network rewards; running stats; replay round-trip; each value net learns its own signal; episode credit assignment; checkpoint round-trip, overrides and mismatch; a checkpoint with gate weights loads (synthetic, and the shipped one when present) |
+| `test_training.py` | The motor executes an action's own plan; `train` writes the full run folder (with the ledger and history) and resumes; admitted macros persist and are re-validated; no exploration schedule; fail fast without the key; the idle burst |
+| `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file |
+| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied` |
+| `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key |
+| `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run build`
 and `npm run lint` (type-check and oxlint), `npm test` (Vitest: the
-loader and the trace readings on a five-tick fixture bundle) and
-`npm run e2e` (Playwright: scrubbing to tick 5 shows the traced action
-in every panel; and, against `e2e/live-server.mjs`, a stand-in for serve
-that replays a shipped recording as live episodes, following, Follow,
-the end of an episode and the next one, every screen, and the bar's fit;
-and, on the d1 recording, d1's answer in the overview box, a module
-column, the arbiter card and the gate). The unit tests also hold the
-app's glossary to §18, check the export and serve commands the This
-recording tab shows, and read the d1 recording: each module's own
-softmax, recovered from its bar and d1's answer, matches its utilities
-on all 220 d1 module answers, and the arbiter's d1 bonus matches the
-trace.
+loader and the trace readings on a five-tick schema-1 fixture bundle, and
+the glossary against §18 and the code it names) and `npm run e2e`
+(Playwright, against the shipped schema-1 recordings and a live
+stand-in that replays one of them).
 
 **Continuous integration.** `.github/workflows/checks.yml` runs on every
 pull request and every push to main, in two jobs of at most ten minutes
 each. `web` (Node 22): `npm ci`, `npm run lint`,
 `npx prettier --check src e2e`, `npm test`, `npm run build`, then
-`npx playwright install --with-deps chromium`, the Inter font the app is
-set in (`fonts-inter`; the runner's default DejaVu Sans is wider, and the
-top bar's one-row checks at 1280 px are measured against Inter), and
-`npm run e2e`, which starts its own preview and live stand-in servers. `python` (3.11):
-torch from the CPU wheel index, `pip install -e ".[dev,learn]"`, and
-`python -m pytest -k "not live"`; the five live d1-ultra tests need
-`LIQUID_API_KEY` and are run locally. `.github/workflows/pages.yml`
-deploys the site (§8.15).
+Playwright with the Inter font and `npm run e2e`. `python` (3.11): torch
+from the CPU wheel index, `pip install -e ".[dev,learn]"`, and
+`python -m pytest -k "not live"`; the live tests need `LIQUID_API_KEY`
+and are run locally. `.github/workflows/pages.yml` deploys the site
+(§8.15).
 
 ---
 
 ## 17. Extending the system
 
-**Replace a module** (the sanctioned extension point): subclass
-`DecisionModule`, implement `compute_local_utilities()` and
-`check_expansion_needed()`, then `ctrl.replace_module("goal", MyModule())`.
-You inherit learned-value blending, d1 blending, entropy confidence and
-the output contract for free.
+**Change what an instance sees**: write a configuration (start from
+`default_configuration().save("configuration.json")`), edit a scope,
+concern or reason list, and play with `--configuration`. Validation keeps
+it bounded (§8.4). This is the extension point System 2 will use.
+
+**Add an evidence channel**: add its name to `configuration.CHANNELS`,
+its inputs to `EvidenceInputs`, and a renderer in `evidence.py`; give it
+a golden-text test. A channel renders evidence; it never ranks or scores.
 
 **Add a built-in action**: append an `ActionSpec` to `DEFAULT_PRIMITIVES`
 or `DEFAULT_MACROS` in `actions.py`. For a *new primitive* you must also
@@ -1575,15 +1623,13 @@ the simulator's `_step_primitive`, and decide whether `features.py`
 needs a new component (if so, `ACTION_DIM` changes and old checkpoints
 will — correctly — refuse to load).
 
-**Add a scenario**: point `--scenario` at any ViZDoom cfg. If its
-win condition differs, extend `ViZDoomBridge.level_cleared()`; if it
-lacks turn/attack buttons, the motor and vocabulary filtering already
-adapt (aim falls back to strafing).
+**Add a scenario**: point `--scenario` at any ViZDoom cfg. If its win
+condition differs, extend `ViZDoomBridge.level_cleared()`; if it lacks
+turn/attack buttons, the motor and the menu already adapt.
 
 **Use a different slow-path generator**: pass
-`custom_generator: Callable[[ExpansionRequest], str]` to
-`DoomDecisionController` (it must return the proposal JSON string) — or
-replace the Codex invocation in `llm_worker._invoke_codex_cli`.
+`custom_llm_generator: Callable[[ExpansionRequest], str]` to
+`DoomDecisionController` (it must return the proposal JSON string).
 Admission is unchanged either way; that separation is the point.
 
 **Embed the controller** (no CLI):
@@ -1592,24 +1638,18 @@ Admission is unchanged either way; that separation is the point.
 from system1_doom.controller import ControllerConfig, DoomDecisionController
 from system1_doom.vizdoom_env import ViZDoomBridge
 
-env = ViZDoomBridge(scenario="basic.cfg", window_visible=False,
-                    include_jpeg_frame=False)
-cfg = ControllerConfig(enable_d1_ultra=False, enable_slow_llm=False,
-                       log_dir="logs", deterministic_arbiter=True)
-ctrl = DoomDecisionController(env=env, config=cfg)   # learner=None → heuristics
+env = ViZDoomBridge(scenario="basic.cfg", window_visible=False)
+cfg = ControllerConfig(enable_slow_llm=False, log_dir="logs", call_budget_sec=5.0)
+ctrl = DoomDecisionController(env=env, config=cfg)   # needs LIQUID_API_KEY
 try:
     result = ctrl.run_episode(max_ticks=500)
-    print(result["cleared"], result["reward"], result["actions"])
+    print(result["cleared"], result["finished_reason"], result["cost"], result["actions"])
 finally:
     ctrl.close()
 ```
 
-**Tune learning**: `--trust-count` (how fast networks earn authority),
-`--train-steps`, `--explore-*` (the exploration floor schedule), and
-`LearnerConfig` fields (`gamma`, `n_step`, `hidden`, …) via
-`load_learner(..., overrides=…)` when embedding `train.py`'s helpers
-(`RunStore`, `learn_from_episode`, `load_play_learner` are importable
-and reused by `cli.py`).
+For tests, pass `transport=FakeD1(...)` (from `tests/fake_d1.py`) and any
+placeholder `api_key`.
 
 ---
 
@@ -1617,31 +1657,38 @@ and reused by `cli.py`).
 
 The web app's glossary (`web/src/content/glossary.ts`) carries every term
 below in its own words, and a test reads this table, so a term added here
-fails the app's tests until the glossary has it.
+fails the app's tests until the glossary has it. The app still explains
+the schema-1 recordings, so several terms below name parts this design
+removed; their entries say what replaced them. The design's own words —
+**instance**, **sense**, **central**, **channel**, **scope**, **message**,
+**strength**, **relevance**, **configuration**, **miss** — are defined in
+§8.4–§8.8 and join this table with the app's rewrite in the third pull
+request.
 
 | Term | Meaning |
 |---|---|
-| **Action / `ActionSpec`** | The only executable unit: a bounded tuple of primitives with preconditions, a duration cap and a termination condition. Primitives are 1-step actions; macros are named multi-step ones. |
-| **Arbiter** | `FinalArbiter` — turns five module distributions, projections, exploration, archive and d1 advice into one finite pick, with an auditable score breakdown. |
-| **Budget mode** | Per-tick degradation tier (`full`/`reduced`/`critical`) derived from the tick budget (§7). |
-| **Committed pick** | Arbiter shortcut: a module that is overwhelmingly certain (utility ≥ 5, margin ≥ 4, p ≥ 0.9) decides directly (§8.5). |
-| **Context signature** | Coarse bucketed state key (`hp:…\|ammo:…\|enemies:…`) used for novelty, trust, caching and archive matching (§6.1). |
-| **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions. Advisory everywhere it appears. |
-| **Exploration floor** | Flat probability of a tempered exploratory arbiter pick (training-time), distinct from exploration *pressure*. |
-| **Exploration pressure / temperature** | State-dependent exploration intensity from `ExplorationController`; temperature = 0.10 + pressure drives arbiter sampling. |
-| **Gate network** | Learned `state → 5` network estimating how much following each module pays off in goal return; blended into arbiter module weights. |
-| **Live episode** | An episode being played right now by `python -m system1_doom.serve` and streamed to the web explainer tick by tick; when it ends it is a bundle like any recording (§8.15). |
-| **Macro** | Multi-primitive `ActionSpec` (`is_macro=True`); built-in, hand-added, or Codex-proposed-and-admitted. |
-| **Module** | One of survival/combat/navigation/resource/goal; a `DecisionModule` producing a distribution over the same candidate set. |
-| **Network share** | Experience-weighted mean trust λ — how much of play the learned networks currently steer. |
-| **Projection** | A bounded analytic rollout (`ProjectedOutcome`) of one candidate action: expected value, damage, resources, survival. |
-| **Slow path** | The async Codex → admission pipeline that can grow the action vocabulary; never blocks play. |
-| **Trust λ** | `n/(n+25)`: weight of a network's opinion for an action tried `n` times in the current context. |
-| **Tick** | One control decision (state → pick → motor burst of ≈ 8 game tics), not one ViZDoom game tic. |
+| **Action / `ActionSpec`** | The only executable unit: a bounded tuple of primitives with preconditions, a duration cap and a termination condition. Primitives are 1-step actions; macros are named multi-step ones. The legal menu of a tick is the set of actions whose preconditions hold. |
+| **Arbiter** | Removed. The hand-written `FinalArbiter` that scored module votes, projections and bonuses into one pick is gone; the central instance, one d1-ultra choice over the legal menu, decides the action (§8.7). |
+| **Budget mode** | Removed. There are no `full`/`reduced`/`critical` tiers: every tick waits for d1-ultra inside a per-call budget (5 s, `--call-budget`), and a call that misses it is recorded as a miss (§14). |
+| **Committed pick** | Removed with the arbiter. The central's answer becomes the action as `top` (exploit), `drawn` (explore) or `missed` (§8.7). |
+| **Context signature** | Coarse bucketed state key (`hp:…\|ammo:…\|enemies:…`) that keys the relevance ledger, the novelty counts, the simulator's empirical cache and the value networks' tried counts (§6.1). |
+| **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions. It makes every decision: the five senses, the central and the admit instance are each one d1-ultra call (§8.6, §8.10). |
+| **Exploration floor** | Removed with the training schedule. Exploration is the configuration's level: under `explore` the central's action is drawn from d1's own distribution with a seeded generator (§8.7). |
+| **Exploration pressure / temperature** | Removed. There is no pressure formula and no temperature; the exploration level (`exploit` or `explore`) is configuration, stated to the central in its `exploration` channel. |
+| **Gate network** | Removed. The relevance ledger replaced it: each sense's track record per context, shown to the central as counts (§8.8). Old checkpoints' gate weights are ignored on load. |
+| **Live episode** | An episode being played right now by `python -m system1_doom.serve` and streamed tick by tick; when it ends it is a bundle like any recording (§8.15). |
+| **Macro** | Multi-primitive `ActionSpec` (`is_macro=True`); built-in, or proposed by the slow path and admitted by the admit instance into the configuration. |
+| **Module** | Removed. The five hand-written deciders became five senses: d1-ultra instances with their own scopes that decide whether to send the central a message (§8.6). The five value networks keep the names. |
+| **Network share** | Experience-weighted mean of `n/(n+25)` over the tries seen in training: how familiar play has become to the value networks. A report only; it weighs nothing. |
+| **Projection** | A bounded analytic rollout (`ProjectedOutcome`) of one legal action: expected value, damage, resources, survival. Shown to instances as the `projections` channel, labelled as a rough projection. |
+| **Slow path** | The async proposal worker (Codex or templates) and the admission bounds and admit instance that can grow the menu; never blocks a tick, and changes the configuration only at a tick boundary (§9). |
+| **Trust λ** | `n/(n+25)` for an action tried `n` times in a context in training. No longer a blend weight: the tries themselves are shown in the `values` channel. |
+| **Tick** | One decision: state → evidence → five senses → central → the action's primitives over ≈ 8 game tics, not one ViZDoom game tic. |
 
 ---
 
-*Maintainers: when a formula, threshold or file format changes, update the
-matching section here and the design notes in
-`docs/superpowers/specs/`. The spec (`docs/spec.md`) states intent; this
-document states behaviour; the code is the truth when they disagree.*
+*Maintainers: when a channel, bound, question or file format changes,
+update the matching section here and the design in
+`docs/superpowers/specs/`. The spec (`docs/spec.md`) states the original
+intent; this document states behaviour; the code is the truth when they
+disagree.*

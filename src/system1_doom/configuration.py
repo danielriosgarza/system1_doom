@@ -4,8 +4,8 @@ The configuration is what System 2 will own (design spec, section 8): each sense
 reason vocabulary, the central instance's scope, the exploration level, the active strategy, the admitted
 macros, and the bounds every instance works inside. This module is data only: pydantic models, their
 validation, the default configuration from the design's tables, and loading and saving. Nothing here
-decides anything; nothing in play changes the configuration in this version (the controller applies a
-pending configuration only at a tick boundary, a hook System 2 will use).
+decides anything. In this version only an admitted macro changes the configuration during play: the
+controller queues the new version and applies it at the next tick boundary, the hook System 2 will use.
 
 The design's numbers live in `Bounds`, not scattered as literals: the 0.5 at which a sense speaks (d1's
 own yes), the 5 s per-call budget, the pool of 6 calls in flight, the 7-channel scope, the channel caps,
