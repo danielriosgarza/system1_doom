@@ -13,7 +13,7 @@ import {
 export interface LiveConfig {
   scenario: string
   seed: number
-  decider: 'd1-ultra'
+  decider: NonNullable<EpisodeMeta['decider']>
   networks: EpisodeMeta['value_networks']
   call_budget_sec: number | null
   exploration_level: 'exploit' | 'explore' | null

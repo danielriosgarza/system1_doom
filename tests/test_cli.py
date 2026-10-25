@@ -8,7 +8,7 @@ from tests.fake_d1 import FakeD1, explore_level_system2, shoot_when_aimed
 
 
 def test_play_fails_fast_without_the_key(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "load_api_key", lambda: None)
+    monkeypatch.setattr(cli, "load_api_key", lambda *a, **k: None)
     assert cli.main(["--scenario", "basic.cfg", "--log-dir", str(tmp_path / "logs")]) == 2
     assert "LIQUID_API_KEY" in capsys.readouterr().err and not (tmp_path / "logs").exists()
 
@@ -185,3 +185,26 @@ def test_play_runs_system2_unless_switched_off(tmp_path, capsys):
     summary = json.loads(capsys.readouterr().out)
     assert summary["results"][0]["system2"]["enabled"] is False and summary["reflections_log"] is None
     assert not any(is_system2(name) for name, _ in fake.calls) and not (tmp_path / "off" / "reflections.jsonl").exists()
+
+
+def test_play_on_jev_reaches_the_summary_and_every_call_goes_to_typesafe(tmp_path, capsys):
+    from system1_doom.d1_client import TYPESAFE_SYSTEMONE_URL
+
+    fake = FakeD1(shoot_when_aimed, decider="jev")
+    argv = [
+        "--scenario", "basic.cfg", "--ticks", "2", "--decider", "jev", "--no-system2",
+        "--log-dir", str(tmp_path / "logs"), "--run-dir", str(tmp_path / "run"), "--disable-slow-llm",
+    ]
+    assert cli.main(argv, transport=fake) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["decider"] == "jev" and summary["models"] == {"jev-1.14.0": len(fake.calls)} and len(fake.calls) >= 6
+    assert all(url == TYPESAFE_SYSTEMONE_URL for url, _ in fake.requests)
+    (result,) = summary["results"]
+    assert result["cost"]["usd"] > 0 and summary["instances"]["combat"]["cost"] > 0
+
+
+def test_play_on_jev_fails_fast_without_its_key(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "load_api_key", lambda *a, **k: None)
+    assert cli.main(["--scenario", "basic.cfg", "--decider", "jev", "--log-dir", str(tmp_path / "logs")]) == 2
+    err = capsys.readouterr().err
+    assert "TYPESAFE_API_KEY is not set" in err and "jev makes every decision" in err and not (tmp_path / "logs").exists()

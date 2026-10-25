@@ -231,9 +231,11 @@ def test_the_flags_reach_the_status_and_serving_needs_the_key(monkeypatch, capsy
     assert off.system2 is False and off.configuration == Path("runs/x/configuration.json") and not off.fresh_configuration
     fresh = serve.config_from_args(serve.build_parser().parse_args(["--fresh-configuration"]))
     assert fresh.fresh_configuration and fresh.configuration is None
+    jev = serve.config_from_args(serve.build_parser().parse_args(["--decider", "jev"]))
+    assert jev.decider == "jev" and serve.LiveHub(jev).status()["config"]["decider"] == "jev"
     with pytest.raises(SystemExit):
         serve.build_parser().parse_args(["--fresh-configuration", "--configuration", "x.json"])
-    monkeypatch.setattr(serve, "load_api_key", lambda: None)
+    monkeypatch.setattr(serve, "load_api_key", lambda *a, **k: None)
     assert serve.main(["--port", "0"]) == 2 and "LIQUID_API_KEY" in capsys.readouterr().err
 
 

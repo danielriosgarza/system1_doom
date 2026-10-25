@@ -5,11 +5,15 @@ import pytest
 
 from system1_doom import d1_client
 from system1_doom.d1_client import (
+    DECIDERS,
+    JEV_IMAGES_HEADER,
+    TYPESAFE_SYSTEMONE_URL,
     ChoiceQuestion,
     D1HTTPError,
     D1UltraClient,
     NoulQuestion,
     ScoreQuestion,
+    decider_of,
     load_api_key,
     parse_retry_after,
 )
@@ -149,3 +153,121 @@ def test_live_d1_ultra_api_call():
     assert resp.choice("evade").choice == "retreat_to_cover"
     assert resp.noul("is_critical").noul > 0.5
     assert result.usage.input_tokens > 0
+
+
+def _screen(width: int = 320, height: int = 240) -> str:
+    """A JPEG screen as the bridge encodes it: a data URL."""
+    import base64
+    import io
+
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.new("RGB", (width, height), (80, 20, 20)).save(out, format="JPEG", quality=75)
+    return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode("ascii")
+
+
+def _decoded(asset: dict):
+    import base64
+    import io
+
+    from PIL import Image
+
+    return Image.open(io.BytesIO(base64.b64decode(asset["data_base64"])))
+
+
+def test_jev_is_the_same_request_at_typesafe_with_the_screen_as_an_asset():
+    captured = []
+
+    def fake_transport(url: str, headers: dict, payload: dict, timeout: float) -> dict:
+        captured.append((url, headers, payload))
+        return {"model": "jev-1.14.0", "answers": {"speak": {"type": "noul", "noul": 0.9}}, "usage": {"input_tokens": 1000, "output_tokens": 12}}
+
+    client = D1UltraClient(api_key="ts_test_key", decider="jev", transport=fake_transport, max_workers=1)
+    result = client.call("combat", state="[vitals]\nhealth 40", questions={"speak": NoulQuestion(instructions="Speak?")}, images=[_screen()])
+    client.shutdown()
+
+    ((url, headers, payload),) = captured
+    assert url == "https://api.typesafe.ai/v1/systemone" == TYPESAFE_SYSTEMONE_URL
+    assert headers["Authorization"] == "Bearer ts_test_key" and headers[JEV_IMAGES_HEADER] == "true"
+    assert payload["model"] == "jev-latest" and "images" not in payload
+    assert payload["questions"] == {"speak": {"type": "noul", "instructions": "Speak?"}}
+    # The screen is an asset, referenced from the end of the state, where the model reads it in its place.
+    ((ref, asset),) = payload["assets"].items()
+    assert payload["state"] == f"[vitals]\nhealth 40\n\n[screen image]\n{ref}"
+    assert asset["type"] == "image" and asset["format"] == "jpeg" and "data:" not in asset["data_base64"]
+    with _decoded(asset) as image:
+        # TypeSafe rejects a side under 280 px: the 320x240 screen is doubled, never cropped or padded.
+        assert image.format == "JPEG" and image.size == (640, 480)
+    assert result.answered and result.response.model == "jev-1.14.0" and result.response.noul("speak").noul == pytest.approx(0.9)
+    # Jev's usage names no cost: the input tokens at the published $0.042 per million, output free.
+    assert (result.usage.input_tokens, result.usage.output_tokens, result.usage.cost) == (1000, 12, pytest.approx(4.2e-5))
+    assert client.models_answered() == {"jev-1.14.0": 1} and client.counters()["combat"].cost == pytest.approx(4.2e-5)
+
+
+def test_a_jev_call_without_a_screen_sends_no_assets_and_a_reported_cost_is_kept():
+    captured = []
+
+    def fake_transport(url: str, headers: dict, payload: dict, timeout: float) -> dict:
+        captured.append((headers, payload))
+        return {"model": "jev-1.14.0", "answers": {"q": {"type": "noul", "noul": 0.1}}, "usage": {"input_tokens": 10, "output_tokens": 1, "cost": 0.5}}
+
+    client = D1UltraClient(api_key="k", decider="jev", transport=fake_transport)
+    result = client.call("goal", "[vitals]\nhealth 40", {"q": NoulQuestion(instructions="?")})
+    client.shutdown()
+    ((headers, payload),) = captured
+    assert payload["state"] == "[vitals]\nhealth 40" and "assets" not in payload and JEV_IMAGES_HEADER not in headers
+    assert result.usage.cost == 0.5
+    # A screen too small to stand (one pixel) is a miss of that call, never an exception in play.
+    tiny = D1UltraClient(api_key="k", decider="jev", transport=fake_transport)
+    bad = tiny.call("combat", "s", {"q": NoulQuestion(instructions="?")}, images=["data:image/jpeg;base64,AA=="])
+    tiny.shutdown()
+    assert bad.miss_reason == "error" and bad.response is None
+
+
+def test_each_decider_reads_its_own_key(monkeypatch, tmp_path):
+    monkeypatch.delenv("LIQUID_API_KEY", raising=False)
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    missing = tmp_path / "none.env"
+    assert load_api_key("d1-ultra", missing) is None and load_api_key("jev", missing) is None
+    monkeypatch.setenv("TYPESAFE_API_KEY", " ts_env ")
+    assert load_api_key("jev", missing) == "ts_env" and load_api_key("d1-ultra", missing) is None
+    monkeypatch.delenv("TYPESAFE_API_KEY")
+    dotenv = tmp_path / ".env"
+    dotenv.write_text('LIQUID_API_KEY="liq"\nTYPESAFE_API_KEY=ts_file\n')
+    assert load_api_key("d1-ultra", dotenv) == "liq" and load_api_key("jev", dotenv) == "ts_file"
+    assert load_api_key(DECIDERS["jev"], dotenv) == "ts_file"
+    with pytest.raises(ValueError, match="unknown decider"):
+        decider_of("gpt")
+    no_key = D1UltraClient(api_key="", decider="jev", transport=lambda *a: {})
+    no_key.api_key = None
+    assert no_key.call("a", "s", {"q": NoulQuestion(instructions="?")}).error == "no TYPESAFE_API_KEY"
+    assert D1UltraClient(api_key="k", transport=lambda *a: {}).decider.name == "d1-ultra"
+
+
+@pytest.mark.live
+@pytest.mark.skipif(not load_api_key("jev"), reason="needs TYPESAFE_API_KEY")
+def test_live_jev_api_call():
+    client = D1UltraClient(decider="jev")
+    result = client.call(
+        "live",
+        state="DOOM tick=5: player health=20, armor=0, 2 ShotgunGuys at distance 110 firing at player.",
+        questions={
+            "evade": ChoiceQuestion(
+                instructions="Which immediate action minimizes probability of death?",
+                criteria={
+                    "retreat_to_cover": "Move backward and sidestep behind cover",
+                    "move_forward": "Run straight into enemy shotgun fire",
+                },
+            ),
+            "is_critical": NoulQuestion(instructions="Is the player in immediate danger of dying within the next few ticks?"),
+        },
+        budget=15.0,
+    )
+    client.shutdown()
+    assert result.answered, result.error
+    resp = result.response
+    assert resp.model.startswith("jev-"), resp.model
+    assert resp.choice("evade").choice == "retreat_to_cover"
+    assert resp.noul("is_critical").noul > 0.5
+    assert result.usage.input_tokens > 0 and result.usage.cost > 0

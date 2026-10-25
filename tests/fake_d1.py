@@ -1,10 +1,11 @@
-"""A deterministic stand-in for d1-ultra, answering from the payload alone.
+"""A deterministic stand-in for d1-ultra (or, with `decider="jev"`, for Jev), answering from the payload alone.
 
 `FakeD1` is a transport (`TransportFn(url, headers, payload, timeout) -> dict`) for `D1UltraClient`. It
 reads only what the real API receives: the question names, their instructions and criteria, and the
-state text. It follows a scripted policy, records every (instance name, payload) pair, and can be told,
-for a chosen call of a chosen instance, to exceed the budget, raise, answer off the menu, return
-malformed probabilities, or answer HTTP 429.
+state text. It follows a scripted policy, records every (instance name, payload) pair and every
+(url, headers) pair, and can be told, for a chosen call of a chosen instance, to exceed the budget,
+raise, answer off the menu, return malformed probabilities, or answer HTTP 429. As Jev it answers in
+Jev's shape: the model is the version the alias resolved to, and the usage block names no cost.
 
 Calls are counted per instance name from 0, and every instance is called once per tick, so "call k of
 the central" is the central of the k-th tick played with this fake (System 2's history test re-runs a
@@ -23,7 +24,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from system1_doom.d1_client import D1HTTPError
+from system1_doom.d1_client import D1HTTPError, decider_of
 
 Answers = Dict[str, Dict[str, Any]]
 Policy = Callable[[str, Dict[str, Any]], Answers]
@@ -267,15 +268,18 @@ class FakeD1:
         timeout_overrun: float = 0.2,
         retry_after: float = 0.05,
         system2_policy: Policy = default_system2_policy,
+        decider: str = "d1-ultra",
     ) -> None:
         self.policy = policy
         self.system2_policy = system2_policy
         self.timeout_overrun = timeout_overrun
         self.retry_after = retry_after
+        self.decider = decider_of(decider)
         self._lock = threading.Lock()
         self._counts: Dict[str, int] = {}
         self._faults: Dict[Tuple[str, int], str] = {}
         self.calls: List[Tuple[str, Dict[str, Any]]] = []
+        self.requests: List[Tuple[str, Dict[str, str]]] = []
         self.timeouts: List[float] = []
 
     def fail(self, instance: str, calls: Iterable[int], kind: str) -> "FakeD1":
@@ -299,6 +303,7 @@ class FakeD1:
             index = self._counts.get(name, 0)
             self._counts[name] = index + 1
             self.calls.append((name, payload))
+            self.requests.append((url, dict(headers)))
             self.timeouts.append(timeout)
             fault = self._faults.pop((name, index), None)
         if fault == "raise":
@@ -320,6 +325,8 @@ class FakeD1:
             probs[first] = -0.1
             answers[key] = {**answers[key], "probabilities": probs}
         tokens = max(1, len(payload["state"]) // 4)
+        if self.decider.name == "jev":
+            return {"model": "jev-1.14.0", "answers": answers, "usage": {"input_tokens": tokens, "output_tokens": 12}}
         return {
             "model": "d1-ultra",
             "answers": answers,

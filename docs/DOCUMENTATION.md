@@ -27,7 +27,7 @@
 
 **Package:** `system1-doom` 0.4.0 · **Python:** ≥ 3.11 · **Source layout:**
 `src/system1_doom/` (32 modules, ≈ 11,500 LOC) · **Tests:** `tests/`
-(25 files, 238 tests, 4 of them live) · **Web explainer:** `web/` (Vite +
+(25 files, 249 tests, 7 of them live) · **Web explainer:** `web/` (Vite +
 React + TypeScript, on trace schema 2; 69 Vitest and 30 Playwright
 tests), online at <https://danielriosgarza.github.io/system1_doom/>
 
@@ -179,7 +179,8 @@ uv pip install -e ".[learn,dev]"    # + torch (CPU), matplotlib, pytest
 | Dependency | Required? | Notes |
 |---|---|---|
 | ViZDoom scenarios + an IWAD | **Yes** | Scenario `.cfg` files ship with the `vizdoom` wheel (`vzd.scenarios_path`); an absolute path may also be passed. `_vizdoom.ini` in the repo root is the engine config ViZDoom generates/uses. `basic.cfg`, `deadly_corridor.cfg`, `defend_the_center.cfg`, `health_gathering*.cfg` are the scenarios referenced by code/tests. |
-| `LIQUID_API_KEY` | **Yes, to play** | Read from env var `LIQUID_API_KEY`, else from `.env` in CWD or repo root (`d1_client.load_api_key()`). d1-ultra makes every decision, so `cli`, `train`, `export` and `serve` exit `2` without it. `export --check`, `--index` and `--schema` read files only and need no key. Tests answer from a fake transport and need no key except the four live ones. |
+| `LIQUID_API_KEY` | **Yes, to play on d1-ultra** | Read from env var `LIQUID_API_KEY`, else from `.env` in CWD or repo root (`d1_client.load_api_key()`). d1-ultra makes every decision, so `cli`, `train`, `export` and `serve` exit `2` without it. `export --check`, `--index` and `--schema` read files only and need no key. Tests answer from a fake transport and need no key except the seven live ones. |
+| `TYPESAFE_API_KEY` | **Yes, to play on Jev** (`--decider jev`) | Read the same way (`load_api_key("jev")`). TypeSafe's Jev answers the same System One request at `https://api.typesafe.ai/v1/systemone`, so every instance runs on it unchanged (§8.10); the entry points exit `2` without the key. |
 | `codex` CLI (OpenAI Codex) | Only for real slow-path proposals | Detected with `shutil.which("codex")`. Absent ⇒ deterministic fallback templates are used instead (§8.11). Disable entirely with `--disable-slow-llm` / `--no-slow-path`. |
 | `ffmpeg` | Only for `--save-mp4` | GIF export needs only Pillow. |
 | Tkinter + a display | Only for the live dashboard | Enabled by `--visible` (unless `--no-dashboard`); any failure disables the dashboard silently and play continues. |
@@ -889,6 +890,25 @@ file with the old `gate_mask` column loads too. `load()` still raises
 payload `{model, state, questions, images}`; the answers come back by
 question name with a `usage` block (input and output tokens, cost).
 
+* **Deciders.** The client takes a `Decider`, data naming the model the
+  hierarchy runs on: `d1-ultra` (the default) or `jev`, TypeSafe's
+  System One model, which answers the same request (`model`, `state`,
+  `questions` of type `noul`, `choice` and `score`) with the same answer
+  shapes at `POST https://api.typesafe.ai/v1/systemone`, model
+  `jev-latest` (each response names the version that answered, counted
+  by `models_answered()`). What differs is in the `Decider`: the
+  endpoint, the model, the key's variable (`TYPESAFE_API_KEY`), how a
+  screen is sent (Jev takes `assets`: the 320×240 JPEG is scaled up by a
+  whole factor to 640×480, TypeSafe's minimum side being 280 px, and
+  referenced from the end of the state under `[screen image]`, with the
+  `TypeSafe-Danger-Zone-Images: true` header), and the published input
+  price ($0.042 per million tokens, output free), which stands in for
+  the `cost` a Jev usage block does not report. `ControllerConfig.decider`
+  and `--decider` on every entry point select it; both of the
+  controller's clients (System 1's and the slow path's) use the same one,
+  so the senses, the central, the admit instance, the reflectors,
+  System 2's central, the history test and the trial judge all run on it.
+
 * **Typed questions** — `noul` (the probability a proposition holds),
   `choice` (probabilities over named criteria), `score`; answers are
   validated into `NoulAnswer`/`ChoiceAnswer`/`ScoreAnswer`.
@@ -1591,6 +1611,7 @@ nothing, so the brains it compares face one configuration.
 | `--episodes N` | 0 | Play N complete episodes (cap `--ticks` each, default 500) |
 | `--ticks N` | 15 (500 with `--episodes`) | Decision cap: of the one episode played without `--episodes`, or per episode with it |
 | `--call-budget SEC` | 5 | Per-call budget for each d1-ultra call |
+| `--decider {d1-ultra,jev}` | `d1-ultra` | The decision model every instance calls (§8.10); `jev` needs `TYPESAFE_API_KEY`. On `train`, `export` and `serve` too |
 | `--explore` / `--exploit` | exploit | Starting exploration level |
 | `--seed` | — | ViZDoom seed and System 1's draw seed |
 | `--configuration PATH` | the run folder's `configuration.json` if it exists, else the design's version 1 | Another `configuration.json` to start from (§8.4) |
@@ -1631,7 +1652,7 @@ an episode ended as `connection_lost`.
 | `--trust-count` | 25 | Tries at which the reported network share reaches 50% |
 | `--chart-every` | 5 | Redraw `learning_curves.png` every N episodes |
 | `--seed` | — | ViZDoom, network and System 1 draw seed |
-| `--call-budget`, `--explore`/`--exploit` | 5 / exploit | As above |
+| `--call-budget`, `--decider`, `--explore`/`--exploit` | 5 / d1-ultra / exploit | As above |
 | `--codex` | off | Let the slow worker call the Codex CLI |
 | `--no-system2` | — | Switch System 2 off |
 | `--configuration PATH`, `--fresh-configuration` | the run folder's, else the design's | As `cli` |
@@ -1654,7 +1675,7 @@ hint), or on a checkpoint mismatch (with a `--fresh` remedy).
 | `--out` | `bundles/<stem>-<networks>-<seed>` | Bundle folder (a parent folder when `--episodes` > 1) |
 | `--name`, `--title` | folder name / generated | How the app lists the episode |
 | `--max-ticks` | 500 | Decision cap per episode |
-| `--call-budget`, `--explore`/`--exploit` | 5 / exploit | As above |
+| `--call-budget`, `--decider`, `--explore`/`--exploit` | 5 / d1-ultra / exploit | As above |
 | `--codex` | off | Let the slow path call the Codex CLI; otherwise it runs on templates |
 | `--no-slow-path` | — | Switch the slow path off |
 | `--no-system2` | — | Switch System 2 off; `reflections.jsonl` is then empty |
@@ -1680,7 +1701,7 @@ python -m system1_doom.export --index bundles
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--scenario`, `--seed`, `--networks`, `--run-dir`, `--max-ticks`, `--call-budget`, `--explore`/`--exploit`, `--codex`, `--no-slow-path`, `--no-system2`, `--configuration`, `--fresh-configuration` | as `export` | How to play; episode k gets seed `seed + k - 1` |
+| `--scenario`, `--seed`, `--networks`, `--run-dir`, `--max-ticks`, `--call-budget`, `--decider`, `--explore`/`--exploit`, `--codex`, `--no-slow-path`, `--no-system2`, `--configuration`, `--fresh-configuration` | as `export` | How to play; episode k gets seed `seed + k - 1` |
 | `--episodes N` | until Ctrl+C | Episodes to play; afterwards the server keeps serving until Ctrl+C |
 | `--pace SEC` | 0.23 | Least wall time per tick (8 game frames at 35 fps); 0 plays flat out |
 | `--rest SEC` | 3 | Pause between episodes |
@@ -1971,11 +1992,68 @@ with `train --evaluate` (no, latest and best networks on the same seeds).
 
 ---
 
+**Live, Jev deciding** (2026-10-25, `export --decider jev --scenario
+deadly_corridor.cfg --networks best --fresh-configuration`, seeds 9 and
+11, slow path on templates, System 2 on, 5 s budget: the settings of the
+shipped recordings `corridor-9` and `corridor-11`, which d1-ultra played
+and which stand beside them here). Calls, input tokens and cost are
+System 1's (six per decision) with the admit instance's; System 2's own
+are in the last column. Jev's usage block reports no cost, so its cost
+is its input tokens at the published $0.042 per million, which is also
+what d1-ultra's reported cost comes to per token.
+
+| Recording | Decider | Decisions | Result | Mean tick (senses / central) | Calls | Misses | Input tokens | Cost | System 2 |
+|---|---|---:|---|---:|---:|---:|---:|---:|---|
+| `corridor-9` | d1-ultra | 59 | cleared, 6 kills, health 70 (reward 2280) | 818 ms (557 / 248) | 402 | 0 | 381,187 | $0.0160 | 3 cycles, 2 history tests, both failed; 86 calls, $0.0038 |
+| `jev-corridor-9` | Jev | 42 | cleared, 6 kills, health 70 (reward 2279) | 797 ms (559 / 226) | 270 | 0 | 379,595 | $0.0159 | 3 cycles, no proposal; 27 calls, $0.0015 |
+| `corridor-11` | d1-ultra | 179 | cleared, 7 kills, health 46 (reward 2277) | 796 ms (517 / 266) | 1,204 | 0 | 1,011,175 | $0.0425 | 9 cycles, 2 history tests, both failed; 139 calls, $0.0053 |
+| `jev-corridor-11` | Jev | 211 | died, 5 kills (reward 843); ended at configuration version 3 with version 4 queued | 749 ms (500 / 237) | 1,371 | 0 | 1,643,786 | $0.0690 | 9 cycles, 1 trial, reverted; 3 history tests, 1 passed; 143 calls, $0.0067 |
+
+Every call was answered by `jev-1.14.0`, with no miss and no retry in
+1,641 System 1 calls and 170 System 2 calls. A tick takes the same
+0.75–0.8 s: Jev answers the text-only senses in 300–325 ms (d1-ultra
+276–398) and the central in 225–236 ms (d1-ultra 247–266), and the
+combat sense, which carries the screen as a 640×480 asset, in 480–534 ms
+(d1-ultra 309–311 with the 320×240 data URL), so the slowest sense sets
+the tick on both. Jev counts about 45% more input tokens per call (1,200–
+1,400 against 840–950 for the same evidence), and reports output tokens
+(140–170 per call), which are free, so a decision costs about $0.00035
+on Jev against $0.00025 on d1-ultra.
+
+On seed 9 Jev cleared the corridor in 42 decisions to d1-ultra's 59,
+with the same six kills and the same health, choosing `approach_pickup`
+23 times and `weave_fire` 15 (d1-ultra: `weave_fire` 27, `approach_pickup`
+24); its survival sense spoke on 16 decisions of 42 (d1-ultra's on 4 of
+59). On seed 11 the two runs parted at System 2's third cycle: on Jev
+the exploration reflector proposed `level:explore` (`progress_stalled`,
+0.53) beside the resource auditor's `widen:resource:threats`
+(`missing_evidence`, 0.57), System 2's central chose the level (0.46,
+against 0.35 for `none`), and the change took effect at decision 62 as
+version 2. Under it 61 decisions were drawn instead of taken from the
+top; the trial judge compared 60 decisions before and 60 during (reward
+per decision 8.32 against −8.59, 5 kills against none, 43 paying off
+against 17) and reverted at decision 122, to version 3. After the
+cooling (three cycles in which the bounds left every reflector no
+change, so none was called) the resource auditor's `widen:resource:threats`
+was chosen in each of the last three cycles: the history test rejected
+it twice (composite gain +0.25 with a worst metric drop of 0.25, then
++0.12 with 0.12, both over the 0.10 allowed) and passed it at the
+episode's end (+0.25, worst drop 0.00), so version 4 was queued for the
+next episode. The agent, with its five kills from before the trial, died
+at decision 211. On d1-ultra the same seed's System 2 proposed
+`widen:combat:incoming` twice and the history test failed it twice
+(composite +0.00), so the agent played all 179 decisions on version 1
+and cleared the corridor. One recording per seed says nothing about which
+decider plays better; it says the hierarchy, System 2 included, runs
+unchanged on either, at the same tick, for about a third more per
+decision on Jev, and that the two make different decisions from the same
+evidence.
+
 ## 16. Testing
 
 ```bash
-python -m pytest                 # 238 tests, 25 files, from the repo root
-python -m pytest -k "not live"   # the 234 that need no key, as CI runs them
+python -m pytest                 # 249 tests, 25 files, from the repo root
+python -m pytest -k "not live"   # the 242 that need no key, as CI runs them
 ```
 
 Every behaviour is exercised without a key through `tests/fake_d1.py`:
@@ -1994,12 +2072,18 @@ and `survival_until_pickups` scripts a survival sense that speaks for
 the first menu action until it sees `pickups`, so that widen has
 something to pass. `tests/system2_fixtures.py` builds synthetic
 histories of `TickRecord`s with known rewards that re-render like played
-ticks. The four live tests (`@pytest.mark.live`, named `test_live_*`:
-one d1-ultra call, one tick with six instances, a history-test re-run on
-4 stored ticks, and one System 2 cycle on a short real history) call the
-real API and skip without `LIQUID_API_KEY`. Tests use real ViZDoom
-headlessly; the suite takes about half a minute without the live tests
-and about 45 seconds with them.
+ticks. `FakeD1(..., decider="jev")` answers as Jev would (the versioned
+model, a usage block without cost) and records every call's URL and
+headers, so the Jev tests assert that every instance's call went to
+TypeSafe with the screen as an asset. The seven live tests
+(`@pytest.mark.live`, named `test_live_*`) call the real APIs: four on
+d1-ultra (one call, one tick with six instances, a history-test re-run on
+4 stored ticks, and one System 2 cycle on a short real history), which
+skip without `LIQUID_API_KEY`, and three on Jev (one call, one tick with
+six instances, and 16 corridor decisions with a System 2 cycle every 8),
+which skip without `TYPESAFE_API_KEY`. Tests use real ViZDoom headlessly;
+the suite takes about 40 seconds without the live tests and about a
+minute with them.
 
 | File | Covers |
 |---|---|
@@ -2014,16 +2098,16 @@ and about 45 seconds with them.
 | `test_reflectors.py` | Nine reflectors, each over its history channel and `h_outcomes`; questions that name the reflector and never say how to weigh; one channel at a time, never `menu`; the menu, strategy and exploration menus; the bounds (cooling, the trial, scope size, built-ins, `menu`); a change bumps the version and the diff says what changed; one call, and a proposal only when it speaks for a change; a change outside the criteria is a miss |
 | `test_history_test.py` | The sense and central metrics on labelled ticks; the margin rule on both sides; strata by rank; the seeded stratified sample, the context cap and when it is relaxed; a change that quiets a sense on its unpaid messages passes, one under the margin fails; no test and no call under 24 ticks; the noise estimate; a missed re-run counts as silent; the screen attached when `frame` joins the scope; the central's test; one live re-run on 4 ticks |
 | `test_system2.py` | On a synthetic history and on `basic.cfg` with the fake: a cycle every 20 decisions or at an episode end, none during a trial; each reflector sees only its channels and the central its three; the central's criteria are the allowed proposals and `none`; one change per cycle, at a tick boundary; the judge keeps after 60 decisions; a revert restores the previous configuration exactly with the version bumped, then cooling; a revert queued again on restore; a missed judge extends the trial by 20; a judge that never answers ends the trial as revert with no verdict, and one that misses twice and then answers is followed; the safety revert; a missed central changes nothing and a tie goes to the first option; the calls counted and kept under the bound; a macro request through the slow path, and a reverted macro retired; the state saved and restored only onto its configuration; end to end, a widen tested, applied and kept, ending at configuration version 2, in the controller and in served bundles; off unless asked; one live cycle on a short real history |
-| `test_d1_client.py` | Request serialisation through an injected transport; typed misses counted per instance; `Retry-After` parsing; the default transport's typed 429; one live call |
-| `test_controller_e2e.py` | On `basic.cfg` with the fake: six instances per tick with the payload's state equal to the evidence; a fake that shoots when aimed clears the level; a scripted outage gives missed ticks with idle steps, then `connection_lost`; isolated misses do not end the episode; every motor step follows the action's plan; the value networks learn and appear in `values`; the ledger updates and is restored; a pending configuration applies at the boundary; explore draws reproduce; an admitted macro enters at the next boundary; play needs the key; one live tick with six instances answering |
+| `test_d1_client.py` | Request serialisation through an injected transport; typed misses counted per instance; `Retry-After` parsing; the default transport's typed 429; one live call; on Jev: the same request at TypeSafe with the screen as a 640×480 asset under its header, the state ending with the reference, no cost in the usage so the input tokens at the published price, each decider reading its own key, and a live Jev call |
+| `test_controller_e2e.py` | On `basic.cfg` with the fake: six instances per tick with the payload's state equal to the evidence; a fake that shoots when aimed clears the level; a scripted outage gives missed ticks with idle steps, then `connection_lost`; isolated misses do not end the episode; every motor step follows the action's plan; the value networks learn and appear in `values`; the ledger updates and is restored; a pending configuration applies at the boundary; explore draws reproduce; an admitted macro enters at the next boundary; play needs the key; one live tick with six instances answering; the whole hierarchy on the fake Jev (24 `basic.cfg` decisions with System 2 every 8): every call of every instance, System 1's and System 2's, at TypeSafe with the Jev key, the combat sense's state its evidence plus the one asset, every other state its evidence exactly, the cost at the published price, a trial and a verdict; a controller on Jev needs `TYPESAFE_API_KEY`; live on Jev: one tick with six instances, and 16 corridor decisions with System 2 |
 | `test_architecture.py` | The removed `modules.py`, `arbiter.py` and `exploration.py` are gone and nothing in `src/` or `tests/` imports them; keys are pressed only in `controller.py`, from the pick or the typed miss; only `system1.py` builds a `Pick`, and only it and `history_test.py` (the seeded sample of stored ticks) import `random`; at run time the executed action is the central's answer and a miss idles |
 | `test_llm_and_admission.py` | The bounds reject before any call; the admit instance admits at its yes; a missed admit rejects; the admit evidence and its determinism; the background worker |
 | `test_archive.py` | The archive holds no decision; the active strategy follows the configuration; a full archive makes room by age, never by score; outcomes update the record shown as evidence |
 | `test_learning.py` | n-step returns; per-network rewards; running stats; replay round-trip; each value net learns its own signal; episode credit assignment; checkpoint round-trip, overrides and mismatch; a checkpoint with gate weights loads (synthetic, and the shipped one when present) |
 | `test_training.py` | The motor executes an action's own plan; `train` writes the full run folder (with the ledger and history) and resumes; training and evaluation start from the saved configuration (evaluation with System 2 off, saving nothing) and `--fresh` forgets it; admitted macros persist and are re-validated; no exploration schedule; fail fast without the key; the idle burst |
-| `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy |
-| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra and is listed in the index |
-| `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration` |
+| `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy; `--decider jev` reaches the summary (`decider`, `models`) and every call goes to TypeSafe; `--decider jev` fails fast naming `TYPESAFE_API_KEY` |
+| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra and is listed in the index; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
+| `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration`; `--decider jev` reaches the status |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run lint`

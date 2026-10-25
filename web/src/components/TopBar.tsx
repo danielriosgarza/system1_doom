@@ -75,7 +75,7 @@ export function TopBar() {
     <header className={`topbar ${bundle && liveOpen === bundle.name ? 'is-live' : ''}`}>
       <div className="brand">
         <h1>System 1 Doom</h1>
-        <span>every decision by d1-ultra</span>
+        <span>every decision by {bundle?.meta.decider ?? 'd1-ultra'}</span>
       </div>
       <nav className="screens" aria-label="Screens">
         {SCREENS.map((s) => (
