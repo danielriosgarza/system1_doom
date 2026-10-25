@@ -1,11 +1,13 @@
 import type { EpisodeMeta, ModuleTrace, TickTrace } from '../schema/bundle'
 import {
+  D1_WEIGHT,
   EXPANSION_TRIGGERS,
   MEMORY_LABELS,
   MODULES,
   type ModuleName,
   TRUST_COUNT,
   fmt,
+  moduleD1Part,
   pct,
   prettyId,
   rankedActions,
@@ -18,7 +20,8 @@ const color = (m: ModuleName) => `var(--${m})`
 function ProbabilityBar({ module, out, action }: { module: ModuleName; out: ModuleTrace; action: string }) {
   const p = out.probabilities?.[action] ?? 0
   const lambda = out.trust?.[action] ?? 0
-  const d1 = out.used_d1_ultra ? (out.d1_weight ?? 0) : 0
+  // d1's part differs per action: its answer for this action against the module's own softmax.
+  const d1 = p > 0 ? moduleD1Part(out, action).fromD1 / p : 0
   return (
     <span className="bar-track" style={{ ['--c' as string]: color(module) }}>
       <span className="bar-fill" style={{ width: `${p * 100}%` }}>
@@ -36,6 +39,7 @@ function CellTip({ module, out, action }: { module: ModuleName; out: ModuleTrace
   const lambda = out.trust?.[action]
   const u = out.utility_blended?.[action]
   const p = out.probabilities?.[action] ?? 0
+  const d1 = moduleD1Part(out, action)
   const n = lambda !== undefined && lambda < 1 ? (TRUST_COUNT * lambda) / (1 - lambda) : undefined
   return (
     <>
@@ -55,8 +59,26 @@ function CellTip({ module, out, action }: { module: ModuleName; out: ModuleTrace
       ) : (
         <div className="muted">No network loaded: the heuristic score is used as is.</div>
       )}
+      {out.used_d1_ultra && (
+        <div>
+          d1-ultra gave it {pct(d1.d1, 1)}, mixed in at weight {fmt(out.d1_weight ?? 0, 2)}: {pct(d1.fromD1, 1)} of the{' '}
+          {pct(p, 1)} came from d1.
+        </div>
+      )}
       {out.top_action === action && <div>This is the module&apos;s first choice.</div>}
     </>
+  )
+}
+
+/** What d1-ultra answered this module's question with, under the column's heading. */
+function D1Line({ out }: { out: ModuleTrace }) {
+  const top = out.d1_top_action
+  if (!out.used_d1_ultra || !top) return null
+  return (
+    <div className="d1-line" data-testid="module-d1">
+      <span className="key dotted" aria-hidden />
+      d1: {prettyId(top)} {pct(out.d1_probabilities?.[top] ?? 0)}, weight {fmt(out.d1_weight ?? 0, 2)}
+    </div>
   )
 }
 
@@ -69,6 +91,7 @@ export function ModuleMatrix({ tick, meta }: { tick: TickTrace; meta: EpisodeMet
     return <p className="empty-note">No module opinions this tick: the budget allowed only a cached decision.</p>
   }
   const learned = modules.some((m) => Object.keys(tick.module_outputs[m]?.utility_learned ?? {}).length > 0)
+  const d1 = modules.some((m) => tick.module_outputs[m]?.used_d1_ultra)
   return (
     <>
       <div className="scroll-x">
@@ -89,6 +112,7 @@ export function ModuleMatrix({ tick, meta }: { tick: TickTrace; meta: EpisodeMet
                       <div style={{ width: `${(out.confidence ?? 0) * 100}%`, background: color(m) }} />
                     </div>
                   </div>
+                  <D1Line out={out} />
                 </div>
               )
             })}
@@ -168,10 +192,12 @@ export function ModuleMatrix({ tick, meta }: { tick: TickTrace; meta: EpisodeMet
         </span>
         <span>
           <span className="key dotted" style={{ ['--c' as string]: 'var(--n2)' }} />
-          from d1-ultra advice
+          from d1-ultra advice (mixed in at {D1_WEIGHT.open}, or {D1_WEIGHT.settled} when the module&apos;s own top
+          leads by {D1_WEIGHT.gap})
         </span>
         <span>A ringed bar is that module&apos;s first choice.</span>
-        {!learned && <span>No networks in this episode, so every bar is solid.</span>}
+        {!learned && !d1 && <span>No networks in this episode, so every bar is solid.</span>}
+        {!learned && d1 && <span>No networks in this episode: the rest of every bar is the heuristic.</span>}
       </div>
     </>
   )

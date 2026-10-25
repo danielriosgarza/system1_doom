@@ -140,6 +140,38 @@ test('the hierarchy shows the admission and the pick of the linked tick', async 
   expect(errors).toEqual([])
 })
 
+interface D1Trace extends Trace {
+  d1_arbiter_distribution?: Record<string, number> | null
+  module_outputs: Record<string, { d1_top_action?: string | null }>
+}
+
+test('with d1-ultra the overview box, a module column, the arbiter and the gate show its answers', async ({ page }) => {
+  const errors = collectErrors(page)
+  const episode = 'deadly_corridor-learned-d1-11'
+  const trace = (ticksOf(episode) as D1Trace[]).find(
+    (t) => Object.keys(t.d1_arbiter_distribution ?? {}).length > 0 && t.module_outputs.survival?.d1_top_action,
+  ) as D1Trace
+  const [top] = Object.entries(trace.d1_arbiter_distribution ?? {}).sort((a, b) => b[1] - a[1])
+
+  await page.goto(`./#${episode}/${trace.tick}/overview`)
+  const box = page.locator('[data-box="d1"]')
+  await expect(box).toHaveClass(/advised/)
+  await expect(box).toContainText(pretty(top?.[0] ?? ''))
+
+  await page.goto(`./#${episode}/${trace.tick}`)
+  await expect(page.locator('#panel-modules').getByTestId('module-d1')).toHaveCount(5)
+  await expect(page.locator('#panel-modules').getByTestId('module-d1').first()).toContainText(
+    `d1: ${pretty(trace.module_outputs.survival?.d1_top_action ?? '')}`,
+  )
+  await expect(page.getByTestId('arbiter-d1')).toContainText(pretty(top?.[0] ?? ''))
+
+  // Tick 41's proposal was the first that d1-ultra turned away.
+  await page.goto(`./#${episode}/41/menu`)
+  await expect(page.getByTestId('gate-d1')).toContainText('0.38')
+  await expect(page.getByTestId('gate-d1')).toContainText('rejected')
+  expect(errors).toEqual([])
+})
+
 test('a box on the overview explains itself and opens its inspector panel', async ({ page }) => {
   const errors = collectErrors(page)
   await page.goto('./#deadly_corridor-heuristics-9/18/overview')

@@ -1,4 +1,4 @@
-import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import { DecisionCard } from '../components/DecisionCard'
 import { ExplorationGauge } from '../components/ExplorationGauge'
 import { GateDetail, GatePipeline } from '../components/GateStages'
@@ -8,6 +8,9 @@ import { EXPLAINERS, type ExplainerContext, type ExplainerId, type PanelId } fro
 import {
   type LevelId,
   type TowerLevel,
+  d1Arbiter,
+  d1Modules,
+  d1Words,
   exploration,
   explainPick,
   fmt,
@@ -21,7 +24,7 @@ import {
   towerLevels,
 } from '../data/derive'
 import type { EpisodeBundle } from '../data/loader'
-import type { TickTrace } from '../schema/bundle'
+import type { EpisodeMeta, TickTrace } from '../schema/bundle'
 import { openInInspector, openPanel, setState, useApp } from '../store'
 
 const LEVEL_EXPLAINER: Record<LevelId, ExplainerId> = {
@@ -73,6 +76,7 @@ const SOURCES: Source[] = [
     bounds: ['advice only'],
     feeds: ['gate', 'opinions', 'arbiter'],
     line: 'dotted',
+    panel: 'arbiter',
   },
   {
     id: 'networks',
@@ -184,6 +188,44 @@ function SimulatorReading({ tick }: { tick: TickTrace }) {
         </>
       )}
     </dl>
+  )
+}
+
+function D1Reading({ tick, meta }: { tick: TickTrace; meta: EpisodeMeta }) {
+  if (!meta.brains.d1_ultra) return <p className="empty-note">Off in this recording: no advice was asked for.</p>
+  const arbiter = d1Arbiter(tick)
+  const modules = d1Modules(tick)
+  return (
+    <div data-testid="d1-reading">
+      <p className="d1-words">{d1Words(tick, meta)}</p>
+      {(arbiter || modules.length > 0) && (
+        <dl className="facts">
+          {arbiter && (
+            <>
+              <dt>the arbiter</dt>
+              <dd>
+                {arbiter.ranked
+                  .slice(0, 3)
+                  .map((r) => `${prettyId(r.action)} ${pct(r.p)}`)
+                  .join(', ')}
+              </dd>
+            </>
+          )}
+          {modules.map((m) => {
+            const out = tick.module_outputs[m]
+            const top = out?.d1_top_action ?? ''
+            return (
+              <Fragment key={m}>
+                <dt>{m}</dt>
+                <dd>
+                  {prettyId(top)} {pct(out?.d1_probabilities?.[top] ?? 0)}, mixed in at {fmt(out?.d1_weight ?? 0, 2)}
+                </dd>
+              </Fragment>
+            )
+          })}
+        </dl>
+      )}
+    </div>
   )
 }
 
@@ -484,13 +526,7 @@ export function Hierarchy({
                 )}
                 {source.id === 'simulator' && <SimulatorReading tick={tick} />}
                 {source.id === 'networks' && <NetworksReading tick={tick} on={meta.brains.learned_networks} />}
-                {source.id === 'd1' && (
-                  <p className="empty-note">
-                    {meta.brains.d1_ultra
-                      ? `Advice was ${tick.used_d1_ultra ? 'used' : 'not answered in time'} this tick.`
-                      : 'Off in this recording: no API key, so no advice.'}
-                  </p>
-                )}
+                {source.id === 'd1' && <D1Reading tick={tick} meta={meta} />}
               </SideCard>
             )
           })}

@@ -53,5 +53,5 @@ export const BOXES: Record<BoxId, BoxInfo> = {
   gateShare: { title: 'gate share g', explainer: 'networks', panel: 'arbiter', learning: 'gateview' },
   simulator: { title: 'Bounded simulator', explainer: 'projection', panel: 'projection' },
   archive: { title: 'Strategy archive', explainer: 'steering', panel: 'outcome' },
-  d1: { title: 'd1-ultra', explainer: 'd1' },
+  d1: { title: 'd1-ultra', explainer: 'd1', panel: 'arbiter', menu: 'gate' },
 }

@@ -13,6 +13,17 @@
       "ticks": 36
     },
     {
+      "name": "deadly_corridor-heuristics-11",
+      "title": "Deadly corridor, heuristics only, seed 11",
+      "scenario": "deadly_corridor.cfg",
+      "model": "heuristics",
+      "seed": 11,
+      "cleared": false,
+      "died": true,
+      "reward": 589.4,
+      "ticks": 55
+    },
+    {
       "name": "deadly_corridor-learned-9",
       "title": "Deadly corridor, learned networks after 300 training episodes, seed 9",
       "scenario": "deadly_corridor.cfg",
@@ -22,6 +33,17 @@
       "died": false,
       "reward": 2280.76,
       "ticks": 52
+    },
+    {
+      "name": "deadly_corridor-learned-d1-11",
+      "title": "Deadly corridor, learned networks with d1-ultra advice, seed 11",
+      "scenario": "deadly_corridor.cfg",
+      "model": "latest",
+      "seed": 11,
+      "cleared": false,
+      "died": true,
+      "reward": 759.56,
+      "ticks": 44
     }
   ]
 }

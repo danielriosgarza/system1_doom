@@ -39,6 +39,7 @@ const config = {
   seed: recorded.seed,
   model: recorded.model,
   d1: false,
+  d1_sync: false,
   codex: false,
   slow_path: true,
   deterministic: false,

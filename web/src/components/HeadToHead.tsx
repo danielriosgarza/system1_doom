@@ -18,8 +18,9 @@ const BRAINS: Array<{ id: 'heuristics' | 'latest' | 'best'; label: string }> = [
   { id: 'best', label: 'Best checkpoint' },
 ]
 
-function brainLabel(meta: Pick<EpisodeMeta, 'model'>): string {
-  return meta.model === 'heuristics' ? 'the heuristics alone' : 'with the networks'
+function brainLabel(meta: Pick<EpisodeMeta, 'model' | 'brains'>): string {
+  if (meta.model === 'heuristics') return 'the heuristics alone'
+  return meta.brains.d1_ultra ? "with the networks and d1-ultra's advice" : 'with the networks'
 }
 
 function ending(meta: EpisodeMeta): string {
@@ -62,7 +63,13 @@ function Strip({
   return (
     <div className={`h2h-strip ${current ? 'current' : 'other'}`} ref={ref} data-episode={bundle.name}>
       <div className="h2h-strip-head">
-        <strong>{bundle.meta.model === 'heuristics' ? 'Heuristics only' : 'With the networks'}</strong>{' '}
+        <strong>
+          {bundle.meta.model === 'heuristics'
+            ? 'Heuristics only'
+            : bundle.meta.brains.d1_ultra
+              ? "With the networks and d1-ultra's advice"
+              : 'With the networks'}
+        </strong>{' '}
         <span className="muted">{ending(bundle.meta)}</span>
         {current ? (
           <span className="h2h-here">this recording</span>
@@ -86,16 +93,22 @@ function Strip({
       >
         <rect x={PAD} y={TOP} width={Math.max(0, x(last) + slot / 2 - PAD)} height={BOTTOM - TOP} className="h2h-bed" />
         <path d={path} className="h2h-health" />
-        {bundle.ticks.map((t) =>
-          tickEvents(t, admitted).map((e, j) => (
-            <Mark
-              key={`${t.tick}-${e.kind}-${j}`}
-              kind={e.kind}
-              x={x(t.tick)}
-              y={KIND_LANE[e.kind] === 'top' ? 7 : 50}
-            />
-          )),
-        )}
+        {bundle.ticks.map((t) => {
+          const list = tickEvents(t, admitted)
+          return list.map((e, j) => {
+            // Marks of one tick and lane sit side by side, as on the timeline, so a minus and a bar never make a plus.
+            const sameLane = list.filter((o) => KIND_LANE[o.kind] === KIND_LANE[e.kind])
+            const offset = (sameLane.indexOf(e) - (sameLane.length - 1) / 2) * Math.min(9, slot)
+            return (
+              <Mark
+                key={`${t.tick}-${e.kind}-${j}`}
+                kind={e.kind}
+                x={x(t.tick) + offset}
+                y={KIND_LANE[e.kind] === 'top' ? 7 : 50}
+              />
+            )
+          })
+        })}
         {tick <= last && (
           <rect x={x(tick) - slot / 2} y={TOP - 2} width={slot} height={BOTTOM - TOP + 4} className="h2h-cursor" />
         )}
@@ -133,7 +146,8 @@ export function HeadToHead({ bundle, evaluation }: { bundle: EpisodeBundle; eval
           <table className="h2h-table">
             <caption>
               {evaluation.episodes} seeded episodes per brain after {evaluation.trained_episodes ?? '?'} training
-              episodes, played greedily: no exploration, no learning.
+              episodes, played greedily: no exploration, no learning
+              {bundle.meta.brains.d1_ultra ? ', and no d1-ultra, unlike this recording' : ''}.
             </caption>
             <thead>
               <tr>
@@ -170,8 +184,8 @@ export function HeadToHead({ bundle, evaluation }: { bundle: EpisodeBundle; eval
       )}
       {heuristic && learned ? (
         <p className="h2h-sentence">
-          Same scenario and seed, the same {builtin} built-in actions: the heuristics alone {ending(heuristic.meta)};
-          with the networks the controller {ending(learned.meta)}.
+          Same scenario and seed, the same {builtin} built-in actions: the heuristics alone {ending(heuristic.meta)};{' '}
+          {brainLabel(learned.meta)} the controller {ending(learned.meta)}.
         </p>
       ) : pair ? (
         <p className="h2h-sentence muted">Loading the other recording of seed {bundle.meta.seed}…</p>

@@ -197,6 +197,16 @@ def test_status_lists_the_finished_episodes_and_the_shipped_index_is_untouched(s
     assert code == 200 and body == (RECORDINGS / "index.json").read_bytes()
 
 
+def test_d1_sync_reaches_the_status_and_needs_d1(capsys):
+    config = serve.config_from_args(serve.build_parser().parse_args(["--d1", "--d1-sync"]))
+    assert config.d1 and config.d1_sync
+    assert serve.LiveHub(config).status()["config"]["d1_sync"] is True
+    assert serve.LiveHub(serve.ServeConfig()).status()["config"]["d1_sync"] is False
+    with pytest.raises(SystemExit) as exc:
+        serve.main(["--d1-sync"])
+    assert exc.value.code == 2 and "--d1-sync needs --d1" in capsys.readouterr().err
+
+
 def test_stopping_finishes_the_episode_with_finished_false(tmp_path):
     config = serve.ServeConfig(
         scenario="basic.cfg", seed=3, run_dir=tmp_path / "no_run", max_ticks=5, deterministic=True,

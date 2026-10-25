@@ -44,6 +44,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import unquote, urlsplit
 
 from system1_doom.export import (
+    D1_SYNC_HELP,
     BundleIndexEntry,
     EpisodeMeta,
     Model,
@@ -90,6 +91,7 @@ class ServeConfig:
     run_dir: Optional[Path] = None
     max_ticks: int = 500
     d1: bool = False
+    d1_sync: bool = False
     codex: bool = False
     slow_path: bool = True
     deterministic: bool = False
@@ -109,6 +111,7 @@ class ServeConfig:
             "seed": self.seed,
             "model": self.model,
             "d1": self.d1,
+            "d1_sync": self.d1_sync,
             "codex": self.codex,
             "slow_path": self.slow_path,
             "deterministic": self.deterministic,
@@ -461,6 +464,7 @@ def play(config: ServeConfig, hub: LiveHub, stop: threading.Event, log: bool = F
         config.slow_path,
         config.codex,
         config.deterministic,
+        config.d1_sync,
     )
     try:
         k = 0
@@ -486,6 +490,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-dir", default=None, help="Run folder with trained models (default: runs/<scenario name>)")
     parser.add_argument("--max-ticks", type=int, default=500, help="Decision cap per episode")
     parser.add_argument("--d1", action="store_true", help="Use Liquid AI d1-ultra (needs LIQUID_API_KEY)")
+    parser.add_argument("--d1-sync", action="store_true", help=D1_SYNC_HELP)
     parser.add_argument("--codex", action="store_true", help="Let the slow path call the Codex CLI instead of templates")
     parser.add_argument("--no-slow-path", action="store_true", help="Switch the slow path off entirely")
     parser.add_argument("--deterministic", action="store_true", help="Always take the arbiter's top-scored action")
@@ -514,6 +519,7 @@ def config_from_args(args: argparse.Namespace) -> ServeConfig:
         run_dir=Path(args.run_dir) if args.run_dir else None,
         max_ticks=args.max_ticks,
         d1=args.d1,
+        d1_sync=args.d1_sync,
         codex=args.codex,
         slow_path=not args.no_slow_path,
         deterministic=args.deterministic,
@@ -529,7 +535,11 @@ def config_from_args(args: argparse.Namespace) -> ServeConfig:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    config = config_from_args(build_parser().parse_args(argv))
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.d1_sync and not args.d1:
+        parser.error("--d1-sync needs --d1")
+    config = config_from_args(args)
     try:
         prepare_live_dir(config.out)
     except FileExistsError as exc:

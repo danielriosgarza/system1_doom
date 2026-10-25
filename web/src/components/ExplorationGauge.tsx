@@ -28,6 +28,9 @@ export function ExplorationGauge({
 }) {
   const depth = useApp((s) => s.depth)
   const sampled = margin < SAMPLE_MARGIN && reading.pressure >= SAMPLE_PRESSURE
+  // The controller's own pressure, after the dampers; d1-ultra, when it answered, then pulls it halfway to its level.
+  const own = reading.d1 === null ? reading.pressure : Math.min(1, Math.max(0, reading.product))
+  const pulled = reading.d1 !== null && Math.abs(reading.pressure - own) > 1e-4
   return (
     <div className="gauge">
       <div className="gauge-figure">
@@ -38,7 +41,11 @@ export function ExplorationGauge({
             : "pressure this tick's arbiter used, from the end of the tick before"}
         </span>
       </div>
-      <div className="gauge-bar" role="img" aria-label={`Pressure ${fmt(reading.pressure, 2)} on a scale from 0 to 1`}>
+      <div
+        className={`gauge-bar ${pulled ? 'with-d1' : ''}`}
+        role="img"
+        aria-label={`Pressure ${fmt(reading.pressure, 2)} on a scale from 0 to 1`}
+      >
         {reading.initial ? (
           <span className="gauge-seg" style={{ width: `${reading.pressure * 100}%`, background: 'var(--n2)' }} />
         ) : (
@@ -55,17 +62,38 @@ export function ExplorationGauge({
         {[0.25, 0.5, 0.75].map((q) => (
           <span key={q} className="gauge-quarter" style={{ left: `${q * 100}%` }} aria-hidden />
         ))}
-        {!reading.initial && reading.sum > reading.pressure && (
+        {!reading.initial && reading.sum > own && (
           <span
             className="gauge-cut"
             style={{
-              left: `${reading.pressure * 100}%`,
-              width: `${(Math.min(1, reading.sum) - reading.pressure) * 100}%`,
+              left: `${own * 100}%`,
+              width: `${(Math.min(1, reading.sum) - own) * 100}%`,
             }}
             title="cut by the dampers"
           />
         )}
-        <span className="gauge-result" style={{ left: `${reading.pressure * 100}%` }} title="after dampers and clamp" />
+        {pulled && reading.d1 !== null && (
+          <Tip
+            body={`d1-ultra's own level ${fmt(reading.d1, 3)} gets half the say: ½ × ${fmt(reading.product, 3)} + ½ × ${fmt(reading.d1, 3)}, clamped, is ${fmt(reading.pressure, 3)}`}
+            className="gauge-d1-tip"
+          >
+            <span
+              className="gauge-d1 dotted"
+              data-testid="gauge-d1"
+              style={{
+                ['--c' as string]: 'var(--n1)',
+                left: `${Math.min(own, reading.pressure) * 100}%`,
+                width: `${Math.abs(reading.pressure - own) * 100}%`,
+              }}
+              aria-label={`pulled by d1-ultra from ${fmt(own, 2)} to ${fmt(reading.pressure, 2)}`}
+            />
+          </Tip>
+        )}
+        <span
+          className="gauge-result"
+          style={{ left: `${reading.pressure * 100}%` }}
+          title={reading.d1 === null ? 'after dampers and clamp' : 'after dampers, d1-ultra and clamp'}
+        />
       </div>
       {!reading.initial && (
         <div className="gauge-legend">
@@ -75,6 +103,12 @@ export function ExplorationGauge({
               {t.label} {fmt(t.value, 2)}
             </span>
           ))}
+          {reading.d1 !== null && (
+            <span>
+              <span className="key dotted" style={{ ['--c' as string]: 'var(--n1)' }} />
+              d1-ultra {fmt(reading.d1, 2)}, half the say
+            </span>
+          )}
         </div>
       )}
       {!reading.initial && (
@@ -86,6 +120,13 @@ export function ExplorationGauge({
               </span>
             </Tip>
           ))}
+          {reading.d1 !== null && (
+            <Tip
+              body={`d1-ultra was asked how much to explore; its answer, ${fmt(reading.d1, 3)}, is averaged with the controller's own ${fmt(reading.product, 3)}`}
+            >
+              <span className="damper on d1">½ with d1-ultra {fmt(reading.d1, 2)}</span>
+            </Tip>
+          )}
           <span className="damper clamp">clamp [{PRESSURE_FLOOR}, 1]</span>
         </div>
       )}

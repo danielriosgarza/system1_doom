@@ -1,8 +1,12 @@
 import { useId } from 'react'
 import type { TickTrace } from '../schema/bundle'
 import {
+  D1_ARBITER_BONUS,
+  type D1ArbiterReading,
   MODULES,
   type ModuleName,
+  choiceWords,
+  d1Arbiter,
   explainPick,
   fmt,
   moduleVoteParts,
@@ -269,6 +273,25 @@ function Rings({ tick }: { tick: TickTrace }) {
   )
 }
 
+/** d1-ultra's answer to the arbiter's question, and what it added to the scores. */
+function D1Advice({ tick, d1, all }: { tick: TickTrace; d1: D1ArbiterReading; all: boolean }) {
+  const top = d1.ranked[0]
+  if (!top) return null
+  const shown = all ? d1.ranked : d1.ranked.slice(0, 3)
+  return (
+    <p className="d1-advice" data-testid="arbiter-d1">
+      <span className="key dotted" style={{ ['--c' as string]: 'var(--n1)' }} aria-hidden />
+      <strong>d1-ultra&apos;s answer</strong>
+      {shown.length < d1.ranked.length ? ', its top three' : ''}:{' '}
+      {shown.map((r) => `${prettyId(r.action)} ${pct(r.p, all ? 1 : 0)}`).join(', ')}. Each adds {D1_ARBITER_BONUS} ×
+      its probability to that action&apos;s score: +{fmt(top.bonus, 3)} for {prettyId(top.action)}.{' '}
+      {top.action === tick.selected_action
+        ? 'The pick was its first choice.'
+        : `The pick, ${prettyId(tick.selected_action)}, was ${choiceWords(d1.pickRank)} (+${fmt(D1_ARBITER_BONUS * d1.pickP, 3)}).`}
+    </p>
+  )
+}
+
 const RULES = [
   ['committed', 'a module commits'],
   ['explored', 'forced exploration'],
@@ -290,6 +313,7 @@ export function ArbiterPanel({ tick }: { tick: TickTrace }) {
     )
   }
   const pick = explainPick(tick)
+  const d1 = d1Arbiter(tick)
   return (
     <div className="arbiter-grid">
       <div>
@@ -301,7 +325,7 @@ export function ArbiterPanel({ tick }: { tick: TickTrace }) {
               {m} vote
             </span>
           ))}
-          {OTHER_PARTS.filter((p) => p.key !== 'd1_bonus' || tick.used_d1_ultra).map((p) => (
+          {OTHER_PARTS.filter((p) => p.key !== 'd1_bonus' || d1).map((p) => (
             <span key={p.key}>
               <span className={`key ${p.style}`} style={{ ['--c' as string]: p.color }} />
               {p.label}
@@ -332,6 +356,7 @@ export function ArbiterPanel({ tick }: { tick: TickTrace }) {
               {fmt(arbiter.temperature ?? 0, 3)}, score margin {fmt(arbiter.score_margin ?? 0, 3)}.
             </p>
           )}
+          {d1 && <D1Advice tick={tick} d1={d1} all={depth === 'formula'} />}
         </div>
       </div>
       <Rings tick={tick} />

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { LIVE_COPY } from '../content/live'
 import {
   BRAIN_WORDS,
+  D1_SYNC_TICK_BUDGET_SEC,
   INDEX_COMMAND,
   MODULES,
   exportCommand,
@@ -19,6 +20,12 @@ import { openEpisode, useApp } from '../store'
 import { Brains } from './Brains'
 
 const thousands = (n: number) => n.toLocaleString('en-US')
+
+/** What each execution mode means for d1-ultra's answers (controller.py, ControllerConfig.execution_mode). */
+const EXECUTION_MODE_WORDS: Record<string, string> = {
+  async_cached: ': d1 answers are read from a cache and never awaited',
+  sync_d1: ": each full-budget tick waits for d1's answers, so every tick carries its advice",
+}
 
 /** The command in a block, with a button that copies it; where the clipboard is blocked, it selects it. */
 function Command({ text, label }: { text: string; label: string }) {
@@ -87,7 +94,7 @@ export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: Tick
         <dt>Execution mode</dt>
         <dd>
           <code>{config.execution_mode}</code>
-          {config.execution_mode === 'async_cached' ? ': d1 answers are read from a cache and never awaited' : ''}
+          {EXECUTION_MODE_WORDS[config.execution_mode] ?? ''}
         </dd>
         <dt>Tick budget</dt>
         <dd>{fmt(config.tick_budget_sec * 1000, 0)} ms</dd>
@@ -227,8 +234,8 @@ export function Provenance({ bundle, tick }: { bundle: EpisodeBundle; tick: Tick
       <Command text={INDEX_COMMAND} label="the index command" />
       <p className="muted">
         The defaults that matter: the trained models are read from the run folder{' '}
-        <code>runs/{meta.scenario.replace('.cfg', '')}</code>, the tick budget is 40 ms, the exploration floor is 0 and
-        nothing is learned while recording.
+        <code>runs/{meta.scenario.replace('.cfg', '')}</code>, the tick budget is 40 ms ({D1_SYNC_TICK_BUDGET_SEC} s
+        with <code>--d1-sync</code>), the exploration floor is 0 and nothing is learned while recording.
       </p>
     </div>
   )
