@@ -88,8 +88,15 @@ history test's whole table, the trial and the judge, and the relevance
 ledger; Learning, Growing the menu and Reference (the one rule, a drawing
 of the two systems, the glossary) follow.
 
-It ships five recordings of `deadly_corridor.cfg` with the best
-networks as evidence. Three were played by d1-ultra: seeds 9 and 11 from
+It ships nine recordings of `deadly_corridor.cfg` with the best
+networks as evidence. Four show the agent as it is now, with the senses
+choosing the motor's targets: seeds 9 to 12, played by Jev because
+d1-ultra's account had no credit when they were made (seed 12 clears the
+corridor in 61 decisions and is the landing; 9, 10 and 11 die in
+fights; all four recorded ship). On 30 held-out seeds this agent cleared
+18 against the earlier one's 12 (`docs/DOCUMENTATION.md` §15). The other
+five were recorded before the senses chose targets, and their cards say
+so. Three of those were played by d1-ultra: seeds 9 and 11 from
 the design's version 1 (both clear the corridor, in 59 and 179
 decisions) and seed 9 again from version 2, the strategy System 2 chose
 and kept on the same run folder (it tries another strategy, the judge

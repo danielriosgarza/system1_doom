@@ -13,7 +13,7 @@ screen is one the agent recorded; nothing in the app ranks, scores or
 decides. In live mode (below) the same app follows an episode while it is
 played.
 
-**Online:** <https://danielriosgarza.github.io/system1_doom/>, the three
+**Online:** <https://danielriosgarza.github.io/system1_doom/>, the nine
 shipped recordings. Live mode is not there: a static site cannot stream,
 so it runs on your machine (below).
 
@@ -27,13 +27,15 @@ npm run dev          # http://localhost:5173
 
 Six screens, keys 1 to 6 in this order:
 
-- **Watch**, where a fresh visit lands (`#corridor-9/0/watch`, the first
-  recording that cleared the corridor): the game plays at the agent's own
+- **Watch**, where a fresh visit lands (`#optimized-corridor-12/0/watch`,
+  the most recently recorded one that cleared the corridor): the game plays at the agent's own
   pace, one decision every 8 game frames (about 0.23 s), and beside it the
   strip: a row per sense (spoke, with its strength as a bar, its action
   and reason; silent; or missed, with why), the central's row (its pick,
   the probability, whether that was its top answer, drawn, or a miss, and
-  how many messages it heard), the Act row (the primitives held) and a
+  how many messages it heard), the Act row (the primitives held, and the
+  enemy the aim followed and the pickup a walk went to, with the sense
+  that chose each) and a
   thin configuration line (the version, the last change and what became
   of it, the trial in flight). A click on a row opens that instance on
   The instances at that decision. Under the game: Play and Pause, Real
@@ -48,9 +50,12 @@ Six screens, keys 1 to 6 in this order:
   scope as chips (the channels it was shown and those it was not), the
   screen it was sent when `frame` is in its scope, its evidence verbatim
   with each `[channel]` header marked, and its answers as bars: the speak
-  strength against yes_at, the action and reason distributions, or the
-  central's choice distribution over the legal menu. A miss shows its
-  reason and the raw answer.
+  strength against yes_at, the action and reason distributions, the
+  target the combat or resource sense chose (the enemy the aim locks
+  onto, the pickup a walk goes to, in the words it saw it in, with its
+  distribution, or a note that a lone candidate needed no question), or
+  the central's choice distribution over the legal menu, whose messages
+  name their targets too. A miss shows its reason and the raw answer.
 - **The slow system**: System 2's record of the episode, from
   `reflections.jsonl`, `relevance.json` and the configuration at the
   start and end. The configuration versions (the change, the reflector
@@ -91,15 +96,25 @@ started from, and is brought up to date on Pause or a change of screen.
 
 ## The recordings
 
-`public/episodes/` holds five recordings of `deadly_corridor.cfg` with
-the run folder's best value networks as evidence (`--networks best`):
-three with every decision made by d1-ultra, two with every decision made
-by Jev, TypeSafe's decision model (`--decider jev`), on the same seeds.
-The index names each recording's decider, and so do its card, the
-picker, the top bar and How this recording was made.
+`public/episodes/` holds nine recordings of `deadly_corridor.cfg` with
+the run folder's best value networks as evidence (`--networks best`).
+Four show the agent as it is now, with the senses choosing the motor's
+targets (the enemy the aim locks onto, the pickup a walk goes to): seeds
+9 to 12, every decision made by Jev, TypeSafe's decision model
+(`--decider jev`), since d1-ultra's account had no credit when they were
+made. All four recorded ship. The other five were recorded before the
+senses chose targets, when the motor picked its own: three with every
+decision made by d1-ultra, two by Jev on the same seeds. The index names
+each recording's decider and whether the senses chose its targets
+(`senses_choose_targets`, those listed first), and so do its card and
+the picker; the landing is the most recently recorded one that cleared.
 
 | Recording | Decided by | Configuration | Result | Size |
 |---|---|---|---|---:|
+| `optimized-corridor-12` | Jev, senses choose targets | version 1 (`--fresh-configuration`) | cleared the corridor in 61 decisions, 6 kills | 4.7 MB |
+| `optimized-corridor-9` | Jev, senses choose targets | version 1 | died after 37 decisions, 3 kills | 3.1 MB |
+| `optimized-corridor-10` | Jev, senses choose targets | versions 1 → 3 | died after 123 decisions, 5 kills | 9.2 MB |
+| `optimized-corridor-11` | Jev, senses choose targets | versions 1 → 2 | died after 54 decisions, 5 kills | 4.5 MB |
 | `corridor-9` | d1-ultra | version 1 (`--fresh-configuration`) | cleared the corridor in 59 decisions, 6 kills | 4.3 MB |
 | `jev-corridor-9` | Jev | version 1 (`--fresh-configuration`) | cleared the corridor in 42 decisions, 6 kills | 2.9 MB |
 | `corridor-11` | d1-ultra | version 1 (`--fresh-configuration`) | cleared the corridor in 179 decisions, 7 kills | 11.7 MB |
@@ -114,7 +129,7 @@ next episode. In `jev-corridor-11` System 2 puts the agent on explore
 for a 60-decision trial, the judge reverts it (version 3), and a widened
 scope passes the history test at the end and is queued. Their calls,
 costs and what System 2 did in each are in `docs/DOCUMENTATION.md` §15.
-Together they are 44.3 MB, mostly the decisions' text. Making the
+Together the nine are 65.8 MB, mostly the decisions' text. Making the
 d1-ultra ones again needs `LIQUID_API_KEY`, the Jev ones
 `TYPESAFE_API_KEY`.
 
@@ -162,9 +177,9 @@ finds no `live/status.json` and is the recordings only.
 ```bash
 npm run lint         # oxlint, warnings fail
 npx prettier --check src e2e
-npm test             # Vitest, 69 tests: the loader (schema 1 refused), the strip and instance readings, System 2's records, learning, live events, playback, the glossary against the docs and the code
+npm test             # Vitest, 73 tests: the loader (schema 1 refused), the strip and instance readings, System 2's records, learning, live events, playback, the glossary against the docs and the code
 npm run build        # type-check and production build into dist/
-npm run e2e          # Playwright, 30 tests: Watch, The instances (verbatim evidence, out-of-scope channels absent), the slow system's history test table, Learning, Growing the menu, Reference, phone width, the top bar, live mode, the shipped recordings
+npm run e2e          # Playwright, 31 tests: Watch, The instances (verbatim evidence, out-of-scope channels absent), the slow system's history test table, Learning, Growing the menu, Reference, phone width, the top bar, live mode, the shipped recordings
 ```
 
 The unit tests and most browser tests read
@@ -235,7 +250,7 @@ message that says so.
 | `src/screens/` | `Watch`, `Instances`, `SlowSystem`, `Learning`, `Menu` and `Reference` |
 | `src/components/` | The strip, the stage with its crossfade, the recording cards, the timeline (`Scrubber`), the panel frame and its explanation, bars, verbatim evidence, the relevance chart, the two-system drawing, linked glossary words (`Terms`, `TermLink`), the top bar |
 | `src/content/` | Every word on the screens, one file per screen; `explainers.ts`, each panel's explanation and the code behind it; `glossary.ts`, the glossary a test keeps in step with the documentation and the code |
-| `public/episodes/` | The five recordings and their index |
+| `public/episodes/` | The nine recordings and their index |
 | `e2e/fixtures/episodes/` | The fixture recording the tests read |
 | `e2e/live-server.mjs` | The stand-in for `serve` the browser tests run against |
 
