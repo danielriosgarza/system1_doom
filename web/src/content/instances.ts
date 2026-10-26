@@ -1,5 +1,12 @@
 // The words for the instances: the strip on Watch, the configuration line, and The instances screen.
-import { type CentralRow, type ConfigurationAt, type VersionEntry, pct, words } from '../data/readings'
+import {
+  type CentralRow,
+  type ConfigurationAt,
+  type MotorTarget,
+  type VersionEntry,
+  pct,
+  words,
+} from '../data/readings'
 import { type Decider, deciderName } from './decider'
 
 export const STRIP = {
@@ -37,6 +44,29 @@ export const INSTANCES = {
   miss: 'This call missed',
   raw: 'The raw answer, as returned',
   executed: 'executed',
+  target: 'Target',
+  targetOnly: 'One candidate, so no question was asked: it is the target.',
+  targetNote: (kind: 'enemy' | 'pickup' | null) =>
+    kind === 'pickup'
+      ? 'The remembered pickup a pickup-seeking action walks to: the motor turns toward where it lies, even out of view. It walks at no pickup a sense did not choose.'
+      : 'The visible enemy the motor’s aim locks onto: shoot turns onto it before firing and the strafes keep tracking it. It aims at no enemy a sense did not choose.',
+}
+
+/** A target the motor followed, in words short enough for the Act row: "aim: Zombieman 1, by combat". */
+export function targetWords(t: MotorTarget): string {
+  const what = t.kind === 'enemy' ? 'aim' : 'walk to'
+  const by = t.by === 'only candidate' ? 'the only one' : `by ${t.by || 'a sense'}`
+  return `${what}: ${words(t.id)}, ${by}`
+}
+
+/** How a message names its target: "aim at …" or "walk to …", in the words the sense saw it in. */
+export function messageTargetWords(m: {
+  target?: string | null
+  target_kind?: string | null
+  target_line?: string | null
+}): string {
+  if (!m.target) return ''
+  return `, ${m.target_kind === 'enemy' ? 'aim at' : 'walk to'} ${m.target_line ?? words(m.target)}`
 }
 
 /** Why a call missed, in words. */

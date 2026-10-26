@@ -201,13 +201,19 @@ export function latestProposals(proposals: ProposalTrace[]): ProposalTrace[] {
 }
 
 /**
- * The recording a fresh visit opens: the first in the index that cleared its level, else the first. The index
- * lists recordings by scenario, networks, seed and starting configuration, so the first is not always the one
- * worth watching first.
+ * The recording a fresh visit opens: the most recently recorded one that cleared its level, so the landing shows
+ * the agent as it is now; among equally recent ones (an index written before it said when), the first listed;
+ * when none cleared, the first. The index lists recordings by scenario, networks, whether the senses chose the
+ * motor's targets, seed and starting configuration, so the first is not always the one worth watching first.
  */
 export function defaultEpisode(index: Pick<EpisodeIndex, 'episodes'> | null): string | null {
   const episodes = index?.episodes ?? []
-  return (episodes.find((e) => e.cleared) ?? episodes[0])?.name ?? null
+  const cleared = episodes.filter((e) => e.cleared)
+  const newest = cleared.reduce<(typeof episodes)[number] | undefined>(
+    (best, e) => (best === undefined || (e.recorded_at ?? '') > (best.recorded_at ?? '') ? e : best),
+    undefined,
+  )
+  return (newest ?? episodes[0])?.name ?? null
 }
 
 /** URL of the screen the instances saw when they decided `tick`. */

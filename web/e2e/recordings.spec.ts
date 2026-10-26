@@ -1,8 +1,8 @@
 import { type Page, expect, test } from '@playwright/test'
 import { RECORDINGS } from '../playwright.config'
 
-// The site as GitHub Pages serves it, with the shipped recordings played by d1-ultra: the landing plays the
-// first cleared one at the agent's own pace, and every screen reads every recording.
+// The site as GitHub Pages serves it, with the shipped recordings: the landing plays the most recently recorded
+// one that cleared at the agent's own pace, and every screen reads every recording.
 test.use({ baseURL: RECORDINGS })
 
 function collectErrors(page: Page): string[] {
@@ -18,16 +18,32 @@ async function decisionNow(page: Page): Promise<number> {
   return Number(/decision (\d+)/.exec((await counter(page).textContent()) ?? '')?.[1] ?? -1)
 }
 
-async function shipped(page: Page): Promise<Array<{ name: string; ticks: number; cleared: boolean }>> {
+interface Shipped {
+  name: string
+  ticks: number
+  cleared: boolean
+  recorded_at?: string
+  senses_choose_targets?: boolean
+}
+
+async function shipped(page: Page): Promise<Shipped[]> {
   const response = await page.request.get(`${RECORDINGS}episodes/index.json`)
-  const index = (await response.json()) as { episodes: Array<{ name: string; ticks: number; cleared: boolean }> }
+  const index = (await response.json()) as { episodes: Shipped[] }
   return index.episodes
 }
 
-test('a first-time visitor lands on Watch and sees the first cleared recording playing', async ({ page }) => {
+const newestCleared = (episodes: Shipped[]): Shipped | undefined =>
+  episodes
+    .filter((e) => e.cleared)
+    .reduce<Shipped | undefined>(
+      (best, e) => (!best || (e.recorded_at ?? '') > (best.recorded_at ?? '') ? e : best),
+      undefined,
+    )
+
+test('a first-time visitor lands on Watch and sees the newest cleared recording playing', async ({ page }) => {
   const errors = collectErrors(page)
   const episodes = await shipped(page)
-  const featured = episodes.find((e) => e.cleared) ?? episodes[0]
+  const featured = newestCleared(episodes) ?? episodes[0]
   if (!featured) throw new Error('no shipped recording')
   await page.goto('./')
   await expect(page).toHaveURL(new RegExp(`#${featured.name}/0/watch$`))
@@ -38,6 +54,25 @@ test('a first-time visitor lands on Watch and sees the first cleared recording p
   await expect(page.getByTestId('central-row')).toBeVisible()
   await expect(page.getByTestId('config-line')).toBeVisible()
   await expect(page.locator('.recording-card')).toHaveCount(episodes.length)
+  const before = episodes.filter((e) => !e.senses_choose_targets).length
+  await expect(page.locator('.recording-targets[data-targets="motor"]')).toHaveCount(before)
+  expect(errors).toEqual([])
+})
+
+test('in a recording where the senses choose targets, Act names them and the combat sense shows its target answer', async ({
+  page,
+}) => {
+  const errors = collectErrors(page)
+  const featured = newestCleared(await shipped(page))
+  if (!featured?.senses_choose_targets) throw new Error('the newest cleared recording should have sense-chosen targets')
+  await page.goto(`./#${featured.name}/1/watch`)
+  await expect(page.getByTestId('act-targets')).toContainText(/aim: .+, (by combat|the only one)/)
+  await page.goto(`./#${featured.name}/1/instances`)
+  await page.getByRole('tab').and(page.locator('[data-instance="combat"]')).click()
+  const target = page.getByTestId('target-answer')
+  await expect(target).toHaveAttribute('data-kind', 'enemy')
+  await expect(target).toContainText('Target')
+  await expect(target).toContainText('aim locks onto')
   expect(errors).toEqual([])
 })
 

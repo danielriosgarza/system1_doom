@@ -19,6 +19,7 @@ export const EXPLAINERS = {
       'Five sense instances each answered whether to send a message. The central instance chose the action from the messages it received, and Act pressed that action’s keys.',
     paragraphs: [
       'Each row is one d1-ultra call. A sense is shown only the channels in its scope and answers three questions: whether the central instance needs a message from it (a probability), which action it recommends, and why. When that probability is 0.5 or more, the sense sends a message: its recommended action, its reason, and the probability as the message’s strength. Below 0.5 it sends nothing, which the row shows as silent.',
+      'In recordings made since the senses choose the motor’s targets, the combat sense also answers which visible enemy the aim locks onto, and the resource sense which remembered pickup a walk goes to. Act names both: the motor aims and walks only at targets a sense chose, never at one of its own.',
       'The central instance receives the messages, together with each sense’s track record, and chooses one action from the legal menu. Under the exploit level, the action with the highest probability is executed. Under the explore level, an action is drawn at random from the central instance’s own probabilities. When the central instance gives no usable answer, no keys are pressed and the decision is recorded as missed.',
       'Click a row to open that instance at this decision: the evidence text it was sent, exactly as sent, and all of its answers.',
     ],
@@ -50,9 +51,10 @@ export const EXPLAINERS = {
       'Every answer d1-ultra returned for this instance, shown as probability distributions. The marked option is the instance’s answer.',
     paragraphs: [
       'A sense answers three questions: speak (one probability), action (a distribution over the legal menu) and reason (a distribution over its own fixed list of reasons). The central instance answers one question, which action to execute, as a distribution over the same menu.',
+      'The combat and resource senses answer a fourth, target: which visible enemy the aim locks onto, or which remembered pickup a walk goes to, as a distribution over the candidates their evidence shows, each in the words they saw it in. With one candidate there is nothing to choose between and no question is asked: that one is the target. Older recordings, made before the senses chose targets, have no target answers.',
       'An answer that arrived too late, failed, or named an option outside the menu is a miss. Nothing replaces it. A missed sense sends no message; a missed central instance presses no keys for the decision.',
     ],
-    code: 'instance.py · read_choice; instance.py · read_noul',
+    code: 'instance.py · read_choice; instance.py · read_noul; system1.py · targets_of',
   },
   scrubber: {
     title: 'The timeline',

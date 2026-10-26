@@ -306,6 +306,12 @@ class BundleIndexEntry(BaseModel):
     configuration_start: int = Field(default=1, description="The configuration version the episode started from")
     configuration_end: int = Field(default=1, description="The configuration version it ended at")
     decider: DeciderName = Field(default=DECIDER, description="The decision model every decision was made by: d1-ultra, or jev")
+    senses_choose_targets: bool = Field(
+        default=False,
+        description="The senses chose the motor's targets (the enemy aimed at, the pickup walked to); False in bundles "
+        "recorded before they did, when the motor picked its own",
+    )
+    recorded_at: str = Field(default="", description="When the bundle was recorded, as its episode.json says")
 
 
 def _jpeg(screen_buffer: np.ndarray, path: Path) -> None:
@@ -760,8 +766,16 @@ def check_bundle(bundle: Path) -> List[str]:
     return problems
 
 
-def index_entry(name: str, meta: EpisodeMeta) -> BundleIndexEntry:
-    """The line `index.json` gives the bundle named `name`."""
+def senses_chose_targets(raw_meta: Dict[str, Any]) -> bool:
+    """Whether a bundle's episode.json, as written, has the senses choosing the motor's targets: its starting
+    configuration names a sense's `target`. Read from the file, since loading an older configuration gives it
+    the default targets."""
+    senses = (raw_meta.get("configuration_start") or {}).get("senses") or {}
+    return any(isinstance(sense, dict) and sense.get("target") for sense in senses.values())
+
+
+def index_entry(name: str, meta: EpisodeMeta, chose_targets: bool = False) -> BundleIndexEntry:
+    """The line `index.json` gives the bundle named `name`; `chose_targets` is `senses_chose_targets` of its file."""
     return BundleIndexEntry(
         name=name,
         title=meta.title,
@@ -776,12 +790,15 @@ def index_entry(name: str, meta: EpisodeMeta) -> BundleIndexEntry:
         configuration_start=meta.configuration_start.version,
         configuration_end=meta.configuration_end.version,
         decider=meta.decider,
+        senses_choose_targets=chose_targets,
+        recorded_at=meta.recorded_at,
     )
 
 
 def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
-    """Write `index.json` listing every shippable schema-2 bundle under `episodes_dir`, by scenario,
-    networks, seed and the configuration version it started from. Bundles of another schema version, and episodes that lost the connection, are left out."""
+    """Write `index.json` listing every shippable schema-2 bundle under `episodes_dir`, by scenario, networks,
+    whether the senses chose the motor's targets (those first), seed and the configuration version it started
+    from. Bundles of another schema version, and episodes that lost the connection, are left out."""
     entries = []
     for meta_path in sorted(episodes_dir.glob("*/episode.json")):
         raw = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -790,9 +807,11 @@ def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
         meta = EpisodeMeta.model_validate(raw)
         if meta.result.finished_reason == NOT_SHIPPABLE:
             continue
-        entries.append(index_entry(meta_path.parent.name, meta))
+        entries.append(index_entry(meta_path.parent.name, meta, senses_chose_targets(raw)))
     order = {"none": 0, "best": 1, "latest": 2}
-    entries.sort(key=lambda e: (e.scenario, order[e.value_networks], e.seed, e.configuration_start, e.name))
+    entries.sort(
+        key=lambda e: (e.scenario, order[e.value_networks], not e.senses_choose_targets, e.seed, e.configuration_start, e.name)
+    )
     (episodes_dir / "index.json").write_text(
         json.dumps({"schema_version": TRACE_SCHEMA_VERSION, "episodes": [e.model_dump() for e in entries]}, indent=2),
         encoding="utf-8",

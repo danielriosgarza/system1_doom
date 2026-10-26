@@ -227,9 +227,29 @@ def test_index_lists_shippable_schema_2_bundles(bundle):
     meta = export.EpisodeMeta.model_validate_json((bundle / "episode.json").read_text())
     line = index["episodes"][0]
     assert line["kills"] == meta.result.kills and line["configuration_start"] == line["configuration_end"] == 1
+    # Recorded now, the senses choose the motor's targets, and the line says when it was recorded.
+    assert line["senses_choose_targets"] is True and line["recorded_at"] == meta.recorded_at
     # An index line written before these fields existed still loads.
-    old = {k: v for k, v in line.items() if k not in ("kills", "configuration_start", "configuration_end")}
-    assert export.BundleIndexEntry.model_validate(old).configuration_start == 1
+    fields = ("kills", "configuration_start", "configuration_end", "senses_choose_targets", "recorded_at")
+    old = {k: v for k, v in line.items() if k not in fields}
+    loaded = export.BundleIndexEntry.model_validate(old)
+    assert loaded.configuration_start == 1 and loaded.senses_choose_targets is False and loaded.recorded_at == ""
+
+
+def test_a_bundle_recorded_before_the_senses_chose_targets_says_so_and_is_listed_after_the_ones_since(bundle, tmp_path):
+    episodes = tmp_path / "episodes"
+    shutil.copytree(bundle, episodes / "now")
+    before = episodes / "before"
+    shutil.copytree(bundle, before)
+    raw = json.loads((before / "episode.json").read_text())
+    for sense in raw["configuration_start"]["senses"].values():
+        del sense["target"]
+    raw["name"] = "before"
+    (before / "episode.json").write_text(json.dumps(raw))
+    assert export.senses_chose_targets(raw) is False
+    assert export.senses_chose_targets(json.loads((episodes / "now" / "episode.json").read_text())) is True
+    entries = export.write_index(episodes)
+    assert [(e.name, e.senses_choose_targets) for e in entries] == [("now", True), ("before", False)]
 
 
 SHIPPED = sorted(p.parent for p in RECORDINGS.glob("*/episode.json"))
@@ -243,15 +263,17 @@ def test_every_shipped_recording_is_a_valid_schema_2_bundle_played_by_a_known_de
     assert meta.schema_version == 2 and meta.decider in DECIDERS and meta.name == shipped.name
     assert meta.result.finished_reason != "connection_lost"
     listed = json.loads((RECORDINGS / "index.json").read_text())
-    entry = export.index_entry(shipped.name, meta)
+    raw = json.loads((shipped / "episode.json").read_text())
+    entry = export.index_entry(shipped.name, meta, export.senses_chose_targets(raw))
     assert entry.decider == meta.decider and entry.model_dump() in listed["episodes"]
 
 
 def test_the_site_ships_recordings_played_by_each_decider():
     listed = json.loads((RECORDINGS / "index.json").read_text())["episodes"]
     assert {e["decider"] for e in listed} == set(DECIDERS)
-    # The landing plays the first cleared recording, which stays d1-ultra's.
-    assert next(e for e in listed if e["cleared"])["decider"] == "d1-ultra"
+    # The landing plays the newest cleared recording, one in which the senses chose the motor's targets.
+    newest = max((e for e in listed if e["cleared"]), key=lambda e: e["recorded_at"])
+    assert newest["senses_choose_targets"] is True
 
 
 def test_the_schema_names_every_model_the_app_reads():
