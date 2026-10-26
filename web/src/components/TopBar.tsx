@@ -7,7 +7,9 @@ import { SCREENS, followLive, openEpisode, openRecording, setScreen, setState, u
 
 /** How a recording is named in the picker, in the words Watch's cards use. */
 function recordingLabel(e: BundleIndexEntry): string {
-  return `${scenarioWords(e.scenario)} · ${recordingName(e).toLowerCase()} · ${e.cleared ? 'cleared' : e.died ? 'died' : 'survived'}`
+  const result = e.cleared ? 'cleared' : e.died ? 'died' : 'survived'
+  const before = e.senses_choose_targets ? '' : ' · before the senses chose targets'
+  return `${scenarioWords(e.scenario)} · ${recordingName(e).toLowerCase()} · ${result}${before}`
 }
 
 function EpisodeOption({ item, scenario }: { item: PickerEntry; scenario: string }) {

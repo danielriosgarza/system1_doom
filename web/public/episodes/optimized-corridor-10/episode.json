@@ -1,0 +1,1415 @@
+{
+  "schema_version": 2,
+  "name": "optimized-corridor-10",
+  "title": "deadly corridor, jev with best value networks, seed 10",
+  "scenario": "deadly_corridor.cfg",
+  "seed": 10,
+  "decider": "jev",
+  "value_networks": "best",
+  "checkpoint": {
+    "file": "best.pt",
+    "episodes": 7,
+    "transitions_seen": 756,
+    "network_share": 0.4291,
+    "best_score": 1842.15
+  },
+  "slow_path": "templates",
+  "config": {
+    "call_budget_sec": 5.0,
+    "seed": 10,
+    "max_ticks": 500
+  },
+  "configuration_start": {
+    "version": 1,
+    "senses": {
+      "survival": {
+        "scope": [
+          "vitals",
+          "threats",
+          "incoming",
+          "projections",
+          "menu"
+        ],
+        "concern": "staying alive in the next few seconds",
+        "reasons": [
+          "health_critical",
+          "under_fire",
+          "enemy_too_close",
+          "recovering",
+          "no_threat"
+        ],
+        "target": null
+      },
+      "combat": {
+        "scope": [
+          "threats",
+          "outgoing",
+          "vitals",
+          "frame",
+          "projections",
+          "menu"
+        ],
+        "concern": "winning the current fight",
+        "reasons": [
+          "target_aimed",
+          "target_off_centre",
+          "several_enemies",
+          "low_ammo",
+          "no_target"
+        ],
+        "target": "enemy"
+      },
+      "navigation": {
+        "scope": [
+          "landmarks",
+          "geometry",
+          "position",
+          "progress",
+          "menu"
+        ],
+        "concern": "moving through the level",
+        "reasons": [
+          "path_clear",
+          "wall_ahead",
+          "stalled",
+          "off_course",
+          "door_or_switch_ahead",
+          "unexplored_side"
+        ],
+        "target": null
+      },
+      "resource": {
+        "scope": [
+          "landmarks",
+          "vitals",
+          "menu"
+        ],
+        "concern": "health, armor and ammo",
+        "reasons": [
+          "health_pickup_near",
+          "ammo_pickup_near",
+          "pickup_guarded",
+          "nothing_needed",
+          "nothing_visible"
+        ],
+        "target": "pickup"
+      },
+      "goal": {
+        "scope": [
+          "landmarks",
+          "progress",
+          "history",
+          "archive",
+          "values",
+          "menu"
+        ],
+        "concern": "finishing the level",
+        "reasons": [
+          "making_progress",
+          "plateau",
+          "off_course",
+          "strategy_fits",
+          "strategy_failing",
+          "nearly_done"
+        ],
+        "target": null
+      }
+    },
+    "central": {
+      "scope": [
+        "messages",
+        "relevance",
+        "exploration",
+        "vitals",
+        "menu"
+      ],
+      "concern": "choosing the one action the agent executes now"
+    },
+    "exploration_level": "exploit",
+    "active_strategy": "strat_tactical_combat",
+    "admitted_macros": [],
+    "bounds": {
+      "call_budget_sec": 5.0,
+      "yes_at": 0.5,
+      "max_scope_channels": 7,
+      "max_enemies": 6,
+      "max_pickups": 6,
+      "max_landmarks": 8,
+      "max_history_steps": 6,
+      "max_summaries": 3,
+      "system1_pool": 6,
+      "system2_pool": 2,
+      "trials_in_flight": 1,
+      "cooling_decisions": 60,
+      "history_ring": 2000,
+      "history_test_sample": 24,
+      "system2_calls_per_cycle": 40,
+      "central_miss_limit": 3,
+      "decision_frames": 8,
+      "return_steps": 8,
+      "return_gamma": 0.9,
+      "probability_tolerance": 0.02,
+      "thin_record": 5,
+      "stall_units": 4.0,
+      "system2_cadence": 20,
+      "window_recent": 20,
+      "window_long": 100,
+      "window_episodes": 3,
+      "trial_decisions": 60,
+      "judge_extension": 20,
+      "judge_extensions_max": 3,
+      "history_test_noise": 4,
+      "history_test_margin": 0.05,
+      "history_test_worst_drop": 0.1,
+      "history_test_context_cap": 4,
+      "history_test_quantile": 0.25,
+      "safety_drop": 0.15,
+      "safety_followed": 10
+    }
+  },
+  "configuration_end": {
+    "version": 3,
+    "senses": {
+      "survival": {
+        "scope": [
+          "vitals",
+          "threats",
+          "incoming",
+          "projections",
+          "menu"
+        ],
+        "concern": "staying alive in the next few seconds",
+        "reasons": [
+          "health_critical",
+          "under_fire",
+          "enemy_too_close",
+          "recovering",
+          "no_threat"
+        ],
+        "target": null
+      },
+      "combat": {
+        "scope": [
+          "threats",
+          "outgoing",
+          "vitals",
+          "frame",
+          "projections",
+          "menu"
+        ],
+        "concern": "winning the current fight",
+        "reasons": [
+          "target_aimed",
+          "target_off_centre",
+          "several_enemies",
+          "low_ammo",
+          "no_target"
+        ],
+        "target": "enemy"
+      },
+      "navigation": {
+        "scope": [
+          "landmarks",
+          "geometry",
+          "position",
+          "progress",
+          "menu"
+        ],
+        "concern": "moving through the level",
+        "reasons": [
+          "path_clear",
+          "wall_ahead",
+          "stalled",
+          "off_course",
+          "door_or_switch_ahead",
+          "unexplored_side"
+        ],
+        "target": null
+      },
+      "resource": {
+        "scope": [
+          "landmarks",
+          "vitals",
+          "menu"
+        ],
+        "concern": "health, armor and ammo",
+        "reasons": [
+          "health_pickup_near",
+          "ammo_pickup_near",
+          "pickup_guarded",
+          "nothing_needed",
+          "nothing_visible"
+        ],
+        "target": "pickup"
+      },
+      "goal": {
+        "scope": [
+          "landmarks",
+          "progress",
+          "history",
+          "archive",
+          "values",
+          "menu"
+        ],
+        "concern": "finishing the level",
+        "reasons": [
+          "making_progress",
+          "plateau",
+          "off_course",
+          "strategy_fits",
+          "strategy_failing",
+          "nearly_done"
+        ],
+        "target": null
+      }
+    },
+    "central": {
+      "scope": [
+        "messages",
+        "relevance",
+        "exploration",
+        "vitals",
+        "menu"
+      ],
+      "concern": "choosing the one action the agent executes now"
+    },
+    "exploration_level": "exploit",
+    "active_strategy": "strat_tactical_combat",
+    "admitted_macros": [],
+    "bounds": {
+      "call_budget_sec": 5.0,
+      "yes_at": 0.5,
+      "max_scope_channels": 7,
+      "max_enemies": 6,
+      "max_pickups": 6,
+      "max_landmarks": 8,
+      "max_history_steps": 6,
+      "max_summaries": 3,
+      "system1_pool": 6,
+      "system2_pool": 2,
+      "trials_in_flight": 1,
+      "cooling_decisions": 60,
+      "history_ring": 2000,
+      "history_test_sample": 24,
+      "system2_calls_per_cycle": 40,
+      "central_miss_limit": 3,
+      "decision_frames": 8,
+      "return_steps": 8,
+      "return_gamma": 0.9,
+      "probability_tolerance": 0.02,
+      "thin_record": 5,
+      "stall_units": 4.0,
+      "system2_cadence": 20,
+      "window_recent": 20,
+      "window_long": 100,
+      "window_episodes": 3,
+      "trial_decisions": 60,
+      "judge_extension": 20,
+      "judge_extensions_max": 3,
+      "history_test_noise": 4,
+      "history_test_margin": 0.05,
+      "history_test_worst_drop": 0.1,
+      "history_test_context_cap": 4,
+      "history_test_quantile": 0.25,
+      "safety_drop": 0.15,
+      "safety_followed": 10
+    }
+  },
+  "result": {
+    "health": 0.0,
+    "armor": 0.0,
+    "kills": 5.0,
+    "reward": 567.22,
+    "ticks": 123,
+    "finished": true,
+    "cleared": false,
+    "died": true,
+    "finished_reason": "episode_end",
+    "transitions": 0,
+    "actions": [
+      "weave_fire",
+      "weave_fire",
+      "approach_pickup",
+      "circle_strafe_left",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "circle_strafe_left",
+      "peek_and_fire",
+      "weave_fire",
+      "circle_strafe_right",
+      "peek_and_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "approach_pickup",
+      "weave_fire",
+      "weave_fire",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "move_forward",
+      "move_forward",
+      "strafe_left",
+      "move_forward",
+      "strafe_right",
+      "move_forward",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "shoot",
+      "strafe_left_shoot",
+      "turn_left",
+      "turn_right",
+      "weave_fire",
+      "weave_fire",
+      "strafe_left",
+      "approach_pickup",
+      "approach_pickup",
+      "turn_right",
+      "turn_right",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "move_forward",
+      "move_forward",
+      "strafe_left",
+      "strafe_right",
+      "approach_pickup",
+      "turn_right",
+      "strafe_left",
+      "approach_pickup",
+      "strafe_right",
+      "turn_left",
+      "turn_left",
+      "move_forward",
+      "approach_pickup",
+      "approach_pickup",
+      "turn_left",
+      "strafe_right",
+      "turn_right",
+      "strafe_left",
+      "turn_right",
+      "approach_pickup",
+      "turn_left",
+      "turn_right",
+      "approach_pickup",
+      "retreat_to_cover",
+      "weave_fire",
+      "strafe_left",
+      "peek_and_fire",
+      "move_forward",
+      "approach_pickup",
+      "turn_left",
+      "strafe_left",
+      "approach_pickup",
+      "weave_fire",
+      "strafe_right_shoot",
+      "strafe_right_shoot",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "weave_fire",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup",
+      "approach_pickup"
+    ]
+  },
+  "cost": {
+    "calls": 758,
+    "input_tokens": 1257784,
+    "output_tokens": 146049,
+    "usd": 0.052826928
+  },
+  "misses": {
+    "total": 0,
+    "missed_ticks": 0,
+    "by_instance": {}
+  },
+  "instances": {
+    "goal": {
+      "calls": 123,
+      "answered": 123,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 42353.029,
+      "input_tokens": 247662,
+      "output_tokens": 23755,
+      "cost": 0.010401804
+    },
+    "resource": {
+      "calls": 123,
+      "answered": 123,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 40212.295,
+      "input_tokens": 195182,
+      "output_tokens": 32090,
+      "cost": 0.008197644
+    },
+    "survival": {
+      "calls": 123,
+      "answered": 123,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 36509.963,
+      "input_tokens": 185792,
+      "output_tokens": 23357,
+      "cost": 0.007803264
+    },
+    "navigation": {
+      "calls": 123,
+      "answered": 123,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 38810.091,
+      "input_tokens": 165533,
+      "output_tokens": 24027,
+      "cost": 0.006952386
+    },
+    "combat": {
+      "calls": 123,
+      "answered": 123,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 57682.785,
+      "input_tokens": 297751,
+      "output_tokens": 24414,
+      "cost": 0.012505542
+    },
+    "central": {
+      "calls": 123,
+      "answered": 123,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 29198.414,
+      "input_tokens": 140901,
+      "output_tokens": 13506,
+      "cost": 0.005917842
+    },
+    "survival_auditor": {
+      "calls": 2,
+      "answered": 2,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 635.267,
+      "input_tokens": 2912,
+      "output_tokens": 676,
+      "cost": 0.000122304
+    },
+    "combat_auditor": {
+      "calls": 2,
+      "answered": 2,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 786.153,
+      "input_tokens": 2885,
+      "output_tokens": 646,
+      "cost": 0.00012117
+    },
+    "navigation_auditor": {
+      "calls": 2,
+      "answered": 2,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 557.026,
+      "input_tokens": 2877,
+      "output_tokens": 645,
+      "cost": 0.000120834
+    },
+    "resource_auditor": {
+      "calls": 2,
+      "answered": 2,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 418.583,
+      "input_tokens": 2910,
+      "output_tokens": 676,
+      "cost": 0.00012222
+    },
+    "goal_auditor": {
+      "calls": 2,
+      "answered": 2,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 469.313,
+      "input_tokens": 2873,
+      "output_tokens": 645,
+      "cost": 0.000120666
+    },
+    "central_auditor": {
+      "calls": 2,
+      "answered": 2,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 546.403,
+      "input_tokens": 2976,
+      "output_tokens": 734,
+      "cost": 0.000124992
+    },
+    "menu_reflector": {
+      "calls": 2,
+      "answered": 2,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 541.396,
+      "input_tokens": 2402,
+      "output_tokens": 316,
+      "cost": 0.000100884
+    },
+    "strategy_reflector": {
+      "calls": 2,
+      "answered": 2,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 534.714,
+      "input_tokens": 1931,
+      "output_tokens": 258,
+      "cost": 0.000081102
+    },
+    "exploration_reflector": {
+      "calls": 2,
+      "answered": 2,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 422.398,
+      "input_tokens": 1956,
+      "output_tokens": 233,
+      "cost": 0.000082152
+    },
+    "system2_central": {
+      "calls": 1,
+      "answered": 1,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 203.143,
+      "input_tokens": 642,
+      "output_tokens": 37,
+      "cost": 0.000026964
+    },
+    "trial_judge": {
+      "calls": 1,
+      "answered": 1,
+      "misses": {},
+      "retries": 0,
+      "latency_ms_total": 246.713,
+      "input_tokens": 599,
+      "output_tokens": 34,
+      "cost": 0.000025158
+    }
+  },
+  "system2": {
+    "enabled": true,
+    "cycles": 4,
+    "tests": 0,
+    "tests_passed": 0,
+    "trials_started": 1,
+    "trials_judged": 1,
+    "kept": 0,
+    "reverted": 1,
+    "calls": 20,
+    "usd": 0.001048446
+  },
+  "first_tick": 0,
+  "last_tick": 122,
+  "tick_count": 123,
+  "buttons": [
+    "MOVE_LEFT",
+    "MOVE_RIGHT",
+    "ATTACK",
+    "MOVE_FORWARD",
+    "MOVE_BACKWARD",
+    "TURN_LEFT",
+    "TURN_RIGHT"
+  ],
+  "frames": {
+    "dir": "frames",
+    "pattern": "{tick:05d}.jpg",
+    "width": 320,
+    "height": 240,
+    "end_frame": "frames/end.jpg"
+  },
+  "actions": {
+    "move_forward": {
+      "description": "Walk straight ahead, the way you are facing",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "move_forward"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 16.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "single_tick_completed",
+      "execution_cost": 0.02,
+      "encoding": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "move_backward": {
+      "description": "Walk backward, away from the way you are facing, when critically injured",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "move_backward"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 45.0,
+        "requires_visible_enemy": true,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "single_tick_completed",
+      "execution_cost": 0.02,
+      "encoding": [
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "strafe_left": {
+      "description": "Sidestep left without walking forward; the aim keeps turning onto the chosen enemy while it is in view",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "strafe_left"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "single_tick_completed",
+      "execution_cost": 0.02,
+      "encoding": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "strafe_right": {
+      "description": "Sidestep right without walking forward; the aim keeps turning onto the chosen enemy while it is in view",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "strafe_right"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "single_tick_completed",
+      "execution_cost": 0.02,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "turn_left": {
+      "description": "Turn the view about 28 degrees to the left",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "turn_left"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "single_tick_completed",
+      "execution_cost": 0.02,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "turn_right": {
+      "description": "Turn the view about 28 degrees to the right",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "turn_right"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "single_tick_completed",
+      "execution_cost": 0.02,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "shoot": {
+      "description": "Turn onto the chosen enemy and fire the current weapon once it is centred",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "shoot"
+      ],
+      "preconditions": {
+        "min_ammo": 1,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": true,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "weapon_fired_or_no_ammo",
+      "execution_cost": 0.04,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "use": {
+      "description": "Interact with doors, switches, or lifts directly ahead within reach",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "use"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 64.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "single_tick_completed",
+      "execution_cost": 0.02,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "switch_weapon_1": {
+      "description": "Switch to slot 1 melee weapon when out of ammo",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "switch_weapon_1"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 0,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": [
+          "fist_chainsaw"
+        ]
+      },
+      "maximum_duration": 8,
+      "termination_condition": "weapon_switched",
+      "execution_cost": 0.02,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "switch_weapon_2": {
+      "description": "Switch to slot 2 pistol",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "switch_weapon_2"
+      ],
+      "preconditions": {
+        "min_ammo": 1,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": [
+          "pistol",
+          "shotgun",
+          "chaingun"
+        ]
+      },
+      "maximum_duration": 8,
+      "termination_condition": "weapon_switched",
+      "execution_cost": 0.02,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "switch_weapon_3": {
+      "description": "Switch to slot 3 shotgun",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "switch_weapon_3"
+      ],
+      "preconditions": {
+        "min_ammo": 1,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": [
+          "shotgun",
+          "pistol",
+          "chaingun"
+        ]
+      },
+      "maximum_duration": 8,
+      "termination_condition": "weapon_switched",
+      "execution_cost": 0.02,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "strafe_left_shoot": {
+      "description": "Sidestep left while turning onto the chosen enemy, firing whenever it is centred",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "strafe_left_shoot"
+      ],
+      "preconditions": {
+        "min_ammo": 1,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": true,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "single_tick_completed",
+      "execution_cost": 0.04,
+      "encoding": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "strafe_right_shoot": {
+      "description": "Sidestep right while turning onto the chosen enemy, firing whenever it is centred",
+      "is_macro": false,
+      "builtin": true,
+      "primitives": [
+        "strafe_right_shoot"
+      ],
+      "preconditions": {
+        "min_ammo": 1,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": true,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "single_tick_completed",
+      "execution_cost": 0.04,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0625,
+        0.0,
+        0.0
+      ]
+    },
+    "circle_strafe_left": {
+      "description": "Turn left toward left-side enemy, fire, strafe left to evade fire, and fire a second shot",
+      "is_macro": true,
+      "builtin": true,
+      "primitives": [
+        "turn_left",
+        "shoot",
+        "strafe_left",
+        "shoot"
+      ],
+      "preconditions": {
+        "min_ammo": 1,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": true,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "enemy_eliminated_or_duration_elapsed",
+      "execution_cost": 0.12,
+      "encoding": [
+        0.0,
+        0.0,
+        0.25,
+        0.0,
+        0.25,
+        0.0,
+        0.5,
+        0.0,
+        0.0,
+        0.25,
+        1.0,
+        0.0
+      ]
+    },
+    "circle_strafe_right": {
+      "description": "Turn right toward right-side enemy, fire, strafe right to evade fire, and fire a second shot",
+      "is_macro": true,
+      "builtin": true,
+      "primitives": [
+        "turn_right",
+        "shoot",
+        "strafe_right",
+        "shoot"
+      ],
+      "preconditions": {
+        "min_ammo": 1,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": true,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "enemy_eliminated_or_duration_elapsed",
+      "execution_cost": 0.12,
+      "encoding": [
+        0.0,
+        0.0,
+        0.0,
+        0.25,
+        0.0,
+        0.25,
+        0.5,
+        0.0,
+        0.0,
+        0.25,
+        1.0,
+        0.0
+      ]
+    },
+    "retreat_to_cover": {
+      "description": "Backpedal while sidestepping away from heavy incoming damage when health is low",
+      "is_macro": true,
+      "builtin": true,
+      "primitives": [
+        "move_backward",
+        "strafe_left",
+        "move_backward"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 45.0,
+        "requires_visible_enemy": true,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "damage_stopped_or_duration_elapsed",
+      "execution_cost": 0.06,
+      "encoding": [
+        0.0,
+        0.6667,
+        0.3333,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1875,
+        1.0,
+        0.0
+      ]
+    },
+    "approach_pickup": {
+      "description": "Walk to the pickup the resource sense chose, turning toward where it lies, even when it is out of view",
+      "is_macro": true,
+      "builtin": true,
+      "primitives": [
+        "move_forward",
+        "move_forward",
+        "move_forward",
+        "move_forward"
+      ],
+      "preconditions": {
+        "min_ammo": 0,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": false,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": true,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "pickup_collected_or_duration_elapsed",
+      "execution_cost": 0.08,
+      "encoding": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.25,
+        1.0,
+        1.0
+      ]
+    },
+    "peek_and_fire": {
+      "description": "Sidestep left and fire at the chosen enemy, then sidestep right and fire again",
+      "is_macro": true,
+      "builtin": true,
+      "primitives": [
+        "strafe_left",
+        "shoot",
+        "strafe_right",
+        "shoot"
+      ],
+      "preconditions": {
+        "min_ammo": 1,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": true,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "enemy_eliminated_or_no_ammo",
+      "execution_cost": 0.12,
+      "encoding": [
+        0.0,
+        0.0,
+        0.25,
+        0.25,
+        0.0,
+        0.0,
+        0.5,
+        0.0,
+        0.0,
+        0.25,
+        1.0,
+        0.0
+      ]
+    },
+    "weave_fire": {
+      "description": "Sidestep left then right while turning onto the chosen enemy, firing whenever it is centred",
+      "is_macro": true,
+      "builtin": true,
+      "primitives": [
+        "strafe_left_shoot",
+        "strafe_left_shoot",
+        "strafe_right_shoot",
+        "strafe_right_shoot"
+      ],
+      "preconditions": {
+        "min_ammo": 1,
+        "max_ammo": 9999,
+        "min_health": 0.0,
+        "max_health": 200.0,
+        "requires_visible_enemy": true,
+        "requires_visible_pickup": false,
+        "requires_known_pickup": false,
+        "min_wall_distance_front": 0.0,
+        "max_wall_distance_front": 99999.0,
+        "excluded_weapons": []
+      },
+      "maximum_duration": 8,
+      "termination_condition": "enemy_eliminated_or_duration_elapsed",
+      "execution_cost": 0.16,
+      "encoding": [
+        0.0,
+        0.0,
+        0.5,
+        0.5,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.25,
+        1.0,
+        0.0
+      ]
+    }
+  },
+  "files": [
+    "episode.json",
+    "ticks.jsonl",
+    "history.jsonl",
+    "relevance.json",
+    "proposals.jsonl",
+    "reflections.jsonl",
+    "metrics.jsonl",
+    "evaluation.json",
+    "macros.json",
+    "trust.json"
+  ],
+  "package_version": "0.4.0",
+  "recorded_at": "2026-10-26T07:16:17.772249+00:00"
+}

@@ -11,7 +11,7 @@ export const REFERENCE = {
     },
     {
       title: 'Code produces evidence, enforces limits and presses keys',
-      text: 'The channels are plain text. Every limit is defined in one place. The motor executes the chosen action’s fixed primitives. None of this code ranks, scores or picks an action.',
+      text: 'The channels are plain text. Every limit is defined in one place. The motor executes the chosen action’s fixed primitives, and aims and walks only at the targets the senses chose. None of this code ranks, scores or picks an action.',
     },
     {
       title: 'An instance sees only its scope',

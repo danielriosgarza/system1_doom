@@ -3,7 +3,7 @@ import { BarList, Meter } from '../components/Bars'
 import { EvidenceText } from '../components/Evidence'
 import { Panel } from '../components/Panel'
 import { type Decider, deciderOf } from '../content/decider'
-import { INSTANCES, STRIP, missWords, pickWords } from '../content/instances'
+import { INSTANCES, STRIP, messageTargetWords, missWords, pickWords } from '../content/instances'
 import { type EpisodeBundle, bundleFileUrl } from '../data/loader'
 import {
   CENTRAL,
@@ -107,6 +107,20 @@ function Answers({
           <BarList bars={view.reasonBars} label="Reason distribution" />
         </div>
       )}
+      {!central && view.target && (
+        <div className="answer-block" data-testid="target-answer" data-kind={view.targetKind ?? undefined}>
+          <h3>
+            {INSTANCES.target} <span className="answer-value">{words(view.target)}</span>
+          </h3>
+          {view.targetLine && <p className="small">{view.targetLine}</p>}
+          {view.targetBars.length > 0 ? (
+            <BarList bars={view.targetBars} label="Target distribution" />
+          ) : (
+            <p className="small muted">{INSTANCES.targetOnly}</p>
+          )}
+          <p className="faint small">{INSTANCES.targetNote(view.targetKind)}</p>
+        </div>
+      )}
       {central && (
         <div className="answer-block">
           <h3>{INSTANCES.heard}</h3>
@@ -118,6 +132,7 @@ function Answers({
                 <li key={m.sense}>
                   <span className={`dot sense-${m.sense}`} aria-hidden /> {m.sense} recommends{' '}
                   <strong>{words(m.action)}</strong>, strength {fmt(m.strength)}, reason {words(m.reason)}
+                  {messageTargetWords(m)}
                 </li>
               ))}
             </ul>

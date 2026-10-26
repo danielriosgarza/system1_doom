@@ -117,6 +117,18 @@ export const GLOSSARY: GlossaryEntry[] = [
     code: 'evidence.py · Message',
   },
   {
+    id: 'target',
+    term: 'target',
+    aliases: ['targets'],
+    meaning:
+      'What the motor aims or walks at, chosen by a sense: the combat sense answers which visible enemy the aim locks onto, the resource sense which remembered pickup a walk goes to, each as a choice over the candidates its evidence shows. With one candidate no question is asked and that one is the target. A sense that missed leaves its target empty, and the motor then has nothing to aim at; it never picks one of its own.',
+    see: [
+      { screen: 'instances', panel: 'answers', label: 'a sense’s target answer' },
+      { screen: 'watch', panel: 'strip', label: 'the targets on the Act row' },
+    ],
+    code: 'system1.py · targets_of',
+  },
+  {
     id: 'strength',
     term: 'strength',
     aliases: [],

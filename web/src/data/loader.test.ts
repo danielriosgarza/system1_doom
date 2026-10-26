@@ -144,9 +144,22 @@ describe('defaultEpisode', () => {
     ticks: 10,
   })
 
-  it('opens the first recording that cleared its level, wherever it is listed', () => {
+  it('opens the first recording that cleared its level, wherever it is listed, when none says when it was recorded', () => {
     const index = { episodes: [entry('a', false), entry('b', false), entry('c', true), entry('d', true)] }
     expect(defaultEpisode(index)).toBe('c')
+  })
+
+  it('opens the most recently recorded recording that cleared, so the landing shows the agent as it is now', () => {
+    const at = (e: BundleIndexEntry, recorded_at: string): BundleIndexEntry => ({ ...e, recorded_at })
+    const index = {
+      episodes: [
+        at(entry('new-died', false), '2026-10-26T07:14:00Z'),
+        at(entry('new-cleared', true), '2026-10-26T07:15:00Z'),
+        at(entry('old-cleared', true), '2026-10-25T14:40:00Z'),
+        entry('undated', true),
+      ],
+    }
+    expect(defaultEpisode(index)).toBe('new-cleared')
   })
 
   it('opens the first recording when none cleared, and nothing when there is none', () => {

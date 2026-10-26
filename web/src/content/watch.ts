@@ -25,7 +25,7 @@ export const WATCH = {
     `Live: ${deciderName(decider)} is playing this episode on this machine now. Each decision appears as soon as it is made.`,
   cardsTitle: 'The recordings',
   cardsNote:
-    'Click a recording to play it from the start. A recording that starts from a later configuration version shows the changes System 2 made in earlier episodes.',
+    'Click a recording to play it from the start. A recording that starts from a later configuration version shows the changes System 2 made in earlier episodes. The ones recorded before the senses chose the motor’s targets show the earlier agent, whose motor picked the enemy it aimed at and the pickup it walked to by itself.',
   nowShowing: 'Now showing',
   made: 'How this recording was made →',
 }
@@ -53,6 +53,13 @@ export function resultWords(
 /** "configuration version 1" or "configuration versions 2 → 4". */
 export function versionWords(start: number, end: number): string {
   return start === end ? `configuration version ${start}` : `configuration versions ${start} → ${end}`
+}
+
+/** Which agent a recording shows: the senses choose the motor's targets, or it was recorded before they did. */
+export function targetsWords(entry: Pick<BundleIndexEntry, 'senses_choose_targets'>): string {
+  return entry.senses_choose_targets
+    ? 'the senses choose the motor’s targets'
+    : 'recorded before the senses chose the motor’s targets'
 }
 
 /** How a recording is named on its card and in the picker: its seed, the model that decided it and the configuration it started from. */

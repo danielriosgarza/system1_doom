@@ -299,6 +299,14 @@ export interface BundleIndexEntry {
    * The decision model every decision was made by: d1-ultra, or jev
    */
   decider?: 'd1-ultra' | 'jev'
+  /**
+   * The senses chose the motor's targets (the enemy aimed at, the pickup walked to); False in bundles recorded before they did, when the motor picked its own
+   */
+  senses_choose_targets?: boolean
+  /**
+   * When the bundle was recorded, as its episode.json says
+   */
+  recorded_at?: string
 }
 /**
  * The central instance: its scope and the concern its instructions name.

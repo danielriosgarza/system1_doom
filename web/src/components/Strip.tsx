@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { deciderOf } from '../content/decider'
-import { STRIP, configWords, missWords, pickWords } from '../content/instances'
+import { STRIP, configWords, missWords, pickWords, targetWords } from '../content/instances'
 import type { EpisodeBundle } from '../data/loader'
 import {
   CENTRAL,
@@ -85,6 +85,12 @@ export function Strip({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
           <span className="strip-name">{STRIP.act}</span>
           <span className="strip-value">
             {act.action ? act.keys : 'nothing pressed: the central instance missed'}
+            {act.targets.length > 0 && (
+              <span className="strip-targets" data-testid="act-targets">
+                {' · '}
+                {act.targets.map(targetWords).join(' · ')}
+              </span>
+            )}
             <span className="faint"> · {STRIP.actGloss}</span>
           </span>
         </li>

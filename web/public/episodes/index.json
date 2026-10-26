@@ -2,6 +2,74 @@
   "schema_version": 2,
   "episodes": [
     {
+      "name": "optimized-corridor-9",
+      "title": "deadly corridor, jev with best value networks, seed 9",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "best",
+      "seed": 9,
+      "cleared": false,
+      "died": true,
+      "reward": 503.32,
+      "ticks": 37,
+      "kills": 3.0,
+      "configuration_start": 1,
+      "configuration_end": 1,
+      "decider": "jev",
+      "senses_choose_targets": true,
+      "recorded_at": "2026-10-26T07:14:11.868692+00:00"
+    },
+    {
+      "name": "optimized-corridor-10",
+      "title": "deadly corridor, jev with best value networks, seed 10",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "best",
+      "seed": 10,
+      "cleared": false,
+      "died": true,
+      "reward": 567.22,
+      "ticks": 123,
+      "kills": 5.0,
+      "configuration_start": 1,
+      "configuration_end": 3,
+      "decider": "jev",
+      "senses_choose_targets": true,
+      "recorded_at": "2026-10-26T07:16:17.772249+00:00"
+    },
+    {
+      "name": "optimized-corridor-11",
+      "title": "deadly corridor, jev with best value networks, seed 11",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "best",
+      "seed": 11,
+      "cleared": false,
+      "died": true,
+      "reward": 638.81,
+      "ticks": 54,
+      "kills": 5.0,
+      "configuration_start": 1,
+      "configuration_end": 2,
+      "decider": "jev",
+      "senses_choose_targets": true,
+      "recorded_at": "2026-10-26T07:14:25.616979+00:00"
+    },
+    {
+      "name": "optimized-corridor-12",
+      "title": "deadly corridor, jev with best value networks, seed 12",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "best",
+      "seed": 12,
+      "cleared": true,
+      "died": false,
+      "reward": 2282.84,
+      "ticks": 61,
+      "kills": 6.0,
+      "configuration_start": 1,
+      "configuration_end": 1,
+      "decider": "jev",
+      "senses_choose_targets": true,
+      "recorded_at": "2026-10-26T07:15:31.542105+00:00"
+    },
+    {
       "name": "corridor-9",
       "title": "deadly corridor, seed 9, from configuration version 1",
       "scenario": "deadly_corridor.cfg",
@@ -14,7 +82,9 @@
       "kills": 6.0,
       "configuration_start": 1,
       "configuration_end": 1,
-      "decider": "d1-ultra"
+      "decider": "d1-ultra",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-25T14:40:27.314616+00:00"
     },
     {
       "name": "jev-corridor-9",
@@ -29,7 +99,9 @@
       "kills": 6.0,
       "configuration_start": 1,
       "configuration_end": 1,
-      "decider": "jev"
+      "decider": "jev",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-25T17:26:07.393703+00:00"
     },
     {
       "name": "corridor-9-v2",
@@ -44,7 +116,9 @@
       "kills": 8.0,
       "configuration_start": 2,
       "configuration_end": 4,
-      "decider": "d1-ultra"
+      "decider": "d1-ultra",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-25T14:54:27.820117+00:00"
     },
     {
       "name": "corridor-11",
@@ -59,7 +133,9 @@
       "kills": 7.0,
       "configuration_start": 1,
       "configuration_end": 1,
-      "decider": "d1-ultra"
+      "decider": "d1-ultra",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-25T14:42:55.034735+00:00"
     },
     {
       "name": "jev-corridor-11",
@@ -74,7 +150,9 @@
       "kills": 5.0,
       "configuration_start": 1,
       "configuration_end": 3,
-      "decider": "jev"
+      "decider": "jev",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-25T17:28:53.652901+00:00"
     }
   ]
 }

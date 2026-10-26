@@ -153,10 +153,29 @@ export function keysPressed(steps: string[]): string {
   return [...held].map(([key, n]) => (n > 1 ? `${words(key)} ×${n}` : words(key))).join(', ') || 'nothing pressed'
 }
 
+/** A target the motor's assistance followed this decision, and the sense whose answer it was. */
+export interface MotorTarget {
+  kind: 'enemy' | 'pickup'
+  id: string
+  /** The sense that chose it, or `only candidate` when there was nothing to choose between. */
+  by: string
+}
+
 export interface ActRow {
   action: string | null
   keys: string
   steps: string[]
+  /** The enemy the aim locked onto and the pickup a walk went to, as the senses chose them; none in older bundles. */
+  targets: MotorTarget[]
+}
+
+export function motorTargets(tick: TickTrace): MotorTarget[] {
+  const t = tick.targets
+  if (!t) return []
+  const out: MotorTarget[] = []
+  if (t.enemy) out.push({ kind: 'enemy', id: t.enemy, by: t.chosen_by?.enemy ?? '' })
+  if (t.pickup) out.push({ kind: 'pickup', id: t.pickup, by: t.chosen_by?.pickup ?? '' })
+  return out
 }
 
 export function actRow(tick: TickTrace): ActRow {
@@ -164,6 +183,7 @@ export function actRow(tick: TickTrace): ActRow {
     action: tick.executed_action,
     keys: keysPressed(tick.primitive_steps_executed),
     steps: tick.primitive_steps_executed,
+    targets: motorTargets(tick),
   }
 }
 
@@ -234,6 +254,13 @@ export interface InstanceView {
   actionBars: Bar[]
   reason: string | null
   reasonBars: Bar[]
+  /** The enemy or pickup a sense chose for the motor; null for a sense that chooses none, or missed. */
+  target: string | null
+  targetKind: 'enemy' | 'pickup' | null
+  /** The chosen target in the words the sense saw it in. */
+  targetLine: string | null
+  /** The target question's distribution; empty when a lone candidate was the target without a question. */
+  targetBars: Bar[]
   missed: boolean
   missReason: string | null
   error: string | null
@@ -263,6 +290,10 @@ export function instanceView(tick: TickTrace, name: string): InstanceView | null
     actionBars: bars(r.action_probabilities, r.action),
     reason: r.reason ?? null,
     reasonBars: bars(r.reason_probabilities, r.reason),
+    target: r.missed ? null : (r.target ?? null),
+    targetKind: r.target_kind ?? null,
+    targetLine: r.missed ? null : (r.target_line ?? null),
+    targetBars: r.missed ? [] : bars(r.target_probabilities, r.target),
     missed: !!r.missed,
     missReason: r.miss_reason ?? null,
     error: r.error ?? null,

@@ -1,4 +1,4 @@
-import { WATCH, recordingName, resultWords, versionWords } from '../content/watch'
+import { WATCH, recordingName, resultWords, targetsWords, versionWords } from '../content/watch'
 import { defaultEpisode } from '../data/loader'
 import { openPanel, openRecording, useApp } from '../store'
 
@@ -32,6 +32,12 @@ export function RecordingCards() {
                 <span className="recording-name">{recordingName(entry)}</span>
                 <span className="recording-gloss">
                   {versionWords(start, entry.configuration_end ?? start)} · value networks: {entry.value_networks}
+                </span>
+                <span
+                  className="recording-gloss recording-targets"
+                  data-targets={entry.senses_choose_targets ? 'senses' : 'motor'}
+                >
+                  {targetsWords(entry)}
                 </span>
                 <span className="recording-result">{resultWords(entry)}</span>
               </button>

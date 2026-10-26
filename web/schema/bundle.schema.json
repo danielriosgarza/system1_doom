@@ -626,6 +626,18 @@
           ],
           "title": "Decider",
           "type": "string"
+        },
+        "senses_choose_targets": {
+          "default": false,
+          "description": "The senses chose the motor's targets (the enemy aimed at, the pickup walked to); False in bundles recorded before they did, when the motor picked its own",
+          "title": "Senses Choose Targets",
+          "type": "boolean"
+        },
+        "recorded_at": {
+          "default": "",
+          "description": "When the bundle was recorded, as its episode.json says",
+          "title": "Recorded At",
+          "type": "string"
         }
       },
       "required": [

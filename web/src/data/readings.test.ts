@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
+import { messageTargetWords, targetWords } from '../content/instances'
+import type { InstanceResult, TickTrace } from '../schema/bundle'
 import { loadFixture } from '../test/fixture'
 import type { EpisodeBundle } from './loader'
 import {
@@ -11,6 +13,7 @@ import {
   instanceView,
   keysPressed,
   ledgerBeforeAfter,
+  motorTargets,
   nStepReturns,
   placedCycles,
   sections,
@@ -121,6 +124,68 @@ describe('an instance at one tick', () => {
     expect(central?.raw).toContain('"choice": "teleport_hack"')
     const nav = instanceView(tick(3), 'navigation')
     expect(nav).toMatchObject({ missed: true, missReason: 'error', raw: null })
+  })
+})
+
+describe('the targets the senses chose', () => {
+  // A tick as the agent records it since the senses choose the motor's targets.
+  const withTargets = (): TickTrace => {
+    const t = structuredClone(tick(0))
+    t.targets = {
+      enemy: 'Zombieman_1',
+      pickup: 'GreenArmor_0',
+      chosen_by: { enemy: 'combat', pickup: 'only candidate' },
+    }
+    const combat = t.instances.combat as InstanceResult
+    t.instances.combat = {
+      ...combat,
+      target: 'Zombieman_1',
+      target_kind: 'enemy',
+      target_line: 'Zombieman at distance 172, 14 deg right',
+      target_probabilities: { Zombieman_1: 0.61, ShotgunGuy_2: 0.39 },
+    }
+    t.instances.resource = {
+      ...(t.instances.resource as InstanceResult),
+      target: 'GreenArmor_0',
+      target_kind: 'pickup',
+    }
+    return t
+  }
+
+  it('puts the motor’s targets on the Act row, and none in a bundle recorded before the senses chose them', () => {
+    expect(actRow(withTargets()).targets).toEqual([
+      { kind: 'enemy', id: 'Zombieman_1', by: 'combat' },
+      { kind: 'pickup', id: 'GreenArmor_0', by: 'only candidate' },
+    ])
+    expect(motorTargets(tick(0))).toEqual([])
+    expect(actRow(withTargets()).targets.map(targetWords)).toEqual([
+      'aim: Zombieman 1, by combat',
+      'walk to: GreenArmor 0, the only one',
+    ])
+  })
+
+  it('reads a sense’s target answer, with no distribution when a lone candidate needed no question', () => {
+    const combat = instanceView(withTargets(), 'combat')
+    expect([combat?.target, combat?.targetKind, combat?.targetLine]).toEqual([
+      'Zombieman_1',
+      'enemy',
+      'Zombieman at distance 172, 14 deg right',
+    ])
+    expect(combat?.targetBars.map((b) => [b.label, b.top])).toEqual([
+      ['Zombieman_1', true],
+      ['ShotgunGuy_2', false],
+    ])
+    const resource = instanceView(withTargets(), 'resource')
+    expect([resource?.target, resource?.targetBars]).toEqual(['GreenArmor_0', []])
+    expect(instanceView(tick(0), 'combat')?.target).toBeNull()
+  })
+
+  it('names a message’s target in the words the sense saw it in', () => {
+    expect(
+      messageTargetWords({ target: 'Zombieman_1', target_kind: 'enemy', target_line: 'Zombieman at distance 172' }),
+    ).toBe(', aim at Zombieman at distance 172')
+    expect(messageTargetWords({ target: 'GreenArmor_0', target_kind: 'pickup' })).toBe(', walk to GreenArmor 0')
+    expect(messageTargetWords({ target: null })).toBe('')
   })
 })
 

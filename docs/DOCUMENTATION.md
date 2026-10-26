@@ -1183,8 +1183,9 @@ in the top bar (keys 1 to 6): Watch, The instances, The slow system,
 Learning, Growing the menu and Reference. The URL hash is
 `#<episode>/<tick>/<screen>`, with the screen ids `watch`, `instances`,
 `slow`, `learning`, `menu` and `reference`; a link without a screen opens
-The instances, a fresh visit lands on Watch with the first recording that
-cleared the corridor (`#corridor-9/0/watch`), and `#live/<screen>`
+The instances, a fresh visit lands on Watch with the most recently
+recorded recording that cleared the corridor
+(`#optimized-corridor-12/0/watch`), and `#live/<screen>`
 follows live play. Every screen but Watch shares the timeline at the
 bottom: the counter, the pace, and marks for damage, a kill, a death, a
 miss, a drawn pick, a configuration change and each System 2 cycle.
@@ -1201,7 +1202,9 @@ decision: the five senses, each spoke (its speak strength as a bar, the
 action it named and its reason), silent, or missed (with the reason);
 the central's row (its pick, the probability, whether the pick was its
 top answer, drawn under explore, or a miss, and how many messages it
-heard); the Act row (the primitives held over the 8 frames); and a thin
+heard); the Act row (the primitives held over the 8 frames, and the
+motor's targets with the sense that chose each, in recordings made since
+the senses choose them); and a thin
 configuration line (the version in force, the last change and what
 became of it, and the trial in flight with its count of decisions). A
 click on a row opens that instance on The instances at that decision.
@@ -1224,9 +1227,12 @@ in its scope, or a line saying it was sent none; its evidence verbatim,
 the exact text of the trace with each `[channel]` header marked, which a
 browser test compares character for character with `ticks.jsonl`; and its
 answers as bars: the speak probability against yes_at 0.5 and the action
-and reason distributions for a sense, and for the central its choice
-distribution over the legal menu with the pick marked. A miss shows its
-reason and the raw answer as returned.
+and reason distributions for a sense, with the target the combat or
+resource sense chose (in the words it saw it in, with the target
+question's distribution, or a note that a lone candidate needed no
+question), and for the central its choice distribution over the legal
+menu with the pick marked and the messages it heard, each naming its
+target. A miss shows its reason and the raw answer as returned.
 
 **The slow system** reads `reflections.jsonl`, `relevance.json` and the
 configuration at the episode's start and end. First, a timeline of
@@ -1284,9 +1290,18 @@ the panels that show it and names its code); how this recording was made
 budget, calls and misses, the result, the `export` command that records
 one like it and the `serve` command that plays live); and the keys.
 
-**The recordings.** Five bundles ship in `web/public/episodes/`, all of
-`deadly_corridor.cfg` with the best networks as evidence. Three were
-played by d1-ultra: `corridor-9` and `corridor-11` start from the
+**The recordings.** Nine bundles ship in `web/public/episodes/`, all of
+`deadly_corridor.cfg` with the best networks as evidence. Four show the
+agent as it is now, the senses choosing the motor's targets:
+`optimized-corridor-9` to `optimized-corridor-12`, seeds 9 to 12 from
+version 1, played by Jev because d1-ultra's account had no credit when
+they were made; every one recorded ships, and the cleared one (seed 12)
+is the landing. The other five were recorded before the senses chose
+targets, when the motor picked the enemy it aimed at and the pickup it
+walked to; the index says which (`BundleIndexEntry.senses_choose_targets`,
+read from the file: its starting configuration names a sense's
+`target`), lists the four first, and the cards and the picker say it.
+Of those five, three were played by d1-ultra: `corridor-9` and `corridor-11` start from the
 design's version 1 (`--fresh-configuration`), and `corridor-9-v2` replays
 seed 9 from version 2, the configuration System 2 reached and its judge
 kept on the same run folder. Two were played by Jev (`--decider jev`,
@@ -1969,7 +1984,8 @@ the end of episode 1 and ran as episode 2 began.
 deadly_corridor.cfg --networks best`: the run folder's `best.pt` after 7
 training episodes, network share 0.43; the default 5 s budget; the slow
 path on, with templates; System 2 on; the two `jev-` recordings with
-`--decider jev`, otherwise the same). Five bundles, 44.3 MB in all,
+`--decider jev`, otherwise the same). These five, recorded before the
+senses chose the motor's targets, are 44.3 MB in all,
 which is over the 25 MB a static site should carry: 17.1 MB of
 `ticks.jsonl` (the six instances' verbatim evidence and answers, about
 23 KB a decision), 18.1 MB of `history.jsonl` (the same decisions as
@@ -2031,6 +2047,54 @@ a half and the survival sense rarely (4 of 59 and 29 of 179).
   this revert). At the episode's end the same change was chosen again (0.37)
   and queued, to take effect at the next episode's first tick, so the
   recording ends at version 4. The episode died after 233 decisions.
+
+**The senses choose the motor's targets** (2026-10-25). Seed by seed
+and phase by phase, the corridor was lost in two ways: the motor aimed
+and walked at targets no instance chose, and the agent kept walking at
+pickups dropped in the alcoves, behind lines it cannot cross, for a
+hundred decisions or more. Since then the combat and resource senses
+choose the targets (§8.6, §8.7), the bridge remembers every pickup seen
+with what walking at it has done (`landmarks`), and the resource sense
+is shown `landmarks` alone (§8.4). With Jev deciding (d1-ultra's credit
+had run out), the controller before and after, on the same seeds:
+
+| Seeds | Controller | Cleared | Mean reward | Decisions to clear | Timeouts |
+|---|---|---:|---:|---:|---:|
+| 201–215 | before | 6 of 15 | 1,154 | 124 | 2 |
+| 201–215 | after, without the last change (`landmarks` alone for resource) | 9 of 15 | 1,605 | 76 | 0 |
+| 301–315, untouched while developing | before | 6 of 15 | 1,194 | 101 | 0 |
+| 301–315, untouched while developing | after | 9 of 15 | 1,503 | 83 | 0 |
+
+That is 18 of 30 against 12 of 30 on seeds held out from each change, a
+consistent gain but not yet a statistically solid one (Fisher's exact
+p ≈ 0.2). On seeds 201–215 walks at pickups that walking had already
+failed to reach fell from 204 to 5 with the last change. Every loss
+left on 301–315 is a death in a fight: the opening's damage at skill 5,
+walking while an enemy still shoots, and the last pair's ChaingunGuy at
+300–400 units, where the pistol hits on about 9% of decisions. The
+benchmarks cost about $1.74 of d1-ultra and $2.92 of Jev.
+
+**The recordings of the agent as it is now** (2026-10-26, `export
+--decider jev --scenario deadly_corridor.cfg --networks best
+--fresh-configuration`, seeds 9 to 12, slow path on templates, System 2
+on, 5 s budget). Four seeds were fixed before recording and all four
+ship. No instance missed and every tick names the motor's targets; no
+walk went at a pickup walking had already failed to reach.
+
+| Recording | Decider | Configuration | Decisions | Result | Mean tick | Calls (System 1 + System 2) | Cost (System 1 + System 2) | Misses | Size |
+|---|---|---|---:|---|---:|---:|---:|---:|---:|
+| `optimized-corridor-9` | Jev | 1 → 1 | 37 | died, 3 kills (reward 503) | 884 ms | 222 + 19 | $0.0161 + $0.0010 | 0 | 3.1 MB |
+| `optimized-corridor-10` | Jev | 1 → 3 | 123 | died, 5 kills (reward 567) | 767 ms | 738 + 20 | $0.0518 + $0.0010 | 0 | 9.2 MB |
+| `optimized-corridor-11` | Jev | 1 → 2 | 54 | died, 5 kills (reward 639) | 881 ms | 324 + 10 | $0.0247 + $0.0005 | 0 | 4.5 MB |
+| `optimized-corridor-12` | Jev | 1 → 1 | 61 | cleared, 6 kills (reward 2,283) | 770 ms | 366 + 36 | $0.0252 + $0.0020 | 0 | 4.7 MB |
+
+One of four cleared, below the 18 of 30 above: on so few seeds that is
+within chance, and all three deaths were in fights. In
+`optimized-corridor-10` System 2 put the agent on explore at decision 42
+and after 60 decisions the judge compared reward per decision 7.07
+before with 4.70 during (kills 4 → 0) and reverted it (version 3); in
+`optimized-corridor-11` it did the same at decision 22 and the agent
+died during the trial, at version 2.
 
 **The value networks** were measured under the old architecture
 (`docs/superpowers/specs/2026-10-23-learning-controller-design.md`,
@@ -2158,14 +2222,14 @@ minute with them.
 | `test_learning.py` | n-step returns; per-network rewards; running stats; replay round-trip; each value net learns its own signal; episode credit assignment; checkpoint round-trip, overrides and mismatch; a checkpoint with gate weights loads (synthetic, and the shipped one when present) |
 | `test_training.py` | The motor executes an action's own plan; `train` writes the full run folder (with the ledger and history) and resumes; training and evaluation start from the saved configuration (evaluation with System 2 off, saving nothing) and `--fresh` forgets it; admitted macros persist and are re-validated; no exploration schedule; fail fast without the key; the idle burst |
 | `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy; `--decider jev` reaches the summary (`decider`, `models`) and every call goes to TypeSafe; `--decider jev` fails fast naming `TYPESAFE_API_KEY` |
-| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra or Jev and is listed in the index with its decider, and the site ships recordings by each decider, the first cleared one d1-ultra's; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
+| `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra or Jev and is listed in the index with its decider and whether the senses chose the motor's targets, and the site ships recordings by each decider, the newest cleared one with the senses choosing targets; a bundle whose configuration names no sense's target is indexed as recorded before the senses chose targets, after the ones since; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
 | `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration`; `--decider jev` reaches the status |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run lint`
-(oxlint), `npx prettier --check src e2e`, `npm test` (Vitest, 69 tests in
+(oxlint), `npx prettier --check src e2e`, `npm test` (Vitest, 73 tests in
 6 files), `npm run build` (type-check and bundle) and `npm run e2e`
-(Playwright, 30 tests in 5 files, about 30 s with the build). Both read
+(Playwright, 31 tests in 5 files, about 30 s with the build). Both read
 `web/e2e/fixtures/episodes/fixture-corridor`, a 40-tick schema-2 bundle
 the fake d1-ultra plays on the corridor (`web/scripts/record_fixture.py`
 records it, without the real API), whose System 2 admits a macro
@@ -2185,7 +2249,7 @@ give the app a miss of each kind to show.
 | `e2e/instances.spec.ts` | The strip shows five senses and the central, with spoke, silent or missed and the pick; a central miss; the configuration line moving to version 2; a click on a row opens that instance; the survival evidence is verbatim with no `[pickups]` and the combat evidence has no `[messages]`, both equal to `ticks.jsonl`; the frame; the miss's reason and raw answer; the answers as bars |
 | `e2e/screens.spec.ts` | The slow system's version timeline, the history test's table (12 ticks, the metrics, the verdict), the trial and the judge's evidence, a sampled tick opening The instances, a cycle's reflectors and their evidence, the ledger; Learning's chart and tables; Growing the menu's proposal, stages and admit instance; Reference's rule, drawing, glossary and provenance; a linked word opening its entry; no sideways scroll at 390 px on any screen; the top bar on one row at 1280 px |
 | `e2e/live.spec.ts` | Against the live stand-in: Watch follows schema-2 ticks as they arrive; The slow system fills in from `reflection` events (cycles, versions 2 and 3, the history test); The instances follows the newest tick |
-| `e2e/recordings.spec.ts` | Against the built site with the shipped recordings: the landing plays the first cleared one; every recording opens on every screen without an error and with no sideways scroll at 390 px; the top bar on one row at 1280 px |
+| `e2e/recordings.spec.ts` | Against the built site with the shipped recordings: the landing plays the newest cleared one, and the cards mark the ones recorded before the senses chose targets; on it, Act names the motor's targets and the combat sense shows its target answer; every recording opens on every screen without an error and with no sideways scroll at 390 px; the top bar on one row at 1280 px |
 
 **Continuous integration.** `.github/workflows/checks.yml` runs on every
 pull request and every push to main, in two jobs of at most ten minutes
@@ -2271,7 +2335,7 @@ from both; the Reference screen names them in one line of history.
 | Term | Meaning |
 |---|---|
 | **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions with distributions. Every decision is one of its answers: the five senses, the central and the admit instance are each one call (§8.6, §8.10), and so are System 2's reflectors, its central and the trial judge (§8.16). |
-| **Jev** | TypeSafe's decision model, which answers the same typed questions in the same form at `api.typesafe.ai`; with `--decider jev` every instance of both systems calls it instead of d1-ultra, with the same evidence and questions (§8.10). The screen goes to it as an image asset, and its cost is counted at its published price per input token, since its usage block names none. Two of the shipped recordings were played by it (§15). |
+| **Jev** | TypeSafe's decision model, which answers the same typed questions in the same form at `api.typesafe.ai`; with `--decider jev` every instance of both systems calls it instead of d1-ultra, with the same evidence and questions (§8.10). The screen goes to it as an image asset, and its cost is counted at its published price per input token, since its usage block names none. Six of the shipped recordings were played by it (§15). |
 | **System 1** | The fast system that decides every action, once per tick: five senses, then the central, then Act (`system1.py`, §7, §8.7). It never waits for System 2. |
 | **System 2** | The slow system, on its own thread: it reads the history and changes the configuration one change at a time — reflectors propose, its central chooses one change or none, a scope change must pass the history test, and every change is a trial the judge keeps or reverts (§8.16). |
 | **Instance** | One d1-ultra call with its own scope and its own finite questions (`InstanceSpec`, `run_instance`). Its instructions name its concern and say it sees only the evidence given; they never say how to weigh anything (§8.6). |
@@ -2280,6 +2344,7 @@ from both; the Reference screen names them in one line of history.
 | **Channel** | One named piece of evidence rendered as plain text under a `[name]` header; eighteen in all, in a fixed order. `messages`, `relevance` and `exploration` are for the central only (§8.5). |
 | **Scope** | The channels an instance is shown: at most 7, always with `menu`. Whatever a scope leaves out never reaches the instance; System 2 widens or narrows a scope one channel at a time (§8.4, §8.16). |
 | **Message** | What a sense that spoke sends the central: action, reason, strength — one line of the central's `messages` channel. A silent or missed sense sends nothing (§8.6). |
+| **Target** | What the motor aims or walks at, chosen by a sense: the combat sense's `target` answer is the visible enemy the aim locks onto, the resource sense's the remembered pickup a pickup-seeking action walks to (`system1.targets_of`, §8.7). With one candidate no question is asked and that one is the target; a sense that missed leaves its target empty, and the motor never picks one of its own. |
 | **Strength** | A message's strength: the sense's `speak` probability, unscaled. A sense speaks at `yes_at` (0.5), d1's own yes, not a tuned threshold (§8.6). |
 | **Relevance / relevance ledger** | Each sense's track record per context signature: spoke, followed and paid off, overruled and whether the chosen action paid off, mean strength either way. Shown to the central as counts; nothing in it is multiplied into a decision (`relevance.py`, §8.8). |
 | **Paid off / n-step return** | A decision paid off when its n-step return (n = 8, γ = 0.9, over the per-decision game reward, truncated at the episode's end; `features.n_step_returns`) was positive. The ledger, the history test's strata and the trials all read it (§8.8). |
