@@ -484,10 +484,13 @@ def standing(tr, i):
 
 def better(new, old):
     """Alive beats dead, and the goal reached beats not reached; otherwise no worse on health and furthest
-    point, and better on one of them."""
+    point, and better on one of them. Dead is never better than dead: dying a few units further on does not
+    avoid the death."""
     new, old = [tuple(s) if len(s) == 4 else (s[0], 0, *s[1:]) for s in (new, old)]
     if new[:2] != old[:2]:
         return new[:2] > old[:2]
+    if new[0] == 0:
+        return False
     return all(n >= o for n, o in zip(new[2:], old[2:])) and new[2:] != old[2:]
 
 
