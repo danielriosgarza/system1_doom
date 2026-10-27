@@ -133,8 +133,8 @@ Or, when the state lacks the information:
   condition so it excludes those frames.
 - **avoids**: the game is replayed to your frame and played 24 decisions past the failure, once with the old
   tree and once with yours. Yours must end better: alive where the old one died, the goal reached where the old
-  one did not, otherwise no worse on health and furthest point and better on one. If it fails, change the
-  action or pick an earlier frame.
+  one did not, otherwise no worse on health and furthest point and better on one. If both die, it fails: dying
+  a little further on does not avoid the death. If it fails, change the action or pick an earlier frame.
 - **gate** (after the check passes): every training seed is played with the current tree and with yours. Yours
   must clear at least as many. Passing on one game does not prove a rule is good everywhere: in this project a
   back-off rule passed its check with a large margin and still cleared fewer training seeds.
