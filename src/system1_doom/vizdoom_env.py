@@ -330,8 +330,9 @@ class ViZDoomBridge:
                         continue
                     cx = int(lbl.x + lbl.width // 2)
                     cy = int(lbl.y + lbl.height // 2)
-                    # Positive offset means the actor is left of the crosshair.
-                    angle_offset = (center_x - cx) / max(1.0, center_x) * 45.0
+                    # Positive offset means the actor is left of the crosshair. The screen spans 90 degrees, so a
+                    # point's angle is atan of its offset from the centre (a linear map understates every angle).
+                    angle_offset = math.degrees(math.atan((center_x - cx) / max(1.0, center_x)))
                     if lbl.object_id in obj_pos_by_id:
                         ox, oy = obj_pos_by_id[lbl.object_id]
                         dist = math.hypot(ox - px, oy - py)

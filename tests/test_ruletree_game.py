@@ -86,7 +86,8 @@ def test_threat_angles_are_true_angles(game):
     assert obs.visible_enemies
     for e in obs.visible_enemies:
         true = math.degrees(math.atan((half - e.screen_x) / half))
-        assert abs(true) > abs(e.angle_offset) + 2  # the bridge's linear mapping understates it
+        linear = (half - e.screen_x) / half * 45.0
+        assert abs(e.angle_offset - true) <= 0.05 and abs(true) > abs(linear) + 2
         side = "left" if true > 0 else "right"
         assert f"- {e.name} at distance {round(e.distance)}, {round(abs(true))} deg {side}" in text
 

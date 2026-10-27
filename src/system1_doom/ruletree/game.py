@@ -5,12 +5,9 @@ action, and judges each decision against the goal only: dying, stalling (the fur
 than 48 units over 24 decisions), timing out, or clearing the level. It also reports where every enemy really is,
 for the rule writer's diagnosis; that is never shown to Jev.
 
-Two representation fixes found by the soft loop are applied here, to the state the rule tree reads (the senses
-and central controller does not use this module):
-- the threats list's angles: the bridge maps a screen offset to an angle linearly, which understates every angle;
-  the true angle on a 90-degree-wide screen is atan(offset);
-- the outgoing channel remembers how many decisions in a row the agent fired without hitting anything, so firing
-  at an enemy the shots cannot reach no longer looks like ordinary misses.
+The outgoing channel also says how many decisions in a row the agent fired without hitting anything, so firing at
+an enemy the shots cannot reach no longer looks like ordinary misses (a representation fix found by the soft loop;
+the senses and central controller has its own form of it, per target, in the threats list).
 """
 
 from __future__ import annotations
@@ -70,12 +67,6 @@ class Game:
         """The state text Jev reads and the screen (base64 JPEG)."""
         ws = self.bridge.acquire_world_state()
         obs = ws.observation
-        half = obs.screen_width / 2.0
-        fixed = tuple(
-            e.model_copy(update={"angle_offset": round(math.degrees(math.atan((half - e.screen_x) / half)), 1)})
-            for e in obs.visible_enemies
-        )
-        ws = ws.model_copy(update={"observation": obs.model_copy(update={"visible_enemies": fixed})})
         counters = EvidenceCounters(
             decisions=self.decisions,
             under_fire_streak=self.under_fire,
