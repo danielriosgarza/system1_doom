@@ -1,17 +1,19 @@
-"""Client for the decision model: Liquid AI's d1-ultra (`POST https://api.liquid.ai/decisions/v1/systemone`)
-or, with `decider="jev"`, TypeSafe's Jev (`POST https://api.typesafe.ai/v1/systemone`).
+"""Client for the decision model: Liquid AI's d1-ultra (`POST https://api.liquid.ai/decisions/v1/systemone`),
+with `decider="jev"` TypeSafe's Jev (`POST https://api.typesafe.ai/v1/systemone`), or with `decider="laya"`
+Convai Innovations' open-weight Laya, served on this machine by `laya-serve` (`POST http://127.0.0.1:8000/v1/systemone`).
 
 The decision model is the decision maker: every instance is one call with its own evidence and finite
 questions. This client sends a call and reports exactly what happened: the response, or a typed miss
 (`timeout`, `error`, `http_429_exhausted`; the instance layer adds `off_menu` and `malformed`), with the
 call's latency, retries and token usage, counted per instance name. It never invents an answer.
 
-Both models answer the same System One request (`model`, `state`, `questions` of type `noul`, `choice`
-and `score`) with the same answer shapes, so the hierarchy is identical on either; a `Decider` is the
+The models answer the same System One request (`model`, `state`, `questions` of type `noul`, `choice`
+and `score`) with the same answer shapes, so the hierarchy is identical on each; a `Decider` is the
 data that differs: the endpoint, the model name, the key's variable, how a screen is sent (d1-ultra
 takes `images` as data URLs; Jev takes `assets` referenced from the state, scaled up to its minimum
-side, under its images header) and the published input price, which stands in for the `cost` a Jev
-usage block does not report.
+side, under its images header; Laya reads text only and is sent no screen), the published input price,
+which stands in for the `cost` a Jev usage block does not report, and any fields of its own the request
+carries (Laya's `max_len`).
 
 The transport is injectable (`TransportFn(url, headers, payload, timeout) -> dict`), so tests answer
 from a fake without a key; the default posts with `requests`. Calls run on a worker pool sized by the
@@ -52,12 +54,20 @@ JEV_MIN_IMAGE_SIDE = 280
 JEV_IMAGES_HEADER = "TypeSafe-Danger-Zone-Images"
 # The channel-like label under which a Jev state ends with the screen's asset reference.
 JEV_SCREEN_LABEL = "screen image"
+# `laya-serve` on this machine (`LAYA_HOST=127.0.0.1`); with LAYA_API_KEY set there, the same key here.
+DEFAULT_LAYA_URL = "http://127.0.0.1:8000/v1/systemone"
+# The English checkpoint (ModernBERT-large); unnamed, the server routes each state by its language.
+DEFAULT_LAYA_MODEL = "english"
+# Laya's English checkpoint reads 512 tokens by default and drops the rest of a long state silently. A rule-tree
+# state runs to about 800 tokens and ends with the [focus] channel the aim skill's conditions read, so every
+# request asks for a window that holds all of it (ModernBERT's positions reach 8,192).
+LAYA_MAX_LEN = 2048
 
 MissReason = Literal["timeout", "error", "http_429_exhausted", "off_menu", "malformed"]
 MISS_REASONS = ("timeout", "error", "http_429_exhausted", "off_menu", "malformed")
 
-DeciderName = Literal["d1-ultra", "jev"]
-DECIDER_NAMES = ("d1-ultra", "jev")
+DeciderName = Literal["d1-ultra", "jev", "laya"]
+DECIDER_NAMES = ("d1-ultra", "jev", "laya")
 
 
 class Decider(BaseModel):
@@ -70,10 +80,14 @@ class Decider(BaseModel):
     endpoint_url: str
     model: str
     key_env: str = Field(description="The environment variable (or .env entry) holding the API key")
-    images: Literal["data_urls", "assets"] = Field(description="How a screen is sent: d1's `images` list, or TypeSafe's `assets`")
+    key_required: bool = Field(default=True, description="False for a server on this machine that may run without a key")
+    images: Literal["data_urls", "assets", "none"] = Field(
+        description="How a screen is sent: d1's `images` list, TypeSafe's `assets`, or not at all (a text-only model)"
+    )
     input_usd_per_mtok: Optional[float] = Field(
         default=None, description="Published input price; reported as a call's cost when its usage block names none"
     )
+    request: Dict[str, Any] = Field(default_factory=dict, description="Fields of the decider's own that every request carries")
 
 
 DECIDERS: Dict[str, Decider] = {
@@ -95,6 +109,16 @@ DECIDERS: Dict[str, Decider] = {
         # $42 per billion input tokens; output tokens are free (docs.typesafe.ai/models, October 2026).
         input_usd_per_mtok=0.042,
     ),
+    "laya": Decider(
+        name="laya",
+        vendor="Convai Innovations (open weights, on this machine)",
+        endpoint_url=DEFAULT_LAYA_URL,
+        model=DEFAULT_LAYA_MODEL,
+        key_env="LAYA_API_KEY",
+        key_required=False,
+        images="none",
+        request={"max_len": LAYA_MAX_LEN},
+    ),
 }
 
 
@@ -109,7 +133,8 @@ def decider_of(decider: Union[str, Decider]) -> Decider:
 
 
 def load_api_key(decider: Union[str, Decider] = "d1-ultra", dotenv_path: Optional[Union[str, Path]] = None) -> Optional[str]:
-    """Load the decider's key (LIQUID_API_KEY, or TYPESAFE_API_KEY for Jev) from the environment or a local .env file."""
+    """Load the decider's key (LIQUID_API_KEY, TYPESAFE_API_KEY for Jev, LAYA_API_KEY for Laya) from the environment
+    or a local .env file."""
     key_env = decider_of(decider).key_env
     env_val = os.environ.get(key_env)
     if env_val:
@@ -326,8 +351,8 @@ def jev_asset(data_url: str) -> Dict[str, Any]:
 
 
 class D1UltraClient:
-    """Decision-model calls (d1-ultra, or Jev with `decider="jev"`) with a per-call budget, typed misses, usage
-    and per-instance counters."""
+    """Decision-model calls (d1-ultra, Jev with `decider="jev"`, or Laya with `decider="laya"`) with a per-call
+    budget, typed misses, usage and per-instance counters."""
 
     def __init__(
         self,
@@ -353,34 +378,39 @@ class D1UltraClient:
 
     @property
     def has_key(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) or not self.decider.key_required
 
     def payload(self, state: str, questions: Dict[str, QuestionSpec], images: Optional[List[str]] = None) -> Dict[str, Any]:
-        """The request body exactly as sent: model, state, questions and, when given, the images.
+        """The request body exactly as sent: model, state, questions, the decider's own fields and, when given,
+        the images.
 
         d1-ultra takes the images as a list of data URLs. Jev takes them as `assets`, each referenced from
         the end of the state under `[screen image]`, where the model reads the screen in the reference's place.
+        Laya reads text only: its state is sent as it is, without the screen.
         """
         body: Dict[str, Any] = {
             "model": self.model,
             "state": state,
             "questions": {k: q.to_payload() for k, q in questions.items()},
+            **self.decider.request,
         }
         if images and self.decider.images == "assets":
             refs = [str(uuid.uuid4()) for _ in images[:MAX_IMAGES]]
             body["state"] = f"{state}\n\n[{JEV_SCREEN_LABEL}]\n" + "\n".join(refs)
             body["assets"] = {ref: jev_asset(url) for ref, url in zip(refs, images)}
-        elif images:
+        elif images and self.decider.images == "data_urls":
             body["images"] = list(images[:MAX_IMAGES])
         return body
 
     def headers(self, body: Dict[str, Any]) -> Dict[str, str]:
-        """The request's headers: the bearer key, and TypeSafe's images header when the body carries assets."""
+        """The request's headers: the bearer key (when there is one), and TypeSafe's images header when the body
+        carries assets."""
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "User-Agent": "system1-doom/0.4",
         }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         if "assets" in body:
             headers[JEV_IMAGES_HEADER] = "true"
         return headers
@@ -404,7 +434,7 @@ class D1UltraClient:
             self._count(result)
             return result
 
-        if not self.api_key:
+        if not self.has_key:
             return done(miss_reason="error", error=f"no {self.decider.key_env}")
         if not questions:
             return done(miss_reason="error", error="no questions")

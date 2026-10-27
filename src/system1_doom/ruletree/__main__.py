@@ -2,6 +2,7 @@
 
   python -m system1_doom.ruletree show   --tree general-11
   python -m system1_doom.ruletree eval   RUN --tree general-11 --seeds 9-19,40-59
+  python -m system1_doom.ruletree eval   RUN --tree general-11 --seeds 9-19 --decider laya
   python -m system1_doom.ruletree play   RUN --tree general-11 --seed 9
   python -m system1_doom.ruletree loop   RUN --tree general-9 --writer codex --train 9-19 --held 20-39
   python -m system1_doom.ruletree check  RUN PROPOSAL.json
@@ -14,7 +15,9 @@ RUN is a folder (see `run.py`); it starts from `--tree` (a shipped tree's name o
 `check` tests a proposal against a game of the run; `gate` checks it, then plays the seeds with and without it;
 `commit` checks it and, if it passed, adds it to the run's tree. `finish` copies the run's tree and record into a
 tree folder of its own. Jev is reached with TYPESAFE_API_KEY from the environment or `.env`; without it every
-command but `show` and `finish` stops with exit code 2.
+command but `show` and `finish` stops with exit code 2. `--decider laya` asks Laya instead, the open-weight model
+served on this machine by `laya-serve` (at `--endpoint`, http://127.0.0.1:8000/v1/systemone by default), which
+needs no key unless the server was started with LAYA_API_KEY; Laya reads the state text and not the screen.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Sequence
 
-from system1_doom.d1_client import D1UltraClient, load_api_key
+from system1_doom.d1_client import D1UltraClient, decider_of, load_api_key
 
 from .check import ProposalError, check, commit
 from .gate import gate
@@ -83,7 +86,11 @@ def _parser() -> argparse.ArgumentParser:
     for p in sub.choices.values():
         if p.prog.split()[-1] != "show":
             p.add_argument("--workers", type=int, default=6, help="games played at once")
-            p.add_argument("--model", help="the Jev model (default: TypeSafe's current release, jev-latest)")
+            p.add_argument("--decider", choices=("jev", "laya"), default="jev",
+                           help="the decision model that answers every question: jev (TypeSafe; the default) or laya "
+                                "(open weights, served on this machine)")
+            p.add_argument("--model", help="the decider's model (default: jev-latest for Jev, the english checkpoint for Laya)")
+            p.add_argument("--endpoint", help="the decider's System One URL, when it differs from the default")
     return ap
 
 
@@ -104,15 +111,17 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         say("\n".join(tree_lines(load_tree(args.tree))))
         return 0
 
-    if client is None and args.command not in ("finish",) and not load_api_key("jev"):
-        say("TYPESAFE_API_KEY is not set. Jev makes every decision of the rule tree, so play needs the key "
-            "(in the environment or a .env file).")
+    decider = decider_of(args.decider)
+    if client is None and args.command not in ("finish",) and decider.key_required and not load_api_key(decider):
+        say(f"{decider.key_env} is not set. {decider.name.capitalize()} makes every decision of the rule tree, so play "
+            "needs the key (in the environment or a .env file).")
         return 2
     kwargs = {"workers": args.workers}
     if client is not None:
         kwargs["client"] = client
-    elif args.model:
-        kwargs["client"] = D1UltraClient(decider="jev", model=args.model, max_workers=max(6, 2 * args.workers))
+    elif args.model or args.endpoint or decider.name != "jev":
+        kwargs["client"] = D1UltraClient(decider=decider, model=args.model, endpoint_url=args.endpoint,
+                                         max_workers=max(6, 2 * args.workers))
     if game_factory is not None:
         kwargs["game_factory"] = game_factory
     run = Run(args.run, **kwargs)

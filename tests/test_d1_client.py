@@ -6,7 +6,9 @@ import pytest
 from system1_doom import d1_client
 from system1_doom.d1_client import (
     DECIDERS,
+    DEFAULT_LAYA_URL,
     JEV_IMAGES_HEADER,
+    LAYA_MAX_LEN,
     TYPESAFE_SYSTEMONE_URL,
     ChoiceQuestion,
     D1HTTPError,
@@ -223,6 +225,39 @@ def test_a_jev_call_without_a_screen_sends_no_assets_and_a_reported_cost_is_kept
     bad = tiny.call("combat", "s", {"q": NoulQuestion(instructions="?")}, images=["data:image/jpeg;base64,AA=="])
     tiny.shutdown()
     assert bad.miss_reason == "error" and bad.response is None
+
+
+def test_laya_is_the_same_request_on_this_machine_with_the_text_alone():
+    captured = []
+
+    def fake_transport(url: str, headers: dict, payload: dict, timeout: float) -> dict:
+        captured.append((url, headers, payload))
+        probs = {"r1": 0.9, "none": 0.1}
+        return {"model": "laya-rl-agent", "routing": {"model": "english"},
+                "answers": {"rule": {"type": "choice", "choice": "r1", "probabilities": probs, "confidence": 0.53}},
+                "usage": {"input_tokens": 812, "output_tokens": 0, "truncated": False}}
+
+    question = ChoiceQuestion(instructions="Which of these is true right now?",
+                              criteria={"r1": "The threats list shows at least one enemy.", "none": "None of these is true right now."})
+    client = D1UltraClient(api_key="", decider="laya", transport=fake_transport, max_workers=1)
+    result = client.call("rule:root", "[threats]\n1 enemy visible", {"rule": question}, images=[_screen()])
+    client.shutdown()
+
+    ((url, headers, payload),) = captured
+    assert url == DEFAULT_LAYA_URL == "http://127.0.0.1:8000/v1/systemone"
+    # No key is needed on this machine, and none is sent; the text-only model is sent no screen.
+    assert "Authorization" not in headers and JEV_IMAGES_HEADER not in headers
+    assert payload == {"model": "english", "state": "[threats]\n1 enemy visible", "questions": {"rule": question.to_payload()},
+                       "max_len": LAYA_MAX_LEN}
+    assert result.answered and result.response.choice("rule").choice == "r1"
+    # Open weights on this machine: no price, so no cost.
+    assert (result.usage.input_tokens, result.usage.cost) == (812, 0.0)
+    assert client.models_answered() == {"laya-rl-agent": 1}
+    # A server started with LAYA_API_KEY is sent the key.
+    keyed = D1UltraClient(api_key="laya_local", decider="laya", transport=fake_transport, max_workers=1)
+    keyed.call("rule:root", "s", {"rule": question})
+    keyed.shutdown()
+    assert captured[-1][1]["Authorization"] == "Bearer laya_local"
 
 
 def test_each_decider_reads_its_own_key(monkeypatch, tmp_path):
