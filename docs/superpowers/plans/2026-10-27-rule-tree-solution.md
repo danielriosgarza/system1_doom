@@ -118,10 +118,10 @@ For example, the Watch screen of the rule tree opens with:
 - Produces: `segments(action, partial=False)`, `complete(action, then)`, `describe(action)`, `buttons(code)`,
   `COMBOS` (the 54 four-letter codes), `TICS = 8`.
 
-- [ ] **Step 1:** Write tests: a code alone is held 8 tics; `00R0:3+0001:5` is two segments; a skill's partial
+- [x] **Step 1:** Write tests: a code alone is held 8 tics; `00R0:3+0001:5` is two segments; a skill's partial
   action `00R0:3` is completed by the caller's `then` (`00R0:3+0001:5`); sums other than 8 are refused outside a
   skill; `describe` gives the words the site shows ("turn right for 3 tics, then fire for 5 tics").
-- [ ] **Step 2:** Move the code from `experiments/soft-loop/softloop.py`; run the tests.
+- [x] **Step 2:** Move the code from `experiments/soft-loop/softloop.py`; run the tests.
 
 ### Task 1.2: The tree
 
@@ -136,14 +136,15 @@ For example, the Watch screen of the rule tree opens with:
   `provenance`), `RuleTree` (nodes, skills, `name`, `writer`); `load_tree(path)`, `save_tree(tree, path)`,
   `with_rule(tree, proposal)`, `route(path)`, `tree_lines(tree)`.
 
-- [ ] **Step 1:** Tests: adding one rule and a group; a rule with its own focus; a rule inside a skill may give a
+- [x] **Step 1:** Tests: adding one rule and a group; a rule with its own focus; a rule inside a skill may give a
   partial action, a rule outside may not; ids stay unique; `tree_lines` prints the skill after the tree.
-- [ ] **Step 2:** Self-contained trees: a cornerstone keeps the seed and the actions that led to its frame, instead
+- [x] **Step 2:** Self-contained trees: a cornerstone keeps the seed and the actions that led to its frame, instead
   of the name of a trace file. Frames are JPEG files next to `tree.json` (`cornerstones/<rule>-<n>.jpg`).
-- [ ] **Step 3:** Convert the shipped trees into this form: `trees/general-9/` (the starting tree),
+- [x] **Step 3:** Convert the shipped trees into this form: `trees/general-9/` (the starting tree),
   `trees/general-11/` (Claude as writer), `trees/codex-11/` (Codex as writer, from Daniel's machine,
   `~/GitHub/system1_doom-softloop/experiments/soft-loop/runs/codex1`). Each folder has `tree.json`,
-  `cornerstones/` and `build.jsonl` (the soft loop's record that produced it).
+  `cornerstones/` and `build.jsonl` (the soft loop's record that produced it). Done: they ship with the package
+  in `src/system1_doom/ruletree/trees/`, so `--tree general-11` works wherever the package is installed.
 
 ### Task 1.3: The walk
 
@@ -157,10 +158,10 @@ For example, the Watch screen of the rule tree opens with:
   reached, and the steps: each question (node, options with their texts, probabilities, pick, latency, cost), each
   focus pick (the options it chose from, the pick, the `[focus]` line added to the state), each skill entered.
 
-- [ ] **Step 1:** Tests: the walk stops at "none"; a focus node adds the `[focus]` channel before its children are
+- [x] **Step 1:** Tests: the walk stops at "none"; a focus node adds the `[focus]` channel before its children are
   asked; a skill call continues in the skill and the caller's `then` completes the action; a single focus option
   needs no question; a failed call is a miss and the node reached acts.
-- [ ] **Step 2:** Implement with the package's Jev client instead of the experiment's own HTTP code, keeping the
+- [x] **Step 2:** Implement with the package's Jev client instead of the experiment's own HTTP code, keeping the
   answer cache used by checks.
 
 ### Task 1.4: The game
@@ -173,8 +174,8 @@ For example, the Watch screen of the rule tree opens with:
 - Produces: `Game` (reset, observe, step with action sequences, events: died, stalled, cleared, timed out),
   `play(tree, client, seed, prefix=())`.
 
-- [ ] **Step 1:** Move `Game` and `play`. Until decision 1 is taken, keep the two perception fixes here.
-- [ ] **Step 2:** Test one seed with canned answers: the episode runs, decisions are 8 tics, stall and death are
+- [x] **Step 1:** Move `Game` and `play`. Until decision 1 is taken, keep the two perception fixes here.
+- [x] **Step 2:** Test one seed with canned answers: the episode runs, decisions are 8 tics, stall and death are
   detected.
 
 ### Task 1.5: The soft loop
@@ -189,10 +190,10 @@ For example, the Watch screen of the rule tree opens with:
   GateReport`, `write_dossier(trace)`, writers `CodexWriter` (`codex exec`), `ClaudeWriter`, `FileWriter` (a person
   or another program puts the proposal in a file), `run_loop(tree, writer, train, held, rounds)`.
 
-- [ ] **Step 1:** Tests for the comparisons: alive beats dead; reaching the goal beats not; if both die the rule
+- [x] **Step 1:** Tests for the comparisons: alive beats dead; reaching the goal beats not; if both die the rule
   fails; otherwise no worse on health and furthest point and better on one.
-- [ ] **Step 2:** Test the loop end to end with a writer that returns a fixed proposal and a fake game.
-- [ ] **Step 3:** The loop writes `build.jsonl`: one line per round (seed, failure, decision), per proposal (text,
+- [x] **Step 2:** Test the loop end to end with a writer that returns a fixed proposal and a fake game.
+- [x] **Step 3:** The loop writes `build.jsonl`: one line per round (seed, failure, decision), per proposal (text,
   writer, seconds), per check, per gate, per commit.
 
 ### Task 1.6: Command line
@@ -201,7 +202,7 @@ For example, the Watch screen of the rule tree opens with:
 - Create: `src/system1_doom/ruletree/__main__.py`
 - Test: `tests/test_ruletree_cli.py`
 
-- [ ] **Step 1:** `python -m system1_doom.ruletree play|eval|show|check|gate|commit|loop`, with `--tree`,
+- [x] **Step 1:** `python -m system1_doom.ruletree play|eval|show|check|gate|commit|loop`, with `--tree`,
   `--seeds`, `--writer codex|claude|file`.
 - [ ] **Step 2:** Remove `experiments/soft-loop/` once the module reproduces its results (milestone 2).
 

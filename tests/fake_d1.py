@@ -11,6 +11,9 @@ Calls are counted per instance name from 0, and every instance is called once pe
 the central" is the central of the k-th tick played with this fake (System 2's history test re-runs a
 sense or the central under the same name, so it adds to that count).
 
+The rule tree's questions are named `rule` (which child's condition holds) and `focus` (which listed item to
+attend to); each is its own instance name.
+
 System 2's instances are told apart from the payload too: a reflector asks `speak`, `change` and
 `reason` and names itself in its instructions ("You are the survival auditor ..."), System 2's central
 asks `configure`, and the trial judge asks `verdict`. They answer from `system2_policy`
@@ -69,6 +72,9 @@ def instance_name(payload: Dict[str, Any]) -> str:
         return SYSTEM2_CENTRAL
     if "verdict" in questions:
         return TRIAL_JUDGE
+    if "rule" in questions or "focus" in questions:
+        # The rule tree asks one question per call: which child's condition holds, or which item to focus on.
+        return next(iter(questions))
     if "change" in questions:
         match = re.search(r"You are the (\w+) (auditor|reflector) ", questions["change"]["instructions"])
         assert match, questions["change"]["instructions"]
@@ -261,7 +267,7 @@ def survival_until_pickups(name: str, payload: Dict[str, Any]) -> Answers:
     return shoot_when_aimed(name, payload)
 
 
-ANSWER_KEYS = ("choose", "action", "configure", "change", "verdict")
+ANSWER_KEYS = ("choose", "action", "configure", "change", "verdict", "rule", "focus")
 
 
 class FakeD1:

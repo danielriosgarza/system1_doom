@@ -9,6 +9,10 @@ The engine only plays and replays; Jev never sees it, and no hand-written rule d
 `NOTES.md` has the three stages so far. In the third stage, 11 general rules (no monster names, no map facts)
 cleared the training seeds 22 of 22, the held-out seeds 20 to 39 39 of 40, and new seeds 40 to 59 18 of 20.
 
+The soft loop is now a module of the package, `system1_doom.ruletree` (`python -m system1_doom.ruletree --help`),
+with the three trees (`general-9`, `general-11`, `codex-11`) shipped in `src/system1_doom/ruletree/trees/`. This
+folder stays until the module's benchmark (milestone 2 of `docs/superpowers/plans/2026-10-27-rule-tree-solution.md`).
+
 ## Files
 
 - `softloop.py`: `play RUN SEED`, `check RUN RULE.json`, `gate RUN RULE.json LO-HI`, `commit RUN RULE.json`,

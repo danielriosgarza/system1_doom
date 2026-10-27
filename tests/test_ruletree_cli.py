@@ -1,0 +1,54 @@
+"""The command line on the stand-in corridor: show, eval, check, commit and finish."""
+
+import io
+import json
+
+from system1_doom.ruletree.__main__ import main, parse_seeds
+from system1_doom.ruletree.tree import save_tree
+from tests.fake_d1 import FakeD1
+from tests.ruletree_fixtures import CorridorGame, general_tree, jev_client, scripted, sees_imp, walk_on_tree
+
+
+def _main(*argv):
+    out = io.StringIO()
+    code = main(list(argv), client=jev_client(FakeD1(scripted(sees_imp), decider="jev")), game_factory=CorridorGame, out=out)
+    return code, out.getvalue()
+
+
+def test_parse_seeds():
+    assert parse_seeds("9-12") == [9, 10, 11, 12]
+    assert parse_seeds("9,12, 15") == [9, 12, 15]
+    assert parse_seeds("9-10,40-41") == [9, 10, 40, 41]
+
+
+def test_show_prints_a_tree(tmp_path):
+    save_tree(general_tree(), tmp_path / "t")
+    code, out = _main("show", "--tree", str(tmp_path / "t"))
+    assert code == 0 and out.splitlines()[0] == "root: default -> random walk" and "skill aim:" in out
+
+
+def test_eval_then_commit_a_rule_then_finish(tmp_path):
+    save_tree(walk_on_tree(), tmp_path / "start")
+    run = tmp_path / "run"
+    code, out = _main("eval", str(run), "--tree", str(tmp_path / "start"), "--seeds", "9-10", "--workers", "2")
+    assert code == 0 and out.splitlines()[-1] == "cleared 0 of 2"
+    assert out.splitlines()[0].startswith("seed 9: died at decision 5")
+
+    proposal = tmp_path / "p1.json"
+    proposal.write_text(json.dumps({"trace": "s9-00", "frame": 3, "condition": "An enemy is in view.", "action": "0001"}))
+    code, out = _main("check", str(run), str(proposal))
+    assert code == 0 and out.startswith("check: PASS (your rule became r1, attached under root)")
+    code, out = _main("commit", str(run), str(proposal))
+    assert code == 0 and out.splitlines()[-1] == "committed r1"
+
+    code, out = _main("eval", str(run), "--seeds", "9-10")
+    assert out.splitlines()[-1] == "cleared 2 of 2"
+    code, out = _main("finish", str(run), str(tmp_path / "done"))
+    assert code == 0 and (tmp_path / "done" / "tree.json").is_file()
+    steps = [json.loads(line)["step"] for line in (tmp_path / "done" / "build.jsonl").read_text().splitlines()]
+    assert steps == ["start", "eval", "check", "check", "commit", "eval"]
+
+
+def test_a_run_needs_a_tree(tmp_path):
+    code, out = _main("eval", str(tmp_path / "nothing"), "--seeds", "9")
+    assert code == 2 and "has no tree yet" in out

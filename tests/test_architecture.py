@@ -4,8 +4,8 @@
 - Keys are pressed in one place, the controller, and only from System 1's pick: `execute_action` takes
   the menu entry of `result.pick.action`, and `execute_idle` runs only when there is no pick.
 - Only `system1.py` turns an answer into a pick (it alone builds a `Pick`); random numbers are drawn only
-  there (the explore draw) and in `history_test.py` (the seeded sample of stored ticks, which picks
-  evidence for a test, never an action or a change).
+  there (the explore draw), in `history_test.py` (the seeded sample of stored ticks, which picks
+  evidence for a test, never an action or a change) and in the rule tree's walk (the root's random walk).
 - At run time every executed action is the central instance's answer: its top under exploit, and a
   missed central executes no action at all.
 """
@@ -84,6 +84,10 @@ def test_only_system1_turns_an_answer_into_a_pick():
             assert builds_pick and imports_random
         elif path.name == "history_test.py":
             # The history test's seeded sample of stored ticks: it draws ticks to test on, never an action or a change.
+            assert not builds_pick and imports_random
+        elif path.parent.name == "ruletree" and path.name == "walk.py":
+            # The rule tree's root: where Jev's answers lead to no rule, the agent walks randomly (seeded by the game's
+            # seed and the decision, so a replay draws the same). It is the root's action, never a stand-in for an answer.
             assert not builds_pick and imports_random
         else:
             assert not builds_pick and not imports_random, path.name
