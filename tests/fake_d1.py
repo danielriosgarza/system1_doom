@@ -1,5 +1,5 @@
-"""A deterministic stand-in for d1-ultra (or, with `decider="jev"` or `"laya"`, for Jev or Laya), answering from the
-payload alone.
+"""A deterministic stand-in for d1-ultra (or, with `decider="jev"`, `"laya"` or `"kev"`, for Jev, Laya or Kev),
+answering from the payload alone.
 
 `FakeD1` is a transport (`TransportFn(url, headers, payload, timeout) -> dict`) for `D1UltraClient`. It
 reads only what the real API receives: the question names, their instructions and criteria, and the
@@ -7,7 +7,8 @@ state text. It follows a scripted policy, records every (instance name, payload)
 (url, headers) pair, and can be told, for a chosen call of a chosen instance, to exceed the budget,
 raise, answer off the menu, return malformed probabilities, or answer HTTP 429. As Jev it answers in
 Jev's shape: the model is the version the alias resolved to, and the usage block names no cost. As Laya
-it answers in `laya-serve`'s shape: the agent's name, the checkpoint routed to, and a usage block with no cost.
+it answers in `laya-serve`'s shape: the agent's name, the checkpoint routed to, and a usage block with no cost. As
+Kev it answers in `kev.serve`'s shape: the model name it was asked for, the model time, and a usage block with no cost.
 
 Calls are counted per instance name from 0, and every instance is called once per tick, so "call k of
 the central" is the central of the k-th tick played with this fake (System 2's history test re-runs a
@@ -340,6 +341,9 @@ class FakeD1:
         tokens = max(1, len(payload["state"]) // 4)
         if self.decider.name == "jev":
             return {"model": "jev-1.14.0", "answers": answers, "usage": {"input_tokens": tokens, "output_tokens": 12}}
+        if self.decider.name == "kev":
+            return {"model": payload["model"], "answers": answers, "latency_ms": 412.5,
+                    "usage": {"input_tokens": tokens, "output_tokens": 3}}
         if self.decider.name == "laya":
             return {"model": "laya-rl-agent", "answers": answers, "routing": {"model": payload["model"]},
                     "usage": {"input_tokens": tokens, "output_tokens": 0, "truncated": False}}

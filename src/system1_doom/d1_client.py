@@ -1,6 +1,8 @@
 """Client for the decision model: Liquid AI's d1-ultra (`POST https://api.liquid.ai/decisions/v1/systemone`),
-with `decider="jev"` TypeSafe's Jev (`POST https://api.typesafe.ai/v1/systemone`), or with `decider="laya"`
-Convai Innovations' open-weight Laya, served on this machine by `laya-serve` (`POST http://127.0.0.1:8000/v1/systemone`).
+with `decider="jev"` TypeSafe's Jev (`POST https://api.typesafe.ai/v1/systemone`), or one of two open-weight models
+served on this machine: with `decider="laya"` Convai Innovations' Laya (`laya-serve`, `POST
+http://127.0.0.1:8000/v1/systemone`), with `decider="kev"` Jared Palmer's Kev (`python -m kev.serve`, `POST
+http://127.0.0.1:8008/v1/systemone`).
 
 The decision model is the decision maker: every instance is one call with its own evidence and finite
 questions. This client sends a call and reports exactly what happened: the response, or a typed miss
@@ -11,7 +13,7 @@ The models answer the same System One request (`model`, `state`, `questions` of 
 and `score`) with the same answer shapes, so the hierarchy is identical on each; a `Decider` is the
 data that differs: the endpoint, the model name, the key's variable, how a screen is sent (d1-ultra
 takes `images` as data URLs; Jev takes `assets` referenced from the state, scaled up to its minimum
-side, under its images header; Laya reads text only and is sent no screen), the published input price,
+side, under its images header; Laya and Kev read text only and are sent no screen), the published input price,
 which stands in for the `cost` a Jev usage block does not report, and any fields of its own the request
 carries (Laya's `max_len`).
 
@@ -62,12 +64,17 @@ DEFAULT_LAYA_MODEL = "english"
 # long state silently. A rule-tree state runs to 350-750 tokens and ends with the [focus] channel the aim skill's
 # conditions read, so every request asks for a window that holds all of it (ModernBERT's positions reach 8,192).
 LAYA_MAX_LEN = 2048
+# `kev.serve` on this machine (it binds 127.0.0.1 by default). It serves one checkpoint, the one it was started with
+# (`--run jaredpalmer/kev-27b`), under the name `kev-latest`, which each response echoes; it reads states of up to
+# 65,536 tokens, so a rule-tree state needs no window of its own.
+DEFAULT_KEV_URL = "http://127.0.0.1:8008/v1/systemone"
+DEFAULT_KEV_MODEL = "kev-latest"
 
 MissReason = Literal["timeout", "error", "http_429_exhausted", "off_menu", "malformed"]
 MISS_REASONS = ("timeout", "error", "http_429_exhausted", "off_menu", "malformed")
 
-# The hierarchy's deciders (`--decider` of play, train, export and serve, and a bundle's `decider`). Laya serves the
-# rule tree only so far: the combat sense reads the screen, which Laya is not sent.
+# The hierarchy's deciders (`--decider` of play, train, export and serve, and a bundle's `decider`). Laya and Kev serve
+# the rule tree only so far: the combat sense reads the screen, which they are not sent.
 DeciderName = Literal["d1-ultra", "jev"]
 DECIDER_NAMES = ("d1-ultra", "jev")
 
@@ -77,7 +84,7 @@ class Decider(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: Literal["d1-ultra", "jev", "laya"]
+    name: Literal["d1-ultra", "jev", "laya", "kev"]
     vendor: str
     endpoint_url: str
     model: str
@@ -121,6 +128,15 @@ DECIDERS: Dict[str, Decider] = {
         images="none",
         request={"max_len": LAYA_MAX_LEN},
     ),
+    "kev": Decider(
+        name="kev",
+        vendor="Jared Palmer (open weights, on this machine)",
+        endpoint_url=DEFAULT_KEV_URL,
+        model=DEFAULT_KEV_MODEL,
+        key_env="KEV_API_KEY",
+        key_required=False,
+        images="none",
+    ),
 }
 
 
@@ -135,8 +151,8 @@ def decider_of(decider: Union[str, Decider]) -> Decider:
 
 
 def load_api_key(decider: Union[str, Decider] = "d1-ultra", dotenv_path: Optional[Union[str, Path]] = None) -> Optional[str]:
-    """Load the decider's key (LIQUID_API_KEY, TYPESAFE_API_KEY for Jev, LAYA_API_KEY for Laya) from the environment
-    or a local .env file."""
+    """Load the decider's key (LIQUID_API_KEY, TYPESAFE_API_KEY for Jev, LAYA_API_KEY for Laya, KEV_API_KEY for Kev)
+    from the environment or a local .env file."""
     key_env = decider_of(decider).key_env
     env_val = os.environ.get(key_env)
     if env_val:
@@ -353,8 +369,8 @@ def jev_asset(data_url: str) -> Dict[str, Any]:
 
 
 class D1UltraClient:
-    """Decision-model calls (d1-ultra, Jev with `decider="jev"`, or Laya with `decider="laya"`) with a per-call
-    budget, typed misses, usage and per-instance counters."""
+    """Decision-model calls (d1-ultra, Jev with `decider="jev"`, Laya with `decider="laya"` or Kev with
+    `decider="kev"`) with a per-call budget, typed misses, usage and per-instance counters."""
 
     def __init__(
         self,
@@ -388,7 +404,7 @@ class D1UltraClient:
 
         d1-ultra takes the images as a list of data URLs. Jev takes them as `assets`, each referenced from
         the end of the state under `[screen image]`, where the model reads the screen in the reference's place.
-        Laya reads text only: its state is sent as it is, without the screen.
+        Laya and Kev read text only: their state is sent as it is, without the screen.
         """
         body: Dict[str, Any] = {
             "model": self.model,

@@ -3,6 +3,8 @@
 import io
 import json
 
+import pytest
+
 from system1_doom.ruletree.__main__ import main, parse_seeds
 from system1_doom.ruletree.tree import save_tree
 from tests.fake_d1 import FakeD1
@@ -62,22 +64,28 @@ def test_play_starts_from_the_default_tree(tmp_path):
     assert json.loads((tmp_path / "run" / "tree" / "tree.json").read_text())["name"] == "general-11"
 
 
-def test_eval_on_laya_needs_no_key_and_sends_the_text_alone(tmp_path, monkeypatch):
-    monkeypatch.delenv("LAYA_API_KEY", raising=False)
+@pytest.mark.parametrize("decider, url, model, extra, answered_by", [
+    ("laya", "http://127.0.0.1:8000/v1/systemone", "english", {"max_len": 2048}, "laya-rl-agent"),
+    ("kev", "http://127.0.0.1:8008/v1/systemone", "kev-latest", {}, "kev-latest"),
+])
+def test_eval_on_a_local_model_needs_no_key_and_sends_the_text_alone(tmp_path, monkeypatch, decider, url, model, extra, answered_by):
+    for key in ("LAYA_API_KEY", "KEV_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("system1_doom.ruletree.__main__.load_api_key", lambda decider: None)
-    fake = FakeD1(scripted(sees_imp), decider="laya")
+    fake = FakeD1(scripted(sees_imp), decider=decider)
     monkeypatch.setattr("system1_doom.d1_client._default_requests_transport", fake)
     save_tree(general_tree(), tmp_path / "start")
     out = io.StringIO()
     code = main(["eval", str(tmp_path / "run"), "--tree", str(tmp_path / "start"), "--seeds", "9-10", "--workers", "2",
-                 "--decider", "laya"], game_factory=CorridorGame, out=out)
+                 "--decider", decider], game_factory=CorridorGame, out=out)
     assert code == 0 and out.getvalue().splitlines()[-1].startswith("cleared ")
-    assert fake.calls and {url for url, _ in fake.requests} == {"http://127.0.0.1:8000/v1/systemone"}
+    assert fake.calls and {u for u, _ in fake.requests} == {url}
     assert all("Authorization" not in headers for _, headers in fake.requests)
-    assert all(p["model"] == "english" and p["max_len"] == 2048 and "assets" not in p and "images" not in p for _, p in fake.calls)
+    assert all(set(p) == {"model", "state", "questions", *extra} and p["model"] == model for _, p in fake.calls)
+    assert all(p.get("max_len") == extra.get("max_len") for _, p in fake.calls)
     eval_row = json.loads((tmp_path / "run" / "build.jsonl").read_text().splitlines()[-1])
-    assert eval_row["step"] == "eval" and set(eval_row["models"]) == {"laya-rl-agent"}
+    assert eval_row["step"] == "eval" and set(eval_row["models"]) == {answered_by}
 
 
 def test_play_needs_the_key(tmp_path, monkeypatch):

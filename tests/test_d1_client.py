@@ -6,6 +6,7 @@ import pytest
 from system1_doom import d1_client
 from system1_doom.d1_client import (
     DECIDERS,
+    DEFAULT_KEV_URL,
     DEFAULT_LAYA_URL,
     JEV_IMAGES_HEADER,
     LAYA_MAX_LEN,
@@ -258,6 +259,27 @@ def test_laya_is_the_same_request_on_this_machine_with_the_text_alone():
     keyed.call("rule:root", "s", {"rule": question})
     keyed.shutdown()
     assert captured[-1][1]["Authorization"] == "Bearer laya_local"
+
+
+def test_kev_is_the_same_request_on_this_machine_with_the_text_alone():
+    captured = []
+
+    def fake_transport(url: str, headers: dict, payload: dict, timeout: float) -> dict:
+        captured.append((url, headers, payload))
+        return {"model": "kev-latest", "latency_ms": 401.2,
+                "answers": {"rule": {"type": "choice", "choice": "none", "probabilities": {"r1": 0.2, "none": 0.8}, "confidence": 0.6}},
+                "usage": {"input_tokens": 790, "output_tokens": 2}}
+
+    question = ChoiceQuestion(instructions="Which of these is true right now?", criteria={"r1": "An enemy.", "none": "None."})
+    client = D1UltraClient(api_key="", decider="kev", transport=fake_transport, max_workers=1)
+    result = client.call("rule:root", "[threats]\nno enemy visible", {"rule": question}, images=[_screen()])
+    client.shutdown()
+    ((url, headers, payload),) = captured
+    assert url == DEFAULT_KEV_URL == "http://127.0.0.1:8008/v1/systemone" and "Authorization" not in headers
+    # The text alone, and nothing of Laya's: Kev reads states of up to 65,536 tokens.
+    assert payload == {"model": "kev-latest", "state": "[threats]\nno enemy visible", "questions": {"rule": question.to_payload()}}
+    assert result.answered and result.response.choice("rule").choice == "none" and result.usage.cost == 0.0
+    assert client.models_answered() == {"kev-latest": 1}
 
 
 def test_each_decider_reads_its_own_key(monkeypatch, tmp_path):

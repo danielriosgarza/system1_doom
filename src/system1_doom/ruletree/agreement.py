@@ -2,6 +2,7 @@
 
     python -m system1_doom.ruletree.agreement OUT.json --decider laya
     python -m system1_doom.ruletree.agreement OUT.json --decider laya --model typed-decisions --max-len 0
+    python -m system1_doom.ruletree.agreement OUT.json --decider kev
 
 A recording keeps every question of every walk as it was sent: the state text, then the `[focus]` line once a focus
 was picked, the question and its options, and Jev's answer. Each question goes to the decider named with the same
@@ -143,7 +144,7 @@ def summary_lines(result: Dict[str, Any]) -> List[str]:
 def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m system1_doom.ruletree.agreement", description=__doc__.split("\n")[0])
     ap.add_argument("out", help="the JSON file for every answer and the scores")
-    ap.add_argument("--decider", choices=("jev", "laya"), default="laya")
+    ap.add_argument("--decider", choices=("jev", "laya", "kev"), default="laya")
     ap.add_argument("--model", help="the decider's model, when it differs from its default")
     ap.add_argument("--endpoint", help="the decider's System One URL, when it differs from the default")
     ap.add_argument("--max-len", type=int, help="Laya's window in tokens; 0 sends none (the checkpoint's own, 512)")

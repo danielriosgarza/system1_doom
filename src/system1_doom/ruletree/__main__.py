@@ -18,6 +18,8 @@ tree folder of its own. Jev is reached with TYPESAFE_API_KEY from the environmen
 command but `show` and `finish` stops with exit code 2. `--decider laya` asks Laya instead, the open-weight model
 served on this machine by `laya-serve` (at `--endpoint`, http://127.0.0.1:8000/v1/systemone by default), which
 needs no key unless the server was started with LAYA_API_KEY; Laya reads the state text and not the screen.
+`--decider kev` asks Kev the same way, served on this machine by `python -m kev.serve` (http://127.0.0.1:8008 by
+default; KEV_API_KEY only if the server has one).
 """
 
 from __future__ import annotations
@@ -86,10 +88,11 @@ def _parser() -> argparse.ArgumentParser:
     for p in sub.choices.values():
         if p.prog.split()[-1] != "show":
             p.add_argument("--workers", type=int, default=6, help="games played at once")
-            p.add_argument("--decider", choices=("jev", "laya"), default="jev",
-                           help="the decision model that answers every question: jev (TypeSafe; the default) or laya "
-                                "(open weights, served on this machine)")
-            p.add_argument("--model", help="the decider's model (default: jev-latest for Jev, the english checkpoint for Laya)")
+            p.add_argument("--decider", choices=("jev", "laya", "kev"), default="jev",
+                           help="the decision model that answers every question: jev (TypeSafe; the default), or laya or "
+                                "kev (open weights, served on this machine)")
+            p.add_argument("--model", help="the decider's model (default: jev-latest for Jev, the english checkpoint for Laya, "
+                                           "kev-latest for Kev)")
             p.add_argument("--endpoint", help="the decider's System One URL, when it differs from the default")
     return ap
 
