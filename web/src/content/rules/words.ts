@@ -8,9 +8,9 @@ import type { Solution } from '../../store'
 /** What each tab of the side tab shows, on hover. */
 export const SOLUTION_TITLES: Record<Solution, string> = {
   senses:
-    'Senses and central: at each decision, five sense instances answer questions about one part of the game each, and a central instance chooses the action from their answers.',
+    'At each decision, five calls to a decision model, the senses, each answer questions about one part of the game, and a sixth call, the central, chooses the action from their answers.',
   rules:
-    'Rule tree: at each decision, Jev answers a short series of questions that lead through a tree of rules to an action.',
+    'At each decision, Jev, TypeSafe’s decision model, answers a few multiple-choice questions that lead through a tree of rules to an action.',
 }
 
 /** Who wrote a tree's rules, as the tree names them. */
@@ -57,30 +57,31 @@ export function rulesEndLine(meta: RuleTreeEpisodeMeta): string {
 }
 
 export const RULES_WATCH = {
-  title: 'Every action in this game is chosen by Jev, by walking a tree of rules.',
+  title: 'Every action in this game comes from Jev’s answers to a few questions.',
   subtitle:
-    'At each decision, Jev answers a short series of multiple-choice questions. The first asks which of a few situations is true now. Each answer leads to the next question, until an answer leads to a rule with an action. The rows beside the game show each question and the answer Jev chose at the decision shown.',
+    'Jev is TypeSafe’s decision model. At each decision the program asks it which rule of a tree of rules is true now, then which rule under that one, until Jev answers “none of these” or the rule has nothing under it. The game waits while Jev answers, then plays that rule’s action for 8 tics, about a quarter of a second.',
   stripTitle: 'The questions at this decision',
   stripNote:
-    'One row per question, in the order Jev was asked, and then the action that was played. The bar is Jev’s probability for the answer it gave. Click a question to see exactly what Jev was sent.',
+    'One row per question, in the order Jev was asked, and then the action that was played. The bar is Jev’s probability for the answer it gave. A focus row picks the one item, such as the most dangerous enemy, that the rules after it speak about. Click a question to see exactly what Jev was sent.',
   rowTitle: 'Open this question at this decision',
   ruleQuestion: (node: string) =>
     node === 'root' ? 'Which of these is true right now?' : `Under ${node}: which of these is true right now?`,
-  only: 'the only one listed',
+  only: 'Not asked: it was the only one listed.',
   noItem: 'nothing listed',
   missed: 'missed',
   cached: 'same question as before',
   skill: (skill: string, caller: string) =>
-    `${caller} uses the ${skill} skill: the walk continues in the skill’s rules, which turn toward the focus.`,
+    `${caller}’s action uses the ${skill} skill: the walk continues in the skill’s rules, which turn toward the focus.`,
   act: 'Act',
   actGloss: 'held for the 8 tics of this decision, about a quarter of a second',
   calls: (calls: number, ms: number, cost: number) =>
     `${calls} Jev ${calls === 1 ? 'call' : 'calls'}, ${Math.round(ms)} ms one after another, $${cost.toFixed(5)}`,
-  honesty: 'This is a recording, replayed at the speed the agent played: one video frame per decision.',
+  honesty: (meta: RuleTreeEpisodeMeta) =>
+    `This is a recording, one image per decision. Real time shows each decision for its 8 tics of game time, about a quarter of a second. While it was played, the game waited for Jev’s answers, ${(meta.seconds / Math.max(1, meta.decision_count)).toFixed(2)} s per decision on average.`,
   honestyLink: 'How this recording was made →',
   cardsTitle: 'The recordings',
   cardsNote:
-    'Each recording is one game of the deadly corridor, played with the same tree of rules on a different seed. Click a recording to play it from the start.',
+    'Each recording is one game of the deadly corridor, played with one tree on one seed. Click a recording to play it from the start.',
   frameAlt: (index: number, count: number, health: number, action: string) =>
     `The game at decision ${index + 1} of ${count}, health ${Math.round(health)}. Jev’s answers led to: ${action}.`,
 }
@@ -110,8 +111,9 @@ export function actSource(node: string, skill: { caller: string; skill: string }
   if (missed) return `A call missed, so the walk stopped at ${node} and played its action`
   if (node === 'root') return 'None of the top rules was true: the root’s random action code'
   if (!skill) return `The action of ${node}`
-  if (node === skill.skill) return `No rule of the ${skill.skill} skill was true: the action ${skill.caller} asks for`
-  return `${node} of the ${skill.skill} skill turns, then the action ${skill.caller} asks for`
+  if (node === skill.skill)
+    return `No rule of the ${skill.skill} skill was true: ${skill.caller}’s action, without a turn`
+  return `${node}, a rule of the ${skill.skill} skill, turns toward the focus; then ${skill.caller}’s action fills the rest of the decision`
 }
 
 export const QUESTIONS = {
@@ -143,20 +145,20 @@ export const QUESTIONS = {
 export const WRITTEN = {
   title: 'How the rules were written',
   intro:
-    'The rules of this tree were written between games by the soft loop. It plays the training seeds; when a game goes wrong, a rule writer proposes one rule for the moment it went wrong. The program then checks the rule by replaying that game, plays every training seed with and without it, and adds it only if the tree with it clears at least as many seeds.',
+    'The soft loop is the part of the program that adds rules to a tree between games. This is its record for this tree: the tree it started from, each pass over the training seeds, and every rule it proposed, with what became of it.',
   none: 'This tree has no record of how it was written.',
   list: 'The record, step by step',
   pick: 'Pick a step to read it.',
   start: (tree: string) => `Started from ${tree}`,
   startNote: (tree: string, writer: string | null) =>
-    `The soft loop started from the tree ${tree}${writer ? `, with ${writerName(writer)} as the rule writer` : ''}. Every step below changed it, or tried to.`,
+    `The soft loop started from the tree ${tree}, whose rules were written before the loop ran${writer ? `. ${writerName(writer)} was the rule writer` : ''}. Every step below changed the tree, or tried to.`,
   pass: (n: number | null, again = false) =>
     `${n === null ? 'Pass over the training seeds' : `Pass ${n} over the training seeds`}${again ? ', played again' : ''}`,
   heldOut: 'Held-out seeds',
   cleared: (cleared: number, of: number) => `${cleared} of ${of} cleared`,
   representation: 'The state text changed',
   representationNote:
-    'A change to what Jev is shown, made by hand when a failure could not be told apart in the state text. It changes no rule.',
+    'A change to what Jev is shown, made by hand by the people running the soft loop, because a failure could not be told apart in the state text. It changes no rule.',
   proposal: (name: string) => `Proposal ${name}`,
   outcome: {
     added: 'added',
@@ -180,9 +182,10 @@ export const WRITTEN = {
   checkError: (error: string) => `The check could not run: ${error}`,
   checkNoTests: 'The record keeps the check’s result, not its three tests.',
   tests: {
-    sees: 'Sees: at that decision, the walk reaches the new rule',
-    unchanged: 'Unchanged: the decisions earlier rules were written for end no worse',
-    avoids: 'Avoids: replayed past the failure, the game ends better with the rule',
+    sees: 'Reaches the rule: at the decision it was written for, the walk now goes into the new rule',
+    unchanged:
+      'Earlier rules unchanged: the decisions earlier rules were written for still reach them, or end no worse',
+    avoids: 'Ends better: replayed from that decision, the game ends better with the rule than without it',
   },
   standing: (s: number[]) =>
     `${s[0] ? 'alive' : 'dead'}, ${s[1] ? 'goal reached' : 'goal not reached'}, health ${s[2]}, furthest point ${s[3]}`,
@@ -192,7 +195,7 @@ export const WRITTEN = {
   gateBoth: (current: number, withRule: number, of: number) =>
     `The current tree cleared ${current} of ${of} training seeds; the tree with the rule cleared ${withRule}.`,
   gateCurrent: (current: number, of: number) =>
-    `The current tree cleared ${current} of ${of} training seeds in its gate games. This step was converted from the first soft loop’s notes, which keep only that side of the gate.`,
+    `In its gate games the current tree cleared ${current} of ${of} training seeds. This step comes from the notes of an earlier run of the soft loop, which kept the current tree’s result but not the result with the rule.`,
   gatePassed: 'The gate passed.',
   gateFailed: 'The gate failed: the tree with the rule cleared fewer seeds.',
   note: 'Note',
@@ -204,25 +207,25 @@ export const WRITTEN = {
   seeds: (seeds: string) => `seeds ${seeds.replace('-', ' to ')}`,
   ruleLink: (id: string) => `Show ${id} in the tree →`,
   dossier:
-    'The writer was shown a dossier: the decisions before the failure, each with its state text, the questions Jev answered and the screen. The dossier stays with the run that wrote the tree; the state and screen of the decision a rule was written for are kept with the rule, on The rule tree.',
+    'The writer was shown a dossier: the decisions before the failure, each with its state text, the questions Jev answered and the screen. The dossier is not in this recording. The state and screen of the decision a rule was written for are kept with the rule, on The rule tree.',
 }
 
 export const RESULTS = {
   title: 'Results: how well the tree plays',
   intro:
-    'How many games the tree cleared as its rules were added, on the seeds it was written from and on seeds it had not seen, and which of its rules decided the decisions of this recording.',
+    'How many games the tree cleared as its rules were added, on the seeds it was written from and on seeds it had not seen, and which of its rules the walks of this recording reached.',
   passColumns: ['Step', 'Seeds', 'Cleared'],
   training: 'training',
   heldOut: 'held out',
   seedRange: (low: number, high: number) => (low === high ? `${low}` : `${low} to ${high}`),
   benchmarkSource:
-    'From the benchmark of 2026-10-27 (docs/DOCUMENTATION.md, section 15), not from this recording. Each tree played every seed twice, before and after a fix to how enemies’ angles are shown; both runs are listed. Every answer was Jev’s, model jev-1.14.0.',
+    'From the benchmark of 2026-10-27 (docs/DOCUMENTATION.md, section 15), not from this recording. Every answer was Jev’s, model jev-1.14.0.',
   benchmarkColumns: ['Seeds', 'This tree', 'Senses and central'],
-  usesColumns: ['Rule', 'Condition', 'Went into it', 'Played its action'],
+  usesColumns: ['Rule', 'Condition', 'Walk went into it', 'Walk ended here'],
   usesTotal: (n: number) => `${n} decisions in this recording`,
   root: 'The top of the tree. When none of its rules is true, a random action code is played.',
   skill: (id: string) =>
-    `The ${id} skill. When none of its rules is true, the action of the rule that used the skill is played.`,
+    `The ${id} skill. When none of its rules is true, the walk ends here, and the action of the rule that used the skill is played without a turn.`,
   totals: 'This recording',
   totalsRows: (meta: RuleTreeEpisodeMeta) => [
     [
@@ -249,7 +252,7 @@ export const BENCHMARK: Record<string, Array<{ seeds: string; tree: string; sens
     { seeds: '301 to 315', tree: '14 and 14 of 15', senses: '10 and 11 of 15' },
     { seeds: '9 to 19 (training)', tree: '11 and 11 of 11', senses: null },
     { seeds: '20 to 39 (held out)', tree: '19 and 20 of 20', senses: null },
-    { seeds: '40 to 59 (new)', tree: '18 and 20 of 20', senses: null },
+    { seeds: '40 to 59 (held out, new)', tree: '18 and 20 of 20', senses: null },
     { seeds: 'all', tree: '77 and 79 of 81', senses: null },
   ],
   'codex-11': [
@@ -257,7 +260,7 @@ export const BENCHMARK: Record<string, Array<{ seeds: string; tree: string; sens
     { seeds: '301 to 315', tree: '15 and 15 of 15', senses: '10 and 11 of 15' },
     { seeds: '9 to 19 (training)', tree: '11 and 11 of 11', senses: null },
     { seeds: '20 to 39 (held out)', tree: '18 and 18 of 20', senses: null },
-    { seeds: '40 to 59 (new)', tree: '19 and 19 of 20', senses: null },
+    { seeds: '40 to 59 (held out, new)', tree: '19 and 19 of 20', senses: null },
     { seeds: 'all', tree: '78 and 77 of 81', senses: null },
   ],
 }
@@ -265,7 +268,7 @@ export const BENCHMARK: Record<string, Array<{ seeds: string; tree: string; sens
 export const TREE = {
   title: 'The rule tree',
   intro:
-    'Every rule of the tree, each under the rule it is an exception to. The rules the walk went through at the decision shown are marked. Click a rule to see where it came from.',
+    'Every rule of the tree. A rule under another rule is an exception to it: when both are true, the lower rule’s action is played. Click a rule to see where it came from.',
   root: 'The start of every walk',
   rootAction: 'If none of its rules is true: a random action code.',
   skillTitle: (id: string) => `The ${id} skill`,
@@ -293,14 +296,14 @@ export const TREE = {
   record: 'Its record',
   recordLink: 'Read the whole step in How the rules were written →',
   uses: (reached: number, ended: number, n: number) =>
-    `In this recording the walk went into it at ${reached} of ${n} decisions, and played its action at ${ended}.`,
+    `In this recording the walk went into it at ${reached} of ${n} decisions, and ended there at ${ended}.`,
 }
 
 export const RULES_REFERENCE = {
   title: 'Reference: how it works, the terms, and how this recording was made',
   rule: 'Every decision here is made by Jev.',
   ruleNote:
-    'The design has one rule: no hand-written rule may make a choice. At each decision every condition is judged by Jev, and the action played is the action of the rule Jev’s answers lead to. The program writes the state as text, asks the questions the tree defines, follows the answers and presses the keys.',
+    'No code written by hand chooses an action. Jev judges every condition, and the action played is the action of the rule that Jev’s answers lead to. The program walks the tree: it writes the state as text, asks Jev each question the tree defines, follows the answer and presses the keys.',
   principles: [
     {
       title: 'Every condition is judged by Jev',
@@ -308,23 +311,23 @@ export const RULES_REFERENCE = {
     },
     {
       title: 'The program describes, walks and presses keys',
-      text: 'It writes the state as text from the game, asks the questions of the tree in order, follows Jev’s answers, and holds the action’s keys for 8 tics. It ranks nothing and picks nothing.',
+      text: 'It writes the state as text from the game, asks the questions of the tree in order, follows Jev’s answers, and holds the action’s keys for 8 tics. It ranks and picks nothing. The one exception: when no rule at the top of the tree is true, it plays a random action code, drawn from the seed and the decision number. In the recordings here that never happened.',
     },
     {
-      title: 'A miss is a miss',
-      text: 'When a call fails, the walk stops at the rule it has reached, and that rule’s action is played. Nothing replaces the missing answer.',
+      title: 'A missed call is not replaced',
+      text: 'When a call fails, the walk stops at the rule it has reached, and that rule’s action is played. The program does not answer in Jev’s place.',
     },
     {
-      title: 'Rules speak about the agent’s own situation',
+      title: 'Rules describe the player’s own situation',
       text: 'A condition says what the state shows about the focus (its angle, distance and size on screen), health, damage taken, shots that missed, or the goal. It does not name a monster type, an item or a place on the map.',
     },
     {
-      title: 'A rule is added only when it helps',
-      text: 'A rule writer proposes each rule for one moment where a game went wrong. The program checks it by replaying that game, then plays every training seed with and without it, and adds it only if the tree with it clears at least as many. The program grades outcomes; it never tells Jev what to answer.',
+      title: 'A rule is added only after a check and a gate',
+      text: 'A rule writer proposes each rule for one moment where a game went wrong. The program checks it by replaying that game, then plays every training seed with and without it. It adds the rule only if the replay ends better with it and the tree with it clears at least as many training seeds as the tree without it. The program grades the games; it never tells Jev what to answer.',
     },
     {
-      title: 'Everything is recorded',
-      text: 'Every question Jev was asked, with its options, the probabilities, the answer, the time and the cost, and every step of the soft loop. These screens show those records.',
+      title: 'What is recorded',
+      text: 'Every question Jev was asked is recorded, with its options, the probabilities, the answer, the time and the cost. So is each step of the soft loop, though the steps taken from an earlier run’s notes keep only their results. These screens show those records.',
     },
   ],
   provenance: {
@@ -334,7 +337,8 @@ export const RULES_REFERENCE = {
     writer: 'Rules written by',
     seed: 'Seed',
     models: 'Model',
-    budget: 'Call budget',
+    budget: 'Time limit per call',
+    decisionLength: 'Decision length',
     calls: 'Calls',
     misses: 'Misses',
     result: 'Result',

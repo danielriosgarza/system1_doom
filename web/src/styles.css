@@ -2737,9 +2737,12 @@ kbd {
   display: none;
 }
 
-.walk-row.only .walk-p {
-  grid-column: meter / p;
-  white-space: nowrap;
+.walk-only {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .walk-row.missed .walk-a,

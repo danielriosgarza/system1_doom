@@ -43,7 +43,7 @@ export function RulesWatch({
   )
   const count = bundle.decisions.length
   return (
-    <main className="watch" aria-label="Watch the agent play" ref={top}>
+    <main className="watch" aria-label="Watch the game" ref={top}>
       <header className="watch-head">
         <h2>{RULES_WATCH.title}</h2>
         <p>{RULES_WATCH.subtitle}</p>
@@ -69,7 +69,7 @@ export function RulesWatch({
             tick={decision.decision}
           />
           <p className="watch-honesty">
-            {RULES_WATCH.honesty}{' '}
+            {RULES_WATCH.honesty(bundle.meta)}{' '}
             <button type="button" className="link-button" onClick={() => openPanel('reference', 'rt-provenance')}>
               {RULES_WATCH.honestyLink}
             </button>
@@ -149,6 +149,7 @@ export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision:
                         <span className="rule-id mono">{r.option}</span>
                       )}{' '}
                       {r.text ?? RULES_WATCH.noItem}
+                      {state === 'only' && <span className="walk-only">{RULES_WATCH.only}</span>}
                     </>
                   )}
                 </span>
@@ -157,9 +158,7 @@ export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision:
                   label={`Jev’s probability for question ${asked}`}
                   className="walk-meter"
                 />
-                <span className="walk-p">
-                  {r.miss ? '' : r.asked ? pct(r.p) : step.kind === 'focus' ? RULES_WATCH.only : ''}
-                </span>
+                <span className="walk-p">{r.miss || !r.asked ? '' : pct(r.p)}</span>
               </button>
             </li>
           )

@@ -2743,12 +2743,13 @@ from both; the Reference screen names them in one line of history.
 | **Focus** | One listed item Jev picked at a node with a focus question (the biggest danger among the threats, the goal among the landmarks); later questions read it as a `[focus]` channel (`walk.with_focus`). |
 | **Skill** | A set of rules any rule can call as its action, with a `then` code that finishes the decision; the shipped trees have one, `aim` (`SkillCall`). |
 | **Action code** | Four letters, walk/sidestep/turn/fire (`F001` walks forward and fires), held for the decision's 8 tics, or a sequence such as `00R0:3+0001:5` (`ruletree/codes.py`). |
-| **Tic** | One game frame, 1/35 s. A rule-tree decision is 8 tics; a senses-and-central tick holds its action for about as long. |
+| **Tic** | One step of the game clock, 1/35 s. A rule-tree decision is 8 tics; a senses-and-central tick holds its action for about as long. |
 | **Soft loop** | How a tree's rules are written between games: play the training seeds, have a rule writer propose a rule for a failure, check it on that game (sees, unchanged, avoids), gate it on every training seed, and add it only if it passes both (`ruletree/loop.py`). |
 | **Rule writer** | The model that proposes rules in the soft loop, Codex or Claude, from a dossier of the failed game (`ruletree/writers.py`). It never plays; Jev judges every condition. |
 | **Cornerstone** | The decision a rule was written for, kept with it: seed, prefix of actions, state text, screen, expected route and standing. Later rules must keep it on its route or end no worse (`Cornerstone`). |
+| **Seed** | A number that sets the game's random events, so each seed is a different game (`ruletree/game.py`, `Game.reset`). A recording is one game on one seed. |
 | **Training seed** | A seed the soft loop plays and writes rules for: 9–19 for the shipped trees. A rule's gate counts training seeds cleared with and without it. |
-| **Held-out seed** | A seed the soft loop writes no rule for, played once every training seed clears: 20–39 for the shipped trees. |
+| **Held-out seed** | A seed the soft loop writes no rule for: 20–39 for the shipped trees, played after every training seed clears, and 40–59, never played while they were written. |
 
 ---
 

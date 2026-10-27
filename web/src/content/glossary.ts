@@ -72,7 +72,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     solutions: ['senses', 'rules'],
     rules: {
       meaning:
-        'TypeSafe’s decision model. Every question of the rule tree is one call to it: a multiple-choice question sent with the state as text and the screen as an image, answered with a probability for each option. The option with the highest probability is its answer.',
+        'TypeSafe’s decision model. Each question of the rule tree is one call to it: a multiple-choice question sent with the state as text and the screen as an image, answered with a probability for each option. The option with the highest probability is its answer. When a focus list has only one item, there is nothing to choose and Jev is not asked.',
       see: [{ screen: 'questions', panel: 'rt-answer', label: 'its answers at this decision' }],
       code: 'ruletree/walk.py · Jev',
     },
@@ -416,7 +416,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: 'rule tree',
     aliases: ['tree of rules'],
     meaning:
-      'The second way this package plays: a tree of rules that Jev walks at every decision. A tree is a file: its rules, the questions that pick a focus, its skills, and for each rule the soft loop added, the decision it was written for.',
+      'The second way this package plays: a tree of rules. At every decision the program walks it, asking Jev at each level which rule is true. A tree is a file: its rules, the questions that pick a focus, its skills, and for each rule the soft loop added, the decision it was written for.',
     see: [{ screen: 'tree', panel: 'rt-outline', label: 'the whole tree' }],
     code: 'ruletree/tree.py · RuleTree',
     solutions: ['rules'],
@@ -476,8 +476,8 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: 'action code',
     aliases: ['action codes'],
     meaning:
-      'Four letters for the keys held during a decision: walk (F forward, B backward), sidestep (L, R), turn (L, R) and fire (1), with 0 for none. F001 walks forward and fires. A sequence such as 00R0:3+0001:5 turns right for 3 tics, then fires for 5.',
-    see: [{ screen: 'watch', panel: 'rt-walk', label: 'the Act row on Watch' }],
+      'Four characters, one for each group of keys held during a decision: walk (F forward, B backward), sidestep (L, R), turn (L, R) and fire (1), with 0 for none. F001 walks forward and fires. A sequence such as 00R0:3+0001:5 turns right for 3 tics, then fires for 5.',
+    see: [{ screen: 'watch', panel: 'rt-walk', label: 'the Act row on Watch, which says it in words' }],
     code: 'ruletree/codes.py · segments',
     solutions: ['rules'],
   },
@@ -485,7 +485,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     id: 'tic',
     term: 'tic',
     aliases: ['tics'],
-    meaning: 'One frame of the game. Doom runs at 35 tics a second, and a decision of the rule tree lasts 8 tics.',
+    meaning: 'One step of the game clock. Doom runs at 35 tics a second, and a decision of the rule tree lasts 8 tics.',
     see: [{ screen: 'watch', panel: 'rt-walk', label: 'the Act row on Watch' }],
     code: 'ruletree/codes.py · segments',
     solutions: ['rules'],
@@ -495,7 +495,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: 'soft loop',
     aliases: [],
     meaning:
-      'How the tree’s rules are written, between games. It plays the training seeds; for a game that went wrong, a rule writer proposes one rule. The check replays that game with and without the rule, and the gate plays every training seed with and without it. The rule is added only if it passes both.',
+      'The part of the program that adds rules to a tree, between games. It plays the training seeds; for a game that went wrong, a rule writer proposes one rule. The check replays that game with and without the rule, and the gate plays every training seed with and without it. The rule is added only if it passes both. The shipped trees started from general-9, whose rules were written before the loop ran.',
     see: [{ screen: 'written', panel: 'rt-rounds', label: 'the record of how this tree was written' }],
     code: 'ruletree/loop.py · run_loop',
     solutions: ['rules'],
@@ -521,6 +521,16 @@ export const GLOSSARY: GlossaryEntry[] = [
     solutions: ['rules'],
   },
   {
+    id: 'seed',
+    term: 'seed',
+    aliases: ['seeds'],
+    meaning:
+      'A number that sets the game’s random events, so each seed is a different game. A recording is one game on one seed, and the soft loop’s seeds are split into training and held-out seeds.',
+    see: [{ screen: 'results', panel: 'rt-benchmark', label: 'the benchmark seeds' }],
+    code: 'ruletree/game.py · Game.reset',
+    solutions: ['rules'],
+  },
+  {
     id: 'training-seed',
     term: 'training seed',
     aliases: ['training seeds'],
@@ -535,7 +545,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: 'held-out seed',
     aliases: ['held-out seeds'],
     meaning:
-      'A game the soft loop writes no rule for. The held-out seeds are played once every training seed clears, to see whether the rules work on games they were not written for.',
+      'A game the soft loop writes no rule for: seeds 20 to 39, played after every training seed clears, to see whether the rules work on games they were not written for, and seeds 40 to 59, never played while the shipped trees were written.',
     see: [{ screen: 'results', panel: 'rt-passes', label: 'seeds cleared, step by step' }],
     code: 'ruletree/loop.py · run_loop',
     solutions: ['rules'],

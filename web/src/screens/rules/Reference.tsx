@@ -76,7 +76,7 @@ function Arrow({ children }: { children?: ReactNode }) {
   )
 }
 
-/** The rule tree's two systems, drawn: Jev walking the tree at every decision; the soft loop between games. */
+/** The rule tree's two systems, drawn: the walk at every decision, with Jev answering; the soft loop between games. */
 function RulesDrawing() {
   return (
     <figure className="drawing" data-testid="rules-drawing">
@@ -181,7 +181,11 @@ function Provenance({ bundle }: { bundle: RulesBundle }) {
     [P.tree, `${m.tree}, ${m.rules} rules`],
     [P.writer, writerWords(m.tree_writer)],
     [P.seed, String(m.seed)],
-    [P.budget, `${m.call_budget_sec} s per call, ${m.decision_tics ?? 8} tics per decision`],
+    [P.budget, `${m.call_budget_sec} s`],
+    [
+      P.decisionLength,
+      `${m.decision_tics ?? 8} tics, about ${(((m.decision_tics ?? 8) / 35) * 1000).toFixed(0)} ms of game time`,
+    ],
     [P.calls, `${m.calls}, $${m.cost.toFixed(4)}`],
     [P.misses, String(m.misses)],
     [
