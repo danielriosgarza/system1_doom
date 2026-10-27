@@ -40,11 +40,14 @@ _START = threading.Lock()
 
 
 class Game:
-    def __init__(self, scenario: str = SCENARIO) -> None:
+    def __init__(self, scenario: str = SCENARIO, keep_screen: bool = False) -> None:
         with _START:
             self.bridge = ViZDoomBridge(scenario=scenario, seed=0, window_visible=False)
         self.bridge.auto_restart = False
         self.g = self.bridge.game
+        # A recording keeps the screen after the last tic, which the engine no longer shows once the episode ends.
+        self.keep_screen = keep_screen
+        self.last_screen: Optional[Any] = None
         self.max_x: List[float] = []
         self.decisions = self.under_fire = self.stall = self.missed = 0
 
@@ -98,6 +101,20 @@ class Game:
                          "side": side, "on_screen": o.id in on_screen})
         return sorted(rows, key=lambda r: r["dist"])
 
+    def press(self, keys: List[int], tics: int) -> None:
+        """Hold the keys for `tics` tics: the only place the game's keys are pressed. With `keep_screen` they are held
+        one tic at a time, to keep each tic's screen; the game plays the same."""
+        if not self.keep_screen:
+            self.g.make_action(keys, tics)
+            return
+        for _ in range(tics):
+            self.g.make_action(keys, 1)
+            if self.g.is_episode_finished():
+                return
+            state = self.g.get_state()
+            if state is not None and state.screen_buffer is not None:
+                self.last_screen = state.screen_buffer
+
     def step(self, code: str) -> Dict[str, Any]:
         """Press one action's buttons for its 8 tics; the decision's outcome."""
         b = self.bridge
@@ -105,7 +122,7 @@ class Game:
         hits0 = self.var("HITCOUNT")
         b._episode_cells.add(b._current_cell())
         for seg, tics in segments(code):
-            self.g.make_action(buttons(seg), tics)
+            self.press(buttons(seg), tics)
             if self.g.is_episode_finished():
                 break
         finished = self.g.is_episode_finished()

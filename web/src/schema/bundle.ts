@@ -27,6 +27,18 @@ export interface ActionInfo {
   encoding: number[]
 }
 /**
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "ActionSegment".
+ */
+export interface ActionSegment {
+  /**
+   * Four letters: walk (F, 0, B), sidestep (L, 0, R), turn (L, 0, R), fire (1, 0)
+   */
+  code: string
+  tics: number
+  words: string
+}
+/**
  * Finite, bounded executable action specification (primitive or macro-action).
  *
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
@@ -307,6 +319,14 @@ export interface BundleIndexEntry {
    * When the bundle was recorded, as its episode.json says
    */
   recorded_at?: string
+  /**
+   * Which way of playing recorded it: senses and central, or a rule tree
+   */
+  solution?: 'senses-and-central' | 'rule-tree'
+  /**
+   * The rule tree that played; None for senses and central
+   */
+  tree?: string | null
 }
 /**
  * The central instance: its scope and the concern its instructions name.
@@ -378,6 +398,33 @@ export interface SenseConfig {
    * A fourth question: the enemy the aim locks onto, or the pickup to walk to
    */
   target?: ('enemy' | 'pickup') | null
+}
+/**
+ * A frame a rule was written from, kept so that later rules can be checked against it.
+ *
+ * `prefix` is every action played before the frame; with the seed it replays the game to the frame. `expect` is
+ * the route the walk took there (the rules and skills it went through). `standing` is (alive, goal reached,
+ * health, furthest point) at `horizon`, the decision the rule's own check compared at.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "Cornerstone".
+ */
+export interface Cornerstone {
+  seed: number
+  prefix: string[]
+  state_text: string
+  /**
+   * The screen at the frame: a JPEG file under the tree's folder
+   */
+  frame: string
+  expect: string
+  event_at: number
+  horizon: number
+  /**
+   * @minItems 4
+   * @maxItems 4
+   */
+  standing: [unknown, unknown, unknown, unknown]
 }
 /**
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
@@ -820,6 +867,16 @@ export interface Message {
   target_line?: string | null
 }
 /**
+ * Before its children are asked, the node has Jev pick one listed item of these channels.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "Focus".
+ */
+export interface Focus {
+  from: string[]
+  question: string
+}
+/**
  * The whole table of one history test, as the `ReflectionTrace` keeps it.
  *
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
@@ -1183,6 +1240,35 @@ export interface ProposalTrace {
   admitted_strategy_id?: string | null
 }
 /**
+ * Jev's answer to one question of a walk, or a miss.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "RecordedAnswer".
+ */
+export interface RecordedAnswer {
+  /**
+   * Jev's probability for each option, by option key
+   */
+  probabilities?: {
+    [k: string]: number
+  }
+  /**
+   * The option with the highest probability; None on a miss
+   */
+  pick?: string | null
+  /**
+   * Why the call failed (timeout, http_error, malformed, off_menu, ...)
+   */
+  miss?: string | null
+  error?: string | null
+  latency_ms?: number
+  cost?: number
+  /**
+   * Asked earlier in this game with the same text, screen and options: no call
+   */
+  cached?: boolean
+}
+/**
  * One System 2 cycle.
  *
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
@@ -1377,6 +1463,226 @@ export interface RelevanceLedger {
   entries?: {
     [k: string]: RelevanceCounts
   }
+}
+/**
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "RuleNode".
+ */
+export interface RuleNode {
+  id: string
+  parent: string | null
+  condition: string | null
+  action: SkillCall | string
+  focus?: Focus | null
+  children?: string[]
+  cornerstones?: Cornerstone[]
+  /**
+   * Who wrote the rule, from which failure, and why
+   */
+  provenance?: {
+    [k: string]: unknown
+  }
+}
+/**
+ * Go on walking in a skill; its rules' partial actions are completed by `then`.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "SkillCall".
+ */
+export interface SkillCall {
+  skill: string
+  then: string
+}
+/**
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "RuleTree".
+ */
+export interface RuleTree {
+  name: string
+  /**
+   * Who wrote the rules: claude, codex, a person, ...
+   */
+  writer: string
+  nodes: {
+    [k: string]: RuleNode
+  }
+}
+/**
+ * One line of `decisions.jsonl`: what Jev was shown, how the walk went, the action played and what followed.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "RuleTreeDecision".
+ */
+export interface RuleTreeDecision {
+  /**
+   * 0 for the first decision
+   */
+  decision: number
+  /**
+   * The state as the decision's first question read it. After a focus step, the later questions read it with '\n\n[focus]\n' and that step's focus_line appended.
+   */
+  state_text: string
+  /**
+   * The screen Jev was sent with every question of the decision, a path in the bundle
+   */
+  frame: string
+  steps: WalkStep[]
+  /**
+   * The node the walk reached, whose action was played
+   */
+  node: string
+  /**
+   * Every rule the walk went into and every skill it entered, joined by '/'
+   */
+  route: string
+  action: string
+  action_words: string
+  segments: ActionSegment[]
+  /**
+   * A call failed, so the walk stopped at the node it had reached
+   */
+  missed: boolean
+  calls: number
+  cost: number
+  /**
+   * The decision's calls, one after another, in milliseconds
+   */
+  latency_ms: number
+  health_before: number
+  health_after: number
+  /**
+   * After the action; None when it ended the episode
+   */
+  armor?: number | null
+  kills?: number | null
+  x?: number | null
+  y?: number | null
+  angle?: number | null
+  reward: number
+  /**
+   * The furthest point reached along the corridor so far
+   */
+  max_x: number
+  /**
+   * died, timed out, or stalled (less than 48 units further in 24 decisions)
+   */
+  events: string[]
+  finished: boolean
+  died: boolean
+  cleared: boolean
+}
+/**
+ * One step of a decision's walk down the tree.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "WalkStep".
+ */
+export interface WalkStep {
+  /**
+   * rule: Jev chose one of a node's children, or none; focus: Jev picked one listed item; skill: the walk went on in a skill
+   */
+  kind: 'rule' | 'focus' | 'skill'
+  /**
+   * The node asked at; for a skill, the rule that called it
+   */
+  node: string
+  skill?: string | null
+  question?: string | null
+  /**
+   * Option key to its text: a child's id to its condition, `none` to 'None of these is true right now.', or `i0`, `i1`, ... to a listed item
+   */
+  options?: {
+    [k: string]: string
+  }
+  /**
+   * None for a skill, and for a focus with one item or none
+   */
+  answer?: RecordedAnswer | null
+  /**
+   * rule: the child picked, or none; focus: the item picked
+   */
+  pick?: string | null
+  /**
+   * focus: the line the later questions read under [focus]
+   */
+  focus_line?: string | null
+}
+/**
+ * `episode.json` of a rule-tree recording.
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "RuleTreeEpisodeMeta".
+ */
+export interface RuleTreeEpisodeMeta {
+  schema_version?: number
+  solution?: 'rule-tree'
+  name: string
+  title: string
+  scenario: string
+  seed: number
+  decider?: 'jev'
+  /**
+   * Answers per model, as the responses named it
+   */
+  models: {
+    [k: string]: number
+  }
+  tree: string
+  tree_writer: string
+  /**
+   * The tree's nodes, without the root and the tops of its skills
+   */
+  rules: number
+  /**
+   * How long one decision holds its keys, in tics (35 a second)
+   */
+  decision_tics?: number
+  call_budget_sec: number
+  result: RuleTreeResult
+  calls: number
+  cost: number
+  /**
+   * Calls that failed; each stopped its walk where it was
+   */
+  misses: number
+  decision_count: number
+  /**
+   * Wall-clock time of the episode, Jev's calls included
+   */
+  seconds: number
+  frames: RuleTreeFrames
+  files: string[]
+  package_version?: string
+  recorded_at: string
+}
+/**
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "RuleTreeResult".
+ */
+export interface RuleTreeResult {
+  outcome: 'cleared' | 'died' | 'timed out'
+  cleared: boolean
+  died: boolean
+  decisions: number
+  health: number
+  kills: number
+  reward: number
+  max_x: number
+  /**
+   * The first decision marked stalled, where a game of the soft loop would have stopped; None when there was none
+   */
+  stalled_at?: number | null
+}
+/**
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "RuleTreeFrames".
+ */
+export interface RuleTreeFrames {
+  dir?: string
+  pattern?: string
+  width?: number
+  height?: number
+  end_frame?: string | null
 }
 /**
  * An expansion request handed to the slow worker during this tick.

@@ -3,6 +3,7 @@
     python -m system1_doom.export --scenario deadly_corridor.cfg --episodes 1 --seed 7
     python -m system1_doom.export --scenario deadly_corridor.cfg --seed 7 --networks best --out bundles/x
     python -m system1_doom.export --scenario basic.cfg --episodes 2 --no-system2
+    python -m system1_doom.export --solution rule-tree --tree general-11 --seed 9 --out web/public/episodes/rules-corridor-9
     python -m system1_doom.export --check bundles/x
     python -m system1_doom.export --index bundles
     python -m system1_doom.export --schema bundle.schema.json
@@ -34,6 +35,11 @@ episode before saved. `episode.json` counts its cycles, history tests and trials
 
 An episode that ended with `connection_lost` (three central misses in a row) is written so it can be
 inspected, but it is not shippable: export exits 1, `--check` reports it and `--index` leaves it out.
+
+`--solution rule-tree` records the other way to play instead: a rule tree (§8.17 of the documentation) walked by
+Jev's answers, in Deadly Corridor. Its bundle has its own files (`ruletree/bundle.py`), and its `episode.json`
+says `"solution": "rule-tree"`; `--check` and `--index` read both kinds, and an index line without `solution` is
+senses and central.
 """
 
 from __future__ import annotations
@@ -65,7 +71,7 @@ from system1_doom.controller import (
     FinishedReason,
     no_key_message,
 )
-from system1_doom.d1_client import DeciderName, InstanceCounters, TransportFn, load_api_key
+from system1_doom.d1_client import D1UltraClient, DeciderName, InstanceCounters, TransportFn, load_api_key
 from system1_doom.features import encode_action
 from system1_doom.history import HISTORY_FILE, TickRecord
 from system1_doom.history_test import HistoryTestResult
@@ -81,6 +87,11 @@ from system1_doom.reflection import (
     summarize,
 )
 from system1_doom.relevance import RelevanceLedger, save_ledger
+from system1_doom.ruletree.bundle import SOLUTION as RULE_TREE
+from system1_doom.ruletree.bundle import RuleTreeDecision, RuleTreeEpisodeMeta, check_recording, record_episode
+from system1_doom.ruletree.game import SCENARIO as SCENARIO_RULE_TREE
+from system1_doom.ruletree.tree import DEFAULT_TREE, RuleTree, load_tree
+from system1_doom.ruletree.walk import DEFAULT_BUDGET as RULE_TREE_BUDGET
 from system1_doom.state import WorldState
 from system1_doom.train import (
     ConfigurationFileError,
@@ -98,6 +109,9 @@ if TYPE_CHECKING:
 # Which value networks serve the `values` evidence channel: none, the best or the latest checkpoint.
 Networks = Literal["none", "best", "latest"]
 DECIDER = "d1-ultra"
+# The two ways this package plays: the senses and the central (with System 2), or a rule tree walked by Jev's answers.
+Solution = Literal["senses-and-central", "rule-tree"]
+SENSES = "senses-and-central"
 RELEVANCE_FILE = "relevance.json"
 NOT_SHIPPABLE = "connection_lost"
 
@@ -312,6 +326,8 @@ class BundleIndexEntry(BaseModel):
         "recorded before they did, when the motor picked its own",
     )
     recorded_at: str = Field(default="", description="When the bundle was recorded, as its episode.json says")
+    solution: Solution = Field(default=SENSES, description="Which way of playing recorded it: senses and central, or a rule tree")
+    tree: Optional[str] = Field(default=None, description="The rule tree that played; None for senses and central")
 
 
 def _jpeg(screen_buffer: np.ndarray, path: Path) -> None:
@@ -709,6 +725,8 @@ def check_bundle(bundle: Path) -> List[str]:
         return [f"episode.json: {exc}"]
     if isinstance(raw, dict) and raw.get("schema_version") != TRACE_SCHEMA_VERSION:
         return [f"episode.json: schema_version {raw.get('schema_version')}, expected {TRACE_SCHEMA_VERSION}"]
+    if isinstance(raw, dict) and raw.get("solution") == RULE_TREE:
+        return check_recording(bundle, raw)
     try:
         meta = EpisodeMeta.model_validate(raw)
     except Exception as exc:  # noqa: BLE001
@@ -795,14 +813,38 @@ def index_entry(name: str, meta: EpisodeMeta, chose_targets: bool = False) -> Bu
     )
 
 
+def rule_tree_index_entry(name: str, meta: RuleTreeEpisodeMeta) -> BundleIndexEntry:
+    """The line `index.json` gives a rule-tree recording."""
+    return BundleIndexEntry(
+        name=name,
+        title=meta.title,
+        scenario=meta.scenario,
+        value_networks="none",
+        seed=meta.seed,
+        cleared=meta.result.cleared,
+        died=meta.result.died,
+        reward=meta.result.reward,
+        ticks=meta.decision_count,
+        kills=meta.result.kills,
+        decider=meta.decider,
+        recorded_at=meta.recorded_at,
+        solution=RULE_TREE,
+        tree=meta.tree,
+    )
+
+
 def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
-    """Write `index.json` listing every shippable schema-2 bundle under `episodes_dir`, by scenario, networks,
-    whether the senses chose the motor's targets (those first), seed and the configuration version it started
-    from. Bundles of another schema version, and episodes that lost the connection, are left out."""
+    """Write `index.json` listing every shippable schema-2 bundle under `episodes_dir`: senses and central first, by
+    scenario, networks, whether the senses chose the motor's targets (those first), seed and the configuration
+    version it started from; then the rule-tree recordings, by tree and seed. Bundles of another schema version, and
+    episodes that lost the connection, are left out."""
     entries = []
     for meta_path in sorted(episodes_dir.glob("*/episode.json")):
         raw = json.loads(meta_path.read_text(encoding="utf-8"))
         if raw.get("schema_version") != TRACE_SCHEMA_VERSION:
+            continue
+        if raw.get("solution") == RULE_TREE:
+            entries.append(rule_tree_index_entry(meta_path.parent.name, RuleTreeEpisodeMeta.model_validate(raw)))
             continue
         meta = EpisodeMeta.model_validate(raw)
         if meta.result.finished_reason == NOT_SHIPPABLE:
@@ -810,7 +852,10 @@ def write_index(episodes_dir: Path) -> List[BundleIndexEntry]:
         entries.append(index_entry(meta_path.parent.name, meta, senses_chose_targets(raw)))
     order = {"none": 0, "best": 1, "latest": 2}
     entries.sort(
-        key=lambda e: (e.scenario, order[e.value_networks], not e.senses_choose_targets, e.seed, e.configuration_start, e.name)
+        key=lambda e: (
+            e.solution == RULE_TREE, e.scenario, e.tree or "", order[e.value_networks], not e.senses_choose_targets, e.seed,
+            e.configuration_start, e.name,
+        )
     )
     (episodes_dir / "index.json").write_text(
         json.dumps({"schema_version": TRACE_SCHEMA_VERSION, "episodes": [e.model_dump() for e in entries]}, indent=2),
@@ -840,6 +885,9 @@ def bundle_json_schema() -> Dict[str, Any]:
         InstanceResult,
         HistoryTestResult,
         System2EpisodeSummary,
+        RuleTreeEpisodeMeta,
+        RuleTreeDecision,
+        RuleTree,
     )
     _, schema = models_json_schema(
         [(m, "serialization") for m in models],
@@ -874,10 +922,59 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-system2", action="store_true", help="Switch System 2 off: the configuration stays as it starts")
     add_configuration_flags(parser)
     add_decider_flag(parser)
+    parser.add_argument(
+        "--solution", choices=[SENSES, RULE_TREE], default=SENSES,
+        help="Record the senses and central (default) or a rule tree; a rule tree plays deadly_corridor.cfg with Jev",
+    )
+    parser.add_argument("--tree", default=DEFAULT_TREE, help=f"With --solution rule-tree: a shipped tree or a tree folder (default {DEFAULT_TREE})")
     parser.add_argument("--check", metavar="BUNDLE", default=None, help="Validate a bundle and exit")
     parser.add_argument("--index", metavar="DIR", default=None, help="Write DIR/index.json listing its bundles and exit")
     parser.add_argument("--schema", metavar="OUT.json", default=None, help="Write the bundle JSON Schema and exit")
     return parser
+
+
+def record_rule_tree(args: argparse.Namespace, transport: Optional[TransportFn] = None) -> int:
+    """`--solution rule-tree`: record seeds `--seed` onwards with the tree, every decision made by Jev's answers."""
+    if Path(args.scenario).name != SCENARIO_RULE_TREE:
+        print(f"The rule tree plays {SCENARIO_RULE_TREE} only, not {args.scenario}.", file=sys.stderr)
+        return 2
+    api_key = load_api_key("jev")
+    if not api_key:
+        if transport is None:
+            print(no_key_message("jev"), file=sys.stderr)
+            return 2
+        api_key = "test-transport"
+    try:
+        tree = load_tree(args.tree)
+    except FileNotFoundError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    budget = args.call_budget if args.call_budget is not None else RULE_TREE_BUDGET
+    client = D1UltraClient(api_key=api_key, decider="jev", transport=transport, default_timeout=budget)
+    try:
+        for i in range(args.episodes):
+            seed = args.seed + i
+            default_out = Path("bundles") / f"rule-tree-{tree.name}-{seed}"
+            if args.out is None:
+                out = default_out
+            else:
+                out = Path(args.out) if args.episodes == 1 else Path(args.out) / default_out.name
+            try:
+                meta = record_episode(
+                    tree, seed, out, client, name=args.name if args.episodes == 1 else None,
+                    title=args.title if args.episodes == 1 else None, budget=budget,
+                )
+            except FileExistsError as exc:
+                print(exc, file=sys.stderr)
+                return 2
+            r = meta.result
+            print(
+                f"{out}: {meta.decision_count} decisions, {r.outcome}, {r.kills:.0f} kills, health {r.health:.0f}, "
+                f"{meta.calls} calls, ${meta.cost:.4f}, {meta.misses} misses"
+            )
+    finally:
+        client.shutdown()
+    return 0
 
 
 def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] = None) -> int:
@@ -900,6 +997,8 @@ def main(argv: Optional[Sequence[str]] = None, transport: Optional[TransportFn] 
         entries = write_index(Path(args.index))
         print(f"Indexed {len(entries)} bundle(s) in {Path(args.index) / 'index.json'}")
         return 0
+    if args.solution == RULE_TREE:
+        return record_rule_tree(args, transport)
     api_key = load_api_key(args.decider)
     if not api_key:
         if transport is None:

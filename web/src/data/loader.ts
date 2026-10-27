@@ -106,10 +106,18 @@ export function checkSchemaVersion(version: number | undefined, file: string): v
   )
 }
 
+/** Whether an index line is a recording of the senses and central; a line without `solution` is. */
+export const isSensesRecording = (entry: Pick<BundleIndexEntry, 'solution'>): boolean =>
+  (entry.solution ?? 'senses-and-central') === 'senses-and-central'
+
+/**
+ * The index of the recordings these screens read. `index.json` also lists the rule tree's recordings, which have
+ * files of their own (`decisions.jsonl` instead of `ticks.jsonl`), so they are left out here.
+ */
 export async function loadIndex(root = 'episodes', fetcher: Fetcher = defaultFetcher): Promise<EpisodeIndex> {
   const index = parseJson<EpisodeIndex>(await fetchText(`${root}/index.json`, fetcher), `${root}/index.json`)
   checkSchemaVersion(index.schema_version, `${root}/index.json`)
-  return index
+  return { ...index, episodes: index.episodes.filter(isSensesRecording) }
 }
 
 export interface LoadOptions {

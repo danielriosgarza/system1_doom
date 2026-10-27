@@ -25,6 +25,15 @@ describe('loadIndex', () => {
     expect(index.episodes.map((e) => [e.name, e.configuration_start, e.configuration_end])).toEqual([[FIXTURE, 1, 3]])
   })
 
+  it('leaves out the rule tree’s recordings, which these screens do not read', async () => {
+    const index = JSON.parse(await readFile(`${FIXTURES}episodes/index.json`, 'utf8')) as { episodes: BundleIndexEntry[] }
+    const [entry] = index.episodes
+    if (!entry) throw new Error('the fixture index lists no recording')
+    const rules: BundleIndexEntry = { ...entry, name: 'rules-corridor-9', solution: 'rule-tree', tree: 'general-11' }
+    const fetcher = diskFetcher({ 'episodes/index.json': JSON.stringify({ ...index, episodes: [entry, rules] }) })
+    expect((await loadIndex('episodes', fetcher)).episodes.map((e) => e.name)).toEqual([FIXTURE])
+  })
+
   it('refuses a schema 1 index, saying it is the old architecture and how to record again', async () => {
     const fetcher = diskFetcher({ 'episodes/index.json': JSON.stringify({ schema_version: 1, episodes: [] }) })
     const error = await loadIndex('episodes', fetcher).catch((e: unknown) => e)

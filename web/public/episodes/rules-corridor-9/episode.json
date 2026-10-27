@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "solution": "rule-tree",
+  "name": "rules-corridor-9",
+  "title": "deadly corridor, rule tree general-11, seed 9",
+  "scenario": "deadly_corridor.cfg",
+  "seed": 9,
+  "decider": "jev",
+  "models": {
+    "jev-1.14.0": 143
+  },
+  "tree": "general-11",
+  "tree_writer": "claude",
+  "rules": 11,
+  "decision_tics": 8,
+  "call_budget_sec": 10.0,
+  "result": {
+    "outcome": "cleared",
+    "cleared": true,
+    "died": false,
+    "decisions": 43,
+    "health": 70.0,
+    "kills": 6.0,
+    "reward": 2279.4,
+    "max_x": 1256,
+    "stalled_at": null
+  },
+  "calls": 143,
+  "cost": 0.011920818,
+  "misses": 0,
+  "decision_count": 43,
+  "seconds": 39.4,
+  "frames": {
+    "dir": "frames",
+    "pattern": "{decision:05d}.jpg",
+    "width": 320,
+    "height": 240,
+    "end_frame": "frames/end.jpg"
+  },
+  "files": [
+    "decisions.jsonl",
+    "tree.json",
+    "build.jsonl"
+  ],
+  "package_version": "0.4.0",
+  "recorded_at": "2026-10-27T09:00:56.774991+00:00"
+}

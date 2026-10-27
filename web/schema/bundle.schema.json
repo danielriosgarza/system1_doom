@@ -61,6 +61,30 @@
       "title": "ActionInfo",
       "type": "object"
     },
+    "ActionSegment": {
+      "properties": {
+        "code": {
+          "description": "Four letters: walk (F, 0, B), sidestep (L, 0, R), turn (L, 0, R), fire (1, 0)",
+          "title": "Code",
+          "type": "string"
+        },
+        "tics": {
+          "title": "Tics",
+          "type": "integer"
+        },
+        "words": {
+          "title": "Words",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "tics",
+        "words"
+      ],
+      "title": "ActionSegment",
+      "type": "object"
+    },
     "ActionSpec": {
       "description": "Finite, bounded executable action specification (primitive or macro-action).",
       "properties": {
@@ -638,6 +662,29 @@
           "description": "When the bundle was recorded, as its episode.json says",
           "title": "Recorded At",
           "type": "string"
+        },
+        "solution": {
+          "default": "senses-and-central",
+          "description": "Which way of playing recorded it: senses and central, or a rule tree",
+          "enum": [
+            "senses-and-central",
+            "rule-tree"
+          ],
+          "title": "Solution",
+          "type": "string"
+        },
+        "tree": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The rule tree that played; None for senses and central",
+          "title": "Tree"
         }
       },
       "required": [
@@ -832,6 +879,75 @@
         "central"
       ],
       "title": "Configuration",
+      "type": "object"
+    },
+    "Cornerstone": {
+      "description": "A frame a rule was written from, kept so that later rules can be checked against it.\n\n`prefix` is every action played before the frame; with the seed it replays the game to the frame. `expect` is\nthe route the walk took there (the rules and skills it went through). `standing` is (alive, goal reached,\nhealth, furthest point) at `horizon`, the decision the rule's own check compared at.",
+      "properties": {
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "prefix": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prefix",
+          "type": "array"
+        },
+        "state_text": {
+          "title": "State Text",
+          "type": "string"
+        },
+        "frame": {
+          "description": "The screen at the frame: a JPEG file under the tree's folder",
+          "title": "Frame",
+          "type": "string"
+        },
+        "expect": {
+          "title": "Expect",
+          "type": "string"
+        },
+        "event_at": {
+          "title": "Event At",
+          "type": "integer"
+        },
+        "horizon": {
+          "title": "Horizon",
+          "type": "integer"
+        },
+        "standing": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Standing",
+          "type": "array"
+        }
+      },
+      "required": [
+        "seed",
+        "prefix",
+        "state_text",
+        "frame",
+        "expect",
+        "event_at",
+        "horizon",
+        "standing"
+      ],
+      "title": "Cornerstone",
       "type": "object"
     },
     "EnemyTrace": {
@@ -1464,6 +1580,28 @@
         "menu"
       ],
       "title": "EvidenceInputs",
+      "type": "object"
+    },
+    "Focus": {
+      "description": "Before its children are asked, the node has Jev pick one listed item of these channels.",
+      "properties": {
+        "from": {
+          "items": {
+            "type": "string"
+          },
+          "title": "From",
+          "type": "array"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "question"
+      ],
+      "title": "Focus",
       "type": "object"
     },
     "FramesInfo": {
@@ -3073,6 +3211,75 @@
       "title": "ProposalTrace",
       "type": "object"
     },
+    "RecordedAnswer": {
+      "description": "Jev's answer to one question of a walk, or a miss.",
+      "properties": {
+        "probabilities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Jev's probability for each option, by option key",
+          "title": "Probabilities",
+          "type": "object"
+        },
+        "pick": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The option with the highest probability; None on a miss",
+          "title": "Pick"
+        },
+        "miss": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why the call failed (timeout, http_error, malformed, off_menu, ...)",
+          "title": "Miss"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "latency_ms": {
+          "default": 0.0,
+          "title": "Latency Ms",
+          "type": "number"
+        },
+        "cost": {
+          "default": 0.0,
+          "title": "Cost",
+          "type": "number"
+        },
+        "cached": {
+          "default": false,
+          "description": "Asked earlier in this game with the same text, screen and options: no call",
+          "title": "Cached",
+          "type": "boolean"
+        }
+      },
+      "title": "RecordedAnswer",
+      "type": "object"
+    },
     "ReflectionTrace": {
       "description": "One System 2 cycle.",
       "properties": {
@@ -3372,6 +3579,544 @@
       "title": "RelevanceLedger",
       "type": "object"
     },
+    "RuleNode": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent"
+        },
+        "condition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Condition"
+        },
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SkillCall"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Action"
+        },
+        "focus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Focus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "children": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Children",
+          "type": "array"
+        },
+        "cornerstones": {
+          "items": {
+            "$ref": "#/$defs/Cornerstone"
+          },
+          "title": "Cornerstones",
+          "type": "array"
+        },
+        "provenance": {
+          "additionalProperties": true,
+          "description": "Who wrote the rule, from which failure, and why",
+          "title": "Provenance",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "parent",
+        "condition",
+        "action"
+      ],
+      "title": "RuleNode",
+      "type": "object"
+    },
+    "RuleTree": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "writer": {
+          "description": "Who wrote the rules: claude, codex, a person, ...",
+          "title": "Writer",
+          "type": "string"
+        },
+        "nodes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RuleNode"
+          },
+          "title": "Nodes",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "writer",
+        "nodes"
+      ],
+      "title": "RuleTree",
+      "type": "object"
+    },
+    "RuleTreeDecision": {
+      "description": "One line of `decisions.jsonl`: what Jev was shown, how the walk went, the action played and what followed.",
+      "properties": {
+        "decision": {
+          "description": "0 for the first decision",
+          "title": "Decision",
+          "type": "integer"
+        },
+        "state_text": {
+          "description": "The state as the decision's first question read it. After a focus step, the later questions read it with '\\n\\n[focus]\\n' and that step's focus_line appended.",
+          "title": "State Text",
+          "type": "string"
+        },
+        "frame": {
+          "description": "The screen Jev was sent with every question of the decision, a path in the bundle",
+          "title": "Frame",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/WalkStep"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "node": {
+          "description": "The node the walk reached, whose action was played",
+          "title": "Node",
+          "type": "string"
+        },
+        "route": {
+          "description": "Every rule the walk went into and every skill it entered, joined by '/'",
+          "title": "Route",
+          "type": "string"
+        },
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "action_words": {
+          "title": "Action Words",
+          "type": "string"
+        },
+        "segments": {
+          "items": {
+            "$ref": "#/$defs/ActionSegment"
+          },
+          "title": "Segments",
+          "type": "array"
+        },
+        "missed": {
+          "description": "A call failed, so the walk stopped at the node it had reached",
+          "title": "Missed",
+          "type": "boolean"
+        },
+        "calls": {
+          "title": "Calls",
+          "type": "integer"
+        },
+        "cost": {
+          "title": "Cost",
+          "type": "number"
+        },
+        "latency_ms": {
+          "description": "The decision's calls, one after another, in milliseconds",
+          "title": "Latency Ms",
+          "type": "number"
+        },
+        "health_before": {
+          "title": "Health Before",
+          "type": "number"
+        },
+        "health_after": {
+          "title": "Health After",
+          "type": "number"
+        },
+        "armor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "After the action; None when it ended the episode",
+          "title": "Armor"
+        },
+        "kills": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kills"
+        },
+        "x": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "X"
+        },
+        "y": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Y"
+        },
+        "angle": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Angle"
+        },
+        "reward": {
+          "title": "Reward",
+          "type": "number"
+        },
+        "max_x": {
+          "description": "The furthest point reached along the corridor so far",
+          "title": "Max X",
+          "type": "integer"
+        },
+        "events": {
+          "description": "died, timed out, or stalled (less than 48 units further in 24 decisions)",
+          "items": {
+            "type": "string"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "finished": {
+          "title": "Finished",
+          "type": "boolean"
+        },
+        "died": {
+          "title": "Died",
+          "type": "boolean"
+        },
+        "cleared": {
+          "title": "Cleared",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "decision",
+        "state_text",
+        "frame",
+        "steps",
+        "node",
+        "route",
+        "action",
+        "action_words",
+        "segments",
+        "missed",
+        "calls",
+        "cost",
+        "latency_ms",
+        "health_before",
+        "health_after",
+        "reward",
+        "max_x",
+        "events",
+        "finished",
+        "died",
+        "cleared"
+      ],
+      "title": "RuleTreeDecision",
+      "type": "object"
+    },
+    "RuleTreeEpisodeMeta": {
+      "description": "`episode.json` of a rule-tree recording.",
+      "properties": {
+        "schema_version": {
+          "default": 2,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "solution": {
+          "const": "rule-tree",
+          "default": "rule-tree",
+          "title": "Solution",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "scenario": {
+          "title": "Scenario",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "decider": {
+          "const": "jev",
+          "default": "jev",
+          "title": "Decider",
+          "type": "string"
+        },
+        "models": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Answers per model, as the responses named it",
+          "title": "Models",
+          "type": "object"
+        },
+        "tree": {
+          "title": "Tree",
+          "type": "string"
+        },
+        "tree_writer": {
+          "title": "Tree Writer",
+          "type": "string"
+        },
+        "rules": {
+          "description": "The tree's nodes, without the root and the tops of its skills",
+          "title": "Rules",
+          "type": "integer"
+        },
+        "decision_tics": {
+          "default": 8,
+          "description": "How long one decision holds its keys, in tics (35 a second)",
+          "title": "Decision Tics",
+          "type": "integer"
+        },
+        "call_budget_sec": {
+          "title": "Call Budget Sec",
+          "type": "number"
+        },
+        "result": {
+          "$ref": "#/$defs/RuleTreeResult"
+        },
+        "calls": {
+          "title": "Calls",
+          "type": "integer"
+        },
+        "cost": {
+          "title": "Cost",
+          "type": "number"
+        },
+        "misses": {
+          "description": "Calls that failed; each stopped its walk where it was",
+          "title": "Misses",
+          "type": "integer"
+        },
+        "decision_count": {
+          "title": "Decision Count",
+          "type": "integer"
+        },
+        "seconds": {
+          "description": "Wall-clock time of the episode, Jev's calls included",
+          "title": "Seconds",
+          "type": "number"
+        },
+        "frames": {
+          "$ref": "#/$defs/RuleTreeFrames"
+        },
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "package_version": {
+          "title": "Package Version",
+          "type": "string"
+        },
+        "recorded_at": {
+          "title": "Recorded At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "title",
+        "scenario",
+        "seed",
+        "models",
+        "tree",
+        "tree_writer",
+        "rules",
+        "call_budget_sec",
+        "result",
+        "calls",
+        "cost",
+        "misses",
+        "decision_count",
+        "seconds",
+        "frames",
+        "files",
+        "recorded_at"
+      ],
+      "title": "RuleTreeEpisodeMeta",
+      "type": "object"
+    },
+    "RuleTreeFrames": {
+      "properties": {
+        "dir": {
+          "default": "frames",
+          "title": "Dir",
+          "type": "string"
+        },
+        "pattern": {
+          "default": "{decision:05d}.jpg",
+          "title": "Pattern",
+          "type": "string"
+        },
+        "width": {
+          "default": 320,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "default": 240,
+          "title": "Height",
+          "type": "integer"
+        },
+        "end_frame": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Frame"
+        }
+      },
+      "title": "RuleTreeFrames",
+      "type": "object"
+    },
+    "RuleTreeResult": {
+      "properties": {
+        "outcome": {
+          "enum": [
+            "cleared",
+            "died",
+            "timed out"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "cleared": {
+          "title": "Cleared",
+          "type": "boolean"
+        },
+        "died": {
+          "title": "Died",
+          "type": "boolean"
+        },
+        "decisions": {
+          "title": "Decisions",
+          "type": "integer"
+        },
+        "health": {
+          "title": "Health",
+          "type": "number"
+        },
+        "kills": {
+          "title": "Kills",
+          "type": "number"
+        },
+        "reward": {
+          "title": "Reward",
+          "type": "number"
+        },
+        "max_x": {
+          "title": "Max X",
+          "type": "integer"
+        },
+        "stalled_at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The first decision marked stalled, where a game of the soft loop would have stopped; None when there was none",
+          "title": "Stalled At"
+        }
+      },
+      "required": [
+        "outcome",
+        "cleared",
+        "died",
+        "decisions",
+        "health",
+        "kills",
+        "reward",
+        "max_x"
+      ],
+      "title": "RuleTreeResult",
+      "type": "object"
+    },
     "SenseConfig": {
       "description": "One sense: the channels it is shown, the concern its instructions name, its finite reasons, and the\nmotor target it chooses, if any.",
       "properties": {
@@ -3420,6 +4165,25 @@
         "reasons"
       ],
       "title": "SenseConfig",
+      "type": "object"
+    },
+    "SkillCall": {
+      "description": "Go on walking in a skill; its rules' partial actions are completed by `then`.",
+      "properties": {
+        "skill": {
+          "title": "Skill",
+          "type": "string"
+        },
+        "then": {
+          "title": "Then",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "then"
+      ],
+      "title": "SkillCall",
       "type": "object"
     },
     "SlowPathRequestTrace": {
@@ -4583,6 +5347,102 @@
         "tried"
       ],
       "title": "ValueLine",
+      "type": "object"
+    },
+    "WalkStep": {
+      "description": "One step of a decision's walk down the tree.",
+      "properties": {
+        "kind": {
+          "description": "rule: Jev chose one of a node's children, or none; focus: Jev picked one listed item; skill: the walk went on in a skill",
+          "enum": [
+            "rule",
+            "focus",
+            "skill"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "node": {
+          "description": "The node asked at; for a skill, the rule that called it",
+          "title": "Node",
+          "type": "string"
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skill"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question"
+        },
+        "options": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Option key to its text: a child's id to its condition, `none` to 'None of these is true right now.', or `i0`, `i1`, ... to a listed item",
+          "title": "Options",
+          "type": "object"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecordedAnswer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None for a skill, and for a focus with one item or none"
+        },
+        "pick": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "rule: the child picked, or none; focus: the item picked",
+          "title": "Pick"
+        },
+        "focus_line": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "focus: the line the later questions read under [focus]",
+          "title": "Focus Line"
+        }
+      },
+      "required": [
+        "kind",
+        "node"
+      ],
+      "title": "WalkStep",
       "type": "object"
     },
     "WallTrace": {

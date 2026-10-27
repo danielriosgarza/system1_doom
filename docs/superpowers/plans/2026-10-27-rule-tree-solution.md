@@ -250,14 +250,20 @@ For example, the Watch screen of the rule tree opens with:
 | `build.jsonl` | The soft loop's record of how that tree was written |
 | `frames/00042.jpg` | The screen Jev was sent at each decision; `frames/end.jpg` after the last action |
 
-- [ ] **Step 1:** Models and writer; `--check` validates a rule-tree bundle (every decision has a walk, the action
-  played equals the action of the node reached, every frame exists).
-- [ ] **Step 2:** `--index` lists both kinds; each entry gains `solution` (absent means senses and central, so the
-  recordings already shipped stay valid without re-export).
-- [ ] **Step 3:** `--schema` adds the new models to `$defs`; regenerate `web/src/schema/bundle.ts` with
+- [x] **Step 1:** Models and writer; `--check` validates a rule-tree bundle (every decision has a walk, the action
+  played equals the action of the node reached, every frame exists). Done in `ruletree/bundle.py`: the line model
+  is `RuleTreeDecision`, and the tree ships with its cornerstone frames (about 30 KB), so the site can show the
+  screen each rule was written from. The episode plays to its end; a stall is marked, not stopped at.
+- [x] **Step 2:** `--index` lists both kinds; each entry gains `solution` (absent means senses and central, so the
+  recordings already shipped stay valid without re-export). Until milestone 4 the site's loader keeps the senses
+  entries only, so the landing and the picker are unchanged.
+- [x] **Step 3:** `--schema` adds the new models to `$defs`; regenerate `web/src/schema/bundle.ts` with
   `npm run schema` and `npm run types`.
-- [ ] **Step 4:** Record seeds 9 to 12 with the default tree, the same seeds as the shipped senses recordings, and
-  ship them in `web/public/episodes/` as `rules-corridor-9` to `rules-corridor-12`.
+- [x] **Step 4:** Record seeds 9 to 12 with the default tree, the same seeds as the shipped senses recordings, and
+  ship them in `web/public/episodes/` as `rules-corridor-9` to `rules-corridor-12`. Done: all four cleared, in 37
+  to 47 decisions, 2.9 MB in all (§15 of the documentation). The history channel Jev reads says "for 1 tics";
+  the recordings' action words say "for 1 tic". Changing what Jev reads would need the benchmark again, so it
+  is left as it is.
 
 ## Milestone 4: the website
 

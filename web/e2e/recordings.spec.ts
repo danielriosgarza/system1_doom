@@ -24,12 +24,14 @@ interface Shipped {
   cleared: boolean
   recorded_at?: string
   senses_choose_targets?: boolean
+  solution?: string
 }
 
+// The recordings of the senses and central: the index also lists the rule tree's, which these screens do not read.
 async function shipped(page: Page): Promise<Shipped[]> {
   const response = await page.request.get(`${RECORDINGS}episodes/index.json`)
   const index = (await response.json()) as { episodes: Shipped[] }
-  return index.episodes
+  return index.episodes.filter((e) => (e.solution ?? 'senses-and-central') === 'senses-and-central')
 }
 
 const newestCleared = (episodes: Shipped[]): Shipped | undefined =>

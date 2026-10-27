@@ -99,4 +99,15 @@ def test_keys_are_pressed_only_by_the_games_step():
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("make_action", "set_action", "advance_action"):
                 pressing.append(path.name)
-    assert pressing == ["game.py"]
+    assert pressing and set(pressing) == {"game.py"}
+
+
+def test_keeping_the_screen_plays_the_same_game(game):
+    """A recording holds each segment's keys one tic at a time to keep the last screen; the game is the same."""
+    tree, seen = _always("00R0:3+F001:5"), []
+    for g in (game, Game(keep_screen=True)):
+        trace = play(g, tree, _jev(), 9, stop_after=30, keep_frames=False)
+        seen.append([(r["health_after"], r["reward"], r.get("x"), r.get("y"), r.get("angle")) for r in trace])
+    assert seen[0] == seen[1] and len(seen[0]) > 1
+    assert g.last_screen is not None and game.last_screen is None
+    g.close()

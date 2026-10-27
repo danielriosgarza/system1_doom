@@ -282,14 +282,14 @@ system1_doom/
 | `controller.py` | 750 | `DoomDecisionController`: one tick and one episode; configuration hook; System 2's host; misses; cost |
 | `logger.py` | 145 | Schema-2 `TickTrace`/`ProposalTrace` JSONL logging, and System 2's `reflections.jsonl` |
 | `tracing.py` | 276 | Typed trace records (state, pruning, projections, outcome, slow-path request), read-only |
-| `export.py` | 914 | Episode bundles, `--check`, `--index`, `--schema` (`python -m system1_doom.export`) |
+| `export.py` | 1,060 | Episode bundles, `--check`, `--index`, `--schema` (`python -m system1_doom.export`) |
 | `serve.py` | 636 | Live mode: plays episodes as `export` does and streams every tick (`python -m system1_doom.serve`) |
 | `visualizer.py` | 347 | Split-screen HUD frames, GIF/MP4 recorder, live Tk panel of the six instances |
 | `charts.py` | 117 | `learning_curves.png` from `metrics.jsonl` (matplotlib, dark theme) |
 | `cli.py` | 220 | Play/watch entry point (`python -m system1_doom.cli`) |
 | `train.py` | 492 | Training/evaluation entry point, `RunStore`, resume, best-checkpoint tracking, which configuration a run starts from (`starting_configuration`) (`python -m system1_doom.train`) |
 | `__init__.py` | 3 | Package docstring + `__version__` |
-| `ruletree/` | 1,700 | The rule tree, a second way to play (§8.17): `codes.py` (action codes), `tree.py` (rules, focus, skills, cornerstones, proposals), `walk.py` (one decision as Jev's answers down the tree, kept answers), `game.py` (the corridor, one 8-tic decision at a time), `check.py`, `gate.py`, `dossier.py`, `writers.py`, `loop.py` (the soft loop), `run.py` (the run folder), `__main__.py` (`python -m system1_doom.ruletree`); `trees/` ships `general-9`, `general-11` and `codex-11`, `prompts/rule-writer.md` the rule writer's instructions |
+| `ruletree/` | 2,100 | The rule tree, a second way to play (§8.17): `codes.py` (action codes), `tree.py` (rules, focus, skills, cornerstones, proposals), `walk.py` (one decision as Jev's answers down the tree, kept answers), `game.py` (the corridor, one 8-tic decision at a time), `check.py`, `gate.py`, `dossier.py`, `writers.py`, `loop.py` (the soft loop), `run.py` (the run folder), `bundle.py` (recordings for the website), `__main__.py` (`python -m system1_doom.ruletree`); `trees/` ships `general-9`, `general-11` and `codex-11`, `prompts/rule-writer.md` the rule writer's instructions |
 
 Dependencies point “downwards” only: `controller` wires everything;
 `system1` depends on `senses`, `instance`, `configuration` and
@@ -1742,6 +1742,27 @@ answers up to the frame.
 Games run in parallel threads (`--workers`, default 6), each borrowing a
 game from a pool, with one client for all.
 
+**Recordings** (`bundle.py`). `python -m system1_doom.export --solution
+rule-tree` plays one seed with a tree from the start to the end of the
+episode (a stall does not stop it, as it stops a game of the soft loop)
+and writes it as a folder the website reads:
+
+```text
+episode.json       RuleTreeEpisodeMeta: the tree, the seed, how the episode ended, Jev's calls, cost and misses
+decisions.jsonl    one RuleTreeDecision per decision: the state text Jev was sent, every step of the walk
+                   (question, options, probabilities, pick, focus, skill), the action in codes and in words,
+                   health before and after, kills, position, reward and events
+tree.json          the tree as played, with cornerstones/ (the screen each rule was written from)
+build.jsonl        the soft loop's record of how the tree was written
+frames/00042.jpg   the screen Jev was sent at decision 42; frames/end.jpg after the last action
+```
+
+To keep the screen after the last action, a recording holds each
+segment's keys one tic at a time; the game plays the same (a test plays
+a seed both ways). `--check` checks that every decision has a walk, that
+the action played is the action of the node the walk reached, and that
+every frame exists.
+
 ---
 
 ## 9. The slow path end-to-end
@@ -1904,6 +1925,13 @@ hint), or on a checkpoint mismatch (with a `--fresh` remedy).
 | `--check BUNDLE` | — | Validate a bundle and exit (exit code 1 on problems); no key needed |
 | `--index DIR` | — | Write `DIR/index.json` listing its shippable bundles and exit; no key needed |
 | `--schema OUT.json` | — | Write the bundle JSON Schema and exit; no key needed |
+| `--solution` | `senses-and-central` | `rule-tree` records the rule tree instead (§8.17): Jev decides, `deadly_corridor.cfg` only; `--episodes`, `--seed`, `--out` (default `bundles/rule-tree-<tree>-<seed>`), `--name`, `--title` and `--call-budget` (default 10) apply, the senses' flags do not |
+| `--tree` | `general-11` | With `--solution rule-tree`: a shipped tree or a tree folder |
+
+`--check` and `--index` read both kinds of bundle. An index line says
+which way of playing recorded it (`solution`, absent in lines written
+before there were two) and, for a rule tree, which tree (`tree`); the
+index lists the senses and central first.
 
 Recording keeps `record_experience` off, so a recording only reads the
 networks; it does update the run folder's relevance ledger, which is
@@ -1916,6 +1944,8 @@ python -m system1_doom.export --scenario deadly_corridor.cfg --seed 9 --networks
     --out bundles/deadly_corridor-best-9
 python -m system1_doom.export --check bundles/deadly_corridor-best-9
 python -m system1_doom.export --index bundles
+python -m system1_doom.export --solution rule-tree --tree general-11 --seed 9 \
+    --name rules-corridor-9 --out web/public/episodes/rules-corridor-9
 ```
 
 ### `python -m system1_doom.serve` — play live and stream ticks
@@ -2055,7 +2085,8 @@ their checkpoints load (the gate keys are ignored) and serve the
 `values` channel.
 
 **`bundles/<stem>-<networks>-<seed>/`** — episode bundles written by
-`python -m system1_doom.export` (§8.15); gitignored.
+`python -m system1_doom.export` (§8.15); gitignored. A rule tree's
+recordings default to `bundles/rule-tree-<tree>-<seed>/` (§8.17).
 
 ---
 
@@ -2437,6 +2468,22 @@ differently, each a near tie (an enemy 2° to the right read as "between
 changed answer early on sends it elsewhere. Compare solutions within one
 run, as above, not across days.
 
+**The rule tree's recordings** (2026-10-27, `export --solution rule-tree
+--tree general-11`, seeds 9 to 12, the seeds of the senses' recordings
+`optimized-corridor-9` to `-12`; 10 s budget). All four ship in
+`web/public/episodes/`, 2.9 MB in all.
+
+| Recording | Decisions | Result | Calls | Cost | Misses | Time per decision | Size |
+|---|---:|---|---:|---:|---:|---:|---:|
+| `rules-corridor-9` | 43 | cleared, 6 kills, health 70 (reward 2,279) | 143 | $0.0119 | 0 | 0.92 s | 0.74 MB |
+| `rules-corridor-10` | 37 | cleared, 6 kills, health 46 (reward 2,278) | 119 | $0.0100 | 0 | 0.91 s | 0.65 MB |
+| `rules-corridor-11` | 47 | cleared, 6 kills, health 100 (reward 2,280) | 166 | $0.0138 | 0 | 0.96 s | 0.80 MB |
+| `rules-corridor-12` | 42 | cleared, 6 kills, health 46 (reward 2,282) | 141 | $0.0117 | 0 | 0.93 s | 0.73 MB |
+
+Every call was answered by `jev-1.14.0`, and no decision was marked
+stalled. On the same seeds the senses' recordings cleared one of four
+(seed 12, in 61 decisions).
+
 ## 16. Testing
 
 ```bash
@@ -2496,7 +2543,7 @@ minute with them.
 | `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy; `--decider jev` reaches the summary (`decider`, `models`) and every call goes to TypeSafe; `--decider jev` fails fast naming `TYPESAFE_API_KEY` |
 | `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra or Jev and is listed in the index with its decider and whether the senses chose the motor's targets, and the site ships recordings by each decider, the newest cleared one with the senses choosing targets; a bundle whose configuration names no sense's target is indexed as recorded before the senses chose targets, after the ones since; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
 | `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration`; `--decider jev` reaches the status |
-| `test_ruletree_codes.py`, `test_ruletree_tree.py`, `test_ruletree_walk.py`, `test_ruletree_game.py`, `test_ruletree_check.py`, `test_ruletree_loop.py`, `test_ruletree_cli.py` | The rule tree (§8.17): codes and sequences; rules added as exceptions, groups, a rule's own focus, actions checked where they are placed, a tree folder with its cornerstones, the shipped trees; the walk on the fake Jev (none, the focus asked before the children, a skill finished by `then`, one focus option needs no question, misses, kept answers); the game on ViZDoom (8-tic decisions, a replayed prefix is the same game, deaths and stalls, true angles, the run of fruitless firing, keys pressed only in `game.py`); the comparisons, and a check, gate and commit on a stand-in corridor (`tests/ruletree_fixtures.py`); the loop end to end with scripted writers and its `build.jsonl`; the command line |
+| `test_ruletree_codes.py`, `test_ruletree_tree.py`, `test_ruletree_walk.py`, `test_ruletree_game.py`, `test_ruletree_check.py`, `test_ruletree_loop.py`, `test_ruletree_cli.py`, `test_ruletree_bundle.py` | The rule tree (§8.17): codes and sequences; rules added as exceptions, groups, a rule's own focus, actions checked where they are placed, a tree folder with its cornerstones, the shipped trees; the walk on the fake Jev (none, the focus asked before the children, a skill finished by `then`, one focus option needs no question, misses, kept answers); the game on ViZDoom (8-tic decisions, a replayed prefix is the same game, deaths and stalls, true angles, the run of fruitless firing, keys pressed only in `game.py`, the same game when keys are held one tic at a time); the comparisons, and a check, gate and commit on a stand-in corridor (`tests/ruletree_fixtures.py`); the loop end to end with scripted writers and its `build.jsonl`; the command line; a recording of seed 9 on ViZDoom (every decision with its walk and screen, `--check` finding a changed action and a missing frame, the schema, the index listing it after the senses' recordings, the shipped rule-tree recordings) |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run lint`
