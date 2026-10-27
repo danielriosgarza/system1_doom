@@ -1,5 +1,5 @@
-import { type PointerEvent, useId, useMemo, useState } from 'react'
-import { EXPLAINERS } from '../content/explainers'
+import { type PointerEvent, type ReactNode, useId, useMemo, useState } from 'react'
+import { EXPLAINERS, type PanelId } from '../content/explainers'
 import { WATCH } from '../content/watch'
 import type { EpisodeBundle } from '../data/loader'
 import { type Pace, gameSeconds } from '../data/playback'
@@ -15,8 +15,10 @@ const SLOT_BOTTOM = 42
 const LANE_BOTTOM = 54
 const PAD = 8
 
+type Lane = 'top' | 'bottom'
+
 /** Which lane each mark sits in: what the game did above, what the instances and System 2 did below. */
-const LANE: Record<MarkKind, 'top' | 'bottom'> = {
+const LANE: Record<MarkKind, Lane> = {
   damage: 'top',
   kill: 'top',
   death: 'top',
@@ -59,6 +61,56 @@ export function Mark({ kind, x, y }: { kind: MarkKind; x: number; y: number }) {
 /** The timeline at the bottom of every screen but Watch: play, step, seek, and what happened where. */
 export function Scrubber({ bundle }: { bundle: EpisodeBundle }) {
   const { ticks } = bundle
+  const marks = useMemo(() => tickMarks(bundle), [bundle])
+  const health = useMemo(() => ticks.map((t) => t.state?.health ?? 0), [ticks])
+  return (
+    <Timeline
+      health={health}
+      marks={marks}
+      lane={LANE}
+      legend={MARK_LEGEND}
+      explainer="scrubber"
+      tick={(i) => ticks[i]?.tick ?? i}
+      seconds={(i) => gameSeconds(ticks[i]?.tick ?? i)}
+      words={(i) => words(ticks[i]?.executed_action) || 'missed'}
+    />
+  )
+}
+
+/** A colour band under each decision's slot, with its legend: the rule tree's top-level rule. */
+export interface Bands {
+  /** Each decision's band key; null leaves it without one. */
+  keys: Array<string | null>
+  legend: Array<{ key: string; label: string; title?: string }>
+}
+
+/**
+ * The timeline itself, for either solution: one slot per decision, the health line, the marks of what happened,
+ * optional bands, the transport, the counter and the pace.
+ */
+export function Timeline<K extends MarkKind>({
+  health,
+  marks,
+  lane,
+  legend,
+  explainer,
+  tick,
+  seconds,
+  words: wordsAt,
+  bands,
+}: {
+  health: number[]
+  marks: K[][]
+  lane: Record<K, Lane>
+  legend: Array<{ kind: K; label: string }>
+  explainer: PanelId
+  /** The decision's own number, for the tests and the URL. */
+  tick: (i: number) => number
+  seconds: (i: number) => number
+  /** The action of decision i in words, for the hover line. */
+  words: (i: number) => string
+  bands?: Bands
+}) {
   const tickIndex = useApp((s) => s.tickIndex)
   const playing = useApp((s) => s.playing)
   const pace = useApp((s) => s.pace)
@@ -67,14 +119,13 @@ export function Scrubber({ bundle }: { bundle: EpisodeBundle }) {
   const [hover, setHover] = useState<number | null>(null)
   const [open, setOpen] = useState(false)
   const bodyId = useId()
-  const marks = useMemo(() => tickMarks(bundle), [bundle])
-  const n = ticks.length
+  const n = health.length
   const slot = (width - PAD * 2) / Math.max(1, n)
   const xOf = (i: number) => PAD + slot * (i + 0.5)
   const indexAt = (clientX: number, rect: DOMRect) =>
     Math.max(0, Math.min(n - 1, Math.floor((clientX - rect.left - PAD) / Math.max(1, slot))))
   const healthY = (h: number) => SLOT_BOTTOM - (Math.max(0, Math.min(100, h)) / 100) * (SLOT_BOTTOM - SLOT_TOP)
-  const healthPath = ticks.map((t, i) => `${i === 0 ? 'M' : 'L'}${xOf(i)},${healthY(t.state?.health ?? 0)}`).join(' ')
+  const healthPath = health.map((h, i) => `${i === 0 ? 'M' : 'L'}${xOf(i)},${healthY(h)}`).join(' ')
 
   const onPointer = (e: PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -88,9 +139,16 @@ export function Scrubber({ bundle }: { bundle: EpisodeBundle }) {
     }
   }
 
-  const hoverTick = hover === null ? null : ticks[hover]
   const hoverMarks = hover === null ? [] : (marks[hover] ?? [])
-  const current = ticks[tickIndex]
+  const bandLabel = (i: number) => bands?.legend.find((b) => b.key === bands.keys[i])?.label
+  const tip: ReactNode =
+    hover === null ? null : (
+      <>
+        <strong>Decision {hover + 1}</strong>: {wordsAt(hover)}, health {fmt(health[hover] ?? 0, 0)}
+        {bands && bandLabel(hover) && <> · {bandLabel(hover)}</>}
+        {hoverMarks.length > 0 && <> · {hoverMarks.map((m) => legend.find((l) => l.kind === m)?.label).join(' · ')}</>}
+      </>
+    )
   return (
     <footer className="scrubber" id="panel-scrubber">
       <div className="scrubber-inner">
@@ -127,13 +185,9 @@ export function Scrubber({ bundle }: { bundle: EpisodeBundle }) {
           </button>
         </div>
         <div className="track" ref={ref}>
-          {hoverTick && (
+          {tip && (
             <div className="track-tip" style={{ left: Math.min(Math.max(xOf(hover ?? 0), 120), width - 120) }}>
-              <strong>Decision {(hover ?? 0) + 1}</strong>: {words(hoverTick.executed_action) || 'missed'}, health{' '}
-              {fmt(hoverTick.state?.health ?? 0, 0)}
-              {hoverMarks.length > 0 && (
-                <> · {hoverMarks.map((m) => MARK_LEGEND.find((l) => l.kind === m)?.label).join(' · ')}</>
-              )}
+              {tip}
             </div>
           )}
           <svg
@@ -145,14 +199,14 @@ export function Scrubber({ bundle }: { bundle: EpisodeBundle }) {
             aria-valuemin={1}
             aria-valuemax={n}
             aria-valuenow={tickIndex + 1}
-            aria-valuetext={`Decision ${tickIndex + 1}: ${words(current?.executed_action) || 'missed'}`}
+            aria-valuetext={`Decision ${tickIndex + 1}: ${wordsAt(tickIndex)}`}
             onPointerDown={onPointer}
             onPointerMove={onPointer}
             onPointerLeave={() => setHover(null)}
           >
-            {ticks.map((t, i) => (
+            {health.map((_, i) => (
               <rect
-                key={t.tick}
+                key={i}
                 x={PAD + slot * i + 0.5}
                 y={SLOT_TOP}
                 width={Math.max(1, slot - 1)}
@@ -162,15 +216,32 @@ export function Scrubber({ bundle }: { bundle: EpisodeBundle }) {
                 opacity={i === tickIndex ? 0.35 : 1}
               />
             ))}
+            {bands?.keys.map((key, i) =>
+              key === null ? null : (
+                <rect
+                  key={`band-${i}`}
+                  className={`band band-${key}`}
+                  x={PAD + slot * i + 0.5}
+                  y={SLOT_BOTTOM + 1}
+                  width={Math.max(1, slot - 1)}
+                  height={3}
+                />
+              ),
+            )}
             <path d={healthPath} fill="none" stroke="var(--pos)" strokeWidth={1.5} opacity={0.9} />
             {marks.map((list, i) =>
               list.map((kind, j) => {
-                const lane = LANE[kind]
-                const same = list.filter((x) => LANE[x] === lane)
+                const where = lane[kind]
+                const same = list.filter((x) => lane[x] === where)
                 const k = same.indexOf(kind)
                 const offset = (k - (same.length - 1) / 2) * Math.min(9, slot)
                 return (
-                  <Mark key={`${i}-${j}`} kind={kind} x={xOf(i) + offset} y={lane === 'top' ? LANE_TOP : LANE_BOTTOM} />
+                  <Mark
+                    key={`${i}-${j}`}
+                    kind={kind}
+                    x={xOf(i) + offset}
+                    y={where === 'top' ? LANE_TOP : LANE_BOTTOM + (bands ? 2 : 0)}
+                  />
                 )
               }),
             )}
@@ -186,17 +257,17 @@ export function Scrubber({ bundle }: { bundle: EpisodeBundle }) {
             />
           </svg>
         </div>
-        {current && (
+        {n > 0 && (
           // While playing, or following a live episode, the count changes several times a second: too often to announce.
           <span
             className="tick-counter"
             data-testid="tick-counter"
-            data-tick={current.tick}
+            data-tick={tick(tickIndex)}
             aria-live={playing || following ? 'off' : 'polite'}
           >
             Decision {tickIndex + 1}
             <span className="tick-last"> / {n}</span>
-            <span className="tick-seconds"> · {fmt(gameSeconds(current.tick), 1)} s</span>
+            <span className="tick-seconds"> · {fmt(seconds(tickIndex), 1)} s</span>
           </span>
         )}
         <div className="track-legend" aria-label="Mark legend">
@@ -206,7 +277,15 @@ export function Scrubber({ bundle }: { bundle: EpisodeBundle }) {
             </svg>{' '}
             health
           </span>
-          {MARK_LEGEND.map((m) => (
+          {bands?.legend.map((b) => (
+            <span key={b.key} title={b.title}>
+              <svg width={14} height={10} aria-hidden>
+                <rect className={`band band-${b.key}`} x={0} y={3} width={14} height={4} />
+              </svg>{' '}
+              {b.label}
+            </span>
+          ))}
+          {legend.map((m) => (
             <span key={m.kind}>
               <svg width={12} height={12} aria-hidden style={{ verticalAlign: -1 }}>
                 <Mark kind={m.kind} x={6} y={6} />
@@ -240,8 +319,8 @@ export function Scrubber({ bundle }: { bundle: EpisodeBundle }) {
         </span>
         {open && (
           <div className="scrub-explainer">
-            <p className="sentence">{EXPLAINERS.scrubber.sentence}</p>
-            <ExplainerBody id="scrubber" bodyId={bodyId} />
+            <p className="sentence">{EXPLAINERS[explainer].sentence}</p>
+            <ExplainerBody id={explainer} bodyId={bodyId} />
           </div>
         )}
       </div>

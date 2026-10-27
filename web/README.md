@@ -13,9 +13,16 @@ screen is one the agent recorded; nothing in the app ranks, scores or
 decides. In live mode (below) the same app follows an episode while it is
 played.
 
-**Online:** <https://danielriosgarza.github.io/system1_doom/>, the nine
-shipped recordings. Live mode is not there: a static site cannot stream,
-so it runs on your machine (below).
+The site shows the agent's two ways of playing. A side tab on the left of
+every page switches between them: **Senses and central**, described
+first below, and **Rule tree**, where Jev walks a tree of plain-language
+rules at each decision and the rules were written between games by the
+soft loop (`docs/DOCUMENTATION.md`, §8.17).
+
+**Online:** <https://danielriosgarza.github.io/system1_doom/>, the 14
+shipped recordings: nine of the senses and central, five of the rule
+tree. Live mode is not there: a static site cannot stream, so it runs on
+your machine (below).
 
 ## Run it
 
@@ -94,6 +101,56 @@ episode, decision and screen in the URL hash, for example
 The instances. While Watch plays, the hash keeps the decision playback
 started from, and is brought up to date on Pause or a change of screen.
 
+### The side tab and the rule tree
+
+The side tab is a strip on the left of every page; on a phone it is two
+buttons above the top bar. Switching keeps the screen at the same
+position (the third screen of one opens the third of the other) and
+opens the other solution's recording of the same seed, at its first
+decision. The picker lists only the recordings of the solution shown.
+The choice is remembered with the theme and the pace, so a later visit
+without a link lands on that solution's Watch. Every old link still
+opens the senses and central.
+
+The rule tree has six screens of its own, keys 1 to 6:
+
+- **Watch**: the recording at the agent's pace, beside the walk of the
+  decision shown. One row per question Jev answered (where in the tree
+  it was asked, the option it picked and its probability), a row for
+  each skill the walk went into, and the action played, with the rule it
+  came from. A click on a row opens that question on The questions.
+- **The questions**: every question of one decision, from a tab per
+  question. The text Jev was sent, exactly as sent (the state text, and
+  for the questions after a focus its `[focus]` line, marked), the screen
+  sent with it, every option with Jev's probability, and where the
+  answer led.
+- **How the rules were written**: the soft loop's record (`build.jsonl`)
+  step by step. Each pass over the training seeds with its games; each
+  proposed rule with the writer's reason, its check, its gate and what
+  became of it; the rules added, with a link to each in the tree; and the
+  held-out seeds.
+- **Results**: the seeds cleared at each pass, the benchmark of
+  `docs/DOCUMENTATION.md` §15 (cited there, not computed from the
+  recording), how often each rule was walked into and played in this
+  recording, and its calls, cost and time.
+- **The rule tree**: the whole tree as an outline, each rule under the
+  rule it is an exception to, with the walk of the decision shown marked.
+  A click on a rule shows its action, who wrote it and why, the proposal
+  that added it, and its cornerstone: the screen and state text of the
+  decision it was written for.
+- **Reference**: the one rule and the principles as they apply to the
+  rule tree, a drawing of the walk and the soft loop, the glossary's
+  rule-tree terms, how this recording was made, and the keys.
+
+Every screen but Watch shares a timeline like the senses and central's,
+with marks for damage, kills, a death and a miss, and a band under the
+decisions coloured by the rule picked at the top of the tree. Links are
+`#rules/<recording>/<decision>/<screen>`, with the screen ids `watch`,
+`questions`, `written`, `results`, `tree` and `reference`, for example
+`#rules/rules-corridor-11/12/questions`; without a screen a link opens
+The questions. With nothing named, the rule tree opens the newest cleared
+recording of `general-11`, the tree the agent plays by default.
+
 ## The recordings
 
 `public/episodes/` holds nine recordings of `deadly_corridor.cfg` with
@@ -132,6 +189,21 @@ costs and what System 2 did in each are in `docs/DOCUMENTATION.md` §15.
 Together the nine are 65.8 MB, mostly the decisions' text. Making the
 d1-ultra ones again needs `LIQUID_API_KEY`, the Jev ones
 `TYPESAFE_API_KEY`.
+
+The rule tree's five recordings play the same seeds with every decision
+made by Jev: `general-11`, the default tree, on seeds 9 to 12, and
+`codex-11`, the tree the soft loop wrote with Codex as the rule writer,
+on seed 9, so the site shows how both trees were written. All five
+cleared the corridor; on the same seeds the senses and central's newest
+recordings cleared one of four.
+
+| Recording | Tree | Result | Jev calls | Cost | Size |
+|---|---|---|---:|---:|---:|
+| `rules-corridor-9` | `general-11` | cleared in 43 decisions, 6 kills, health 70 | 143 | $0.0119 | 0.74 MB |
+| `rules-corridor-10` | `general-11` | cleared in 37 decisions, 6 kills, health 46 | 119 | $0.0100 | 0.65 MB |
+| `rules-corridor-11` | `general-11` | cleared in 47 decisions, 6 kills, health 100 | 166 | $0.0138 | 0.80 MB |
+| `rules-corridor-12` | `general-11` | cleared in 42 decisions, 6 kills, health 46 | 141 | $0.0117 | 0.73 MB |
+| `rules-codex-corridor-9` | `codex-11` | cleared in 43 decisions, 6 kills, health 70 | 140 | $0.0117 | 0.72 MB |
 
 ## Live mode
 
@@ -177,9 +249,9 @@ finds no `live/status.json` and is the recordings only.
 ```bash
 npm run lint         # oxlint, warnings fail
 npx prettier --check src e2e
-npm test             # Vitest, 73 tests: the loader (schema 1 refused), the strip and instance readings, System 2's records, learning, live events, playback, the glossary against the docs and the code
+npm test             # Vitest, 88 tests: the loader (schema 1 refused), the strip and instance readings, System 2's records, learning, live events, playback, the rule tree's recordings, the glossary against the docs and the code
 npm run build        # type-check and production build into dist/
-npm run e2e          # Playwright, 31 tests: Watch, The instances (verbatim evidence, out-of-scope channels absent), the slow system's history test table, Learning, Growing the menu, Reference, phone width, the top bar, live mode, the shipped recordings
+npm run e2e          # Playwright, 44 tests: Watch, The instances (verbatim evidence, out-of-scope channels absent), the slow system's history test table, Learning, Growing the menu, Reference, phone width, the top bar, live mode, the shipped recordings, the side tab, the rule tree's six screens
 ```
 
 The unit tests and most browser tests read
@@ -191,8 +263,11 @@ sense that fails and a central that answers off the menu. Playwright
 serves it with `e2e/live-server.mjs`, a stand-in for `serve` with no
 Python (port 4175), and again in live mode (port 4174), replaying it as
 `live-1`, `live-2`, … one tick every 80 ms with System 2's records after
-the ticks they followed; `e2e/recordings.spec.ts` runs against the built
-site with the shipped recordings (port 4173).
+the ticks they followed; `e2e/recordings.spec.ts`, `e2e/solutions.spec.ts`
+and `e2e/rules.spec.ts` run against the built site with the shipped
+recordings (port 4173). `e2e/rules.spec.ts` rebuilds the text each
+question was sent from `decisions.jsonl` and compares it with The
+questions character for character.
 
 ## CI and GitHub Pages
 
@@ -221,6 +296,15 @@ Without `--fresh-configuration` the episode starts from the configuration
 System 2 left in `runs/<scenario>/configuration.json`, as `corridor-9-v2`
 did.
 
+A rule-tree recording needs `TYPESAFE_API_KEY` instead:
+
+```bash
+python -m system1_doom.export --solution rule-tree --tree general-11 --seed 9 \
+    --out web/public/episodes/rules-corridor-9 --name rules-corridor-9
+```
+
+then `--check` and `--index` as above.
+
 ## When the trace models change
 
 The TypeScript types in `src/schema/bundle.ts` are generated from the
@@ -246,11 +330,12 @@ message that says so.
 | `src/data/learning.ts` | The ledgers over episodes and the tried counts behind the values |
 | `src/data/live.ts` | Live mode's data: `live/status.json`, the event stream, applying an event to the open bundle, and the picker's list |
 | `src/data/playback.ts` | The pace of play: one decision every 8 game frames in real time, one a second slow, and how long the end holds |
-| `src/store.ts` | The screens, one episode and its current decision, playback (playing, the pace, the landing's start and loop), the instance and glossary term open, the theme; in live mode the status, whether the viewer is following, and the stream's events applied as they arrive |
-| `src/screens/` | `Watch`, `Instances`, `SlowSystem`, `Learning`, `Menu` and `Reference` |
-| `src/components/` | The strip, the stage with its crossfade, the recording cards, the timeline (`Scrubber`), the panel frame and its explanation, bars, verbatim evidence, the relevance chart, the two-system drawing, linked glossary words (`Terms`, `TermLink`), the top bar |
-| `src/content/` | Every word on the screens, one file per screen; `explainers.ts`, each panel's explanation and the code behind it; `glossary.ts`, the glossary a test keeps in step with the documentation and the code |
-| `public/episodes/` | The nine recordings and their index |
+| `src/data/rules.ts` | The rule tree's recordings: loads one, rebuilds the text each question was sent, reads each step of a walk, the tree's rules and skills, actions in words, the timeline marks, how often each rule decided, and the soft loop's record (`readBuild`, both of its formats) |
+| `src/store.ts` | The solution shown (remembered), the screens, one episode and its current decision, a rule-tree recording and its open question, rule and step of the record, playback (playing, the pace, the landing's start and loop), the instance and glossary term open, the theme; in live mode the status, whether the viewer is following, and the stream's events applied as they arrive |
+| `src/screens/` | `Watch`, `Instances`, `SlowSystem`, `Learning`, `Menu` and `Reference`; `rules/` holds the rule tree's six (`Watch`, `Questions`, `HowWritten`, `Results`, `Tree`, `Reference`) |
+| `src/components/` | The strip, the stage with its crossfade, the recording cards, the timeline (`Scrubber`), the panel frame and its explanation, bars, verbatim evidence, the relevance chart, the two-system drawing, linked glossary words (`Terms`, `TermLink`), the top bar, the side tab (`SolutionTabs`) and the playback controls both solutions share (`Playback`) |
+| `src/content/` | Every word on the screens, one file per screen; `explainers.ts`, each panel's explanation and the code behind it; `glossary.ts`, the glossary a test keeps in step with the documentation and the code, each entry marked with the solutions it serves; `rules/`, the rule tree's words and explanations |
+| `public/episodes/` | The 14 recordings and their index |
 | `e2e/fixtures/episodes/` | The fixture recording the tests read |
 | `e2e/live-server.mjs` | The stand-in for `serve` the browser tests run against |
 

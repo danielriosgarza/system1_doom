@@ -229,8 +229,9 @@ For example, the Watch screen of the rule tree opens with:
 
 - [x] **Step 1:** Write the section in the same plain style: what a rule is, how the walk works, what the soft loop
   does, the checks, the measured results.
-- [ ] **Step 2:** Keep the glossary test in step (`web/src/content/glossary.test.ts` compares it with §18). Moved
+- [x] **Step 2:** Keep the glossary test in step (`web/src/content/glossary.test.ts` compares it with §18). Moved
   to milestone 4: each glossary entry links to the screen that shows it, and the rule-tree screens come there.
+  Done in milestone 4: 13 rule-tree terms, and Jev, Channel, Miss and Bundle with a meaning for each solution.
 
 ## Milestone 3: recordings
 
@@ -277,13 +278,13 @@ timeline, the same components where they fit, and the same way of writing (secti
 - Modify: `web/src/App.tsx`, `web/src/store.ts`, `web/src/components/TopBar.tsx`, `web/src/styles.css`
 - Test: `web/e2e/solutions.spec.ts`
 
-- [ ] **Step 1:** A vertical tab bar on the left edge of every screen with two tabs, "Senses and central" and "Rule
+- [x] **Step 1:** A vertical tab bar on the left edge of every screen with two tabs, "Senses and central" and "Rule
   tree". The selected tab is marked. On a narrow screen it becomes a two-button switch above the top bar.
-- [ ] **Step 2:** URLs: today's `#<episode>/<tick>/<screen>` keeps meaning senses and central, so every existing link
+- [x] **Step 2:** URLs: today's `#<episode>/<tick>/<screen>` keeps meaning senses and central, so every existing link
   still works; the rule tree uses `#rules/<episode>/<tick>/<screen>`.
-- [ ] **Step 3:** Switching keeps the screen position (screen 3 opens screen 3) and opens the same seed when the
+- [x] **Step 3:** Switching keeps the screen position (screen 3 opens screen 3) and opens the same seed when the
   other solution has a recording of it, at its first decision.
-- [ ] **Step 4:** The episode picker lists only the selected solution's recordings; the choice is remembered with
+- [x] **Step 4:** The episode picker lists only the selected solution's recordings; the choice is remembered with
   the theme and pace.
 
 ### Task 4.2: The six screens
@@ -303,19 +304,30 @@ timeline, the same components where they fit, and the same way of writing (secti
 | 5 | Growing the menu | The rule tree | The whole tree as an outline: each rule's condition and action, the focus questions and the aiming skill, with the route of the current decision highlighted. Clicking a rule shows where it came from: the failure, the writer, the check and the gate. |
 | 6 | Reference | Reference | The one rule and the principles for this solution; a drawing of its two systems (Jev walking the tree; the soft loop writing rules); the glossary; how this recording was made (tree, writer, seed, command); the keys. |
 
-- [ ] **Step 1:** The timeline at the bottom is shared, with marks for damage, a kill, a death, a miss, and which
+- [x] **Step 1:** The timeline at the bottom is shared, with marks for damage, a kill, a death, a miss, and which
   top-level rule decided (threat or goal).
-- [ ] **Step 2:** Each screen opens with its one or two explaining sentences, written to section 5, and each panel
+- [x] **Step 2:** Each screen opens with its one or two explaining sentences, written to section 5, and each panel
   has the explanation toggle the current site has.
-- [ ] **Step 3:** A browser test compares the state text on The questions with `decisions.jsonl` character for
+- [x] **Step 3:** A browser test compares the state text on The questions with `decisions.jsonl` character for
   character, as `instances.spec.ts` does for the senses.
-- [ ] **Step 4:** A first-time reading: someone who has not seen the project reads each screen's opening and
+- [x] **Step 4:** A first-time reading: someone who has not seen the project reads each screen's opening and
   explanations, and every sentence they stop at is rewritten.
+
+Notes from building it:
+- The dossier the writer was given is not in the recording (it stays in the run folder that wrote the tree). How
+  the rules were written says so; The rule tree shows the screen and state text each rule was written for (its
+  cornerstone) instead.
+- Results cites the benchmark from `docs/DOCUMENTATION.md` §15 and says so; a recording holds one game, not 81.
+- `general-11`'s record had one held-out line for two runs on different seeds; it is now two lines (seeds 20-39,
+  20 of 20; seeds 40-59, 18 of 20), with the second pass on 20-39 after them.
+- A `codex-11` recording of seed 9 ships beside `general-11`'s four, so both trees' records are on the site
+  (decision 2). With nothing named, the rule tree opens a `general-11` recording.
+- In `codex-11`'s record two checks stopped on an API error; they show as "the check stopped", not as rejected.
 
 ### Task 4.3: Ship
 
-- [ ] **Step 1:** `npm run lint`, `npm test`, `npm run e2e`, `pytest`.
-- [ ] **Step 2:** Update `web/README.md` (the side tab, the six rule-tree screens) and `README.md`.
+- [x] **Step 1:** `npm run lint`, `npm test`, `npm run e2e`, `pytest`.
+- [x] **Step 2:** Update `web/README.md` (the side tab, the six rule-tree screens) and `README.md`.
 - [ ] **Step 3:** One pull request per milestone, from `claude/project-thread-9jae9h` or a branch per milestone.
 
 ## Not in this plan

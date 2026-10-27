@@ -26,23 +26,62 @@ function useLayers(src: string): { a: string; b: string; top: Layer } {
 
 /** The game as large as the page allows: the frame the instances saw at this decision. */
 export function Stage({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick: TickTrace; tickIndex: number }) {
+  const end = endFrameUrl(bundle)
+  const frames = useMemo(
+    () => [...bundle.ticks.map((t) => frameUrl(bundle, t.tick)), ...(end ? [end] : [])],
+    [bundle, end],
+  )
+  return (
+    <FrameStage
+      name={bundle.name}
+      frames={frames}
+      src={frameUrl(bundle, tick.tick)}
+      end={end}
+      endText={endLine(bundle.meta)}
+      alt={frameAlt(tick, tickIndex, bundle.ticks.length)}
+      width={bundle.meta.frames.width ?? 320}
+      height={bundle.meta.frames.height ?? 240}
+    />
+  )
+}
+
+/**
+ * The stage of either solution: the frame of the decision showing, the end frame with the result once playback
+ * has run past the last decision, and a large Play button before the first play.
+ */
+export function FrameStage({
+  name,
+  frames,
+  src,
+  end,
+  endText,
+  alt,
+  width,
+  height,
+}: {
+  /** The recording's name: a new one waits for its own first frames. */
+  name: string
+  /** Every frame of the recording, the end frame last, decoded in order. */
+  frames: string[]
+  src: string
+  end: string | null
+  /** The line over the end frame. */
+  endText: string
+  alt: string
+  width: number
+  height: number
+}) {
   const ended = useApp((s) => s.ended)
   const playing = useApp((s) => s.playing)
   const played = useApp((s) => s.played)
   const waiting = useApp((s) => s.playWhenReady)
   const following = useApp((s) => s.following)
   const loop = useApp((s) => s.loop)
-  const count = bundle.ticks.length
-  const end = endFrameUrl(bundle)
 
   // Every frame of the open recording is fetched and decoded once, in order; playback that waits for them
   // starts when the first few are ready, or after a few seconds whatever happened.
-  const urls = useMemo(
-    () => [...bundle.ticks.map((t) => frameUrl(bundle, t.tick)), ...(end ? [end] : [])],
-    [bundle, end],
-  )
-  const ready = usePreloadedFrames(urls)
-  const need = Math.min(READY_FRAMES, urls.length)
+  const ready = usePreloadedFrames(frames)
+  const need = Math.min(READY_FRAMES, frames.length)
   useEffect(() => {
     if (waiting && ready >= need) playWhenReady()
   }, [waiting, ready, need])
@@ -50,13 +89,11 @@ export function Stage({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
     if (!waiting) return
     const timer = window.setTimeout(playWhenReady, READY_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
-  }, [waiting, bundle.name])
+  }, [waiting, name])
 
   const atEnd = ended && end !== null
-  const layers = useLayers(atEnd && end ? end : frameUrl(bundle, tick.tick))
-  const alt = atEnd ? `The game after the last decision. ${endLine(bundle.meta)}.` : frameAlt(tick, tickIndex, count)
-  const width = bundle.meta.frames.width ?? 320
-  const height = bundle.meta.frames.height ?? 240
+  const layers = useLayers(atEnd && end ? end : src)
+  const shownAlt = atEnd ? `The game after the last decision. ${endText}.` : alt
   const offerPlay = !playing && !played && !waiting && !following
   return (
     <div className="watch-stage" data-testid="stage" data-ended={atEnd ? 'true' : undefined}>
@@ -66,7 +103,7 @@ export function Stage({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
             key={layer}
             className={`watch-img ${layers.top === layer ? 'top' : ''}`}
             src={layers[layer]}
-            alt={layers.top === layer ? alt : ''}
+            alt={layers.top === layer ? shownAlt : ''}
             aria-hidden={layers.top === layer ? undefined : true}
             width={width}
             height={height}
@@ -75,7 +112,7 @@ export function Stage({ bundle, tick, tickIndex }: { bundle: EpisodeBundle; tick
         ))}
         {atEnd && (
           <div className="watch-end" data-testid="watch-end">
-            <p>{endLine(bundle.meta)}</p>
+            <p>{endText}</p>
             {loop && playing && <p className="watch-again">{WATCH.again}</p>}
           </div>
         )}

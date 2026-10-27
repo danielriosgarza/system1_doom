@@ -15,7 +15,10 @@ export const SUPPORTED_SCHEMA_VERSION = 2
 
 export interface EpisodeIndex {
   schema_version: number
+  /** The recordings of the senses and central. */
   episodes: BundleIndexEntry[]
+  /** The rule tree's recordings, read by the rule-tree screens (`data/rules.ts`). */
+  rules?: BundleIndexEntry[]
 }
 
 /** One line of `reflections.jsonl`: a System 2 cycle, a trial's verdict, or a note. */
@@ -49,9 +52,9 @@ export class BundleError extends Error {
 
 export type Fetcher = (url: string) => Promise<Response>
 
-const defaultFetcher: Fetcher = (url) => fetch(url)
+export const defaultFetcher: Fetcher = (url) => fetch(url)
 
-async function fetchText(url: string, fetcher: Fetcher, optional = false): Promise<string> {
+export async function fetchText(url: string, fetcher: Fetcher, optional = false): Promise<string> {
   let response: Response
   try {
     response = await fetcher(url)
@@ -65,7 +68,7 @@ async function fetchText(url: string, fetcher: Fetcher, optional = false): Promi
   return response.text()
 }
 
-function parseJson<T>(text: string, file: string): T {
+export function parseJson<T>(text: string, file: string): T {
   try {
     return JSON.parse(text) as T
   } catch (error) {
@@ -111,13 +114,17 @@ export const isSensesRecording = (entry: Pick<BundleIndexEntry, 'solution'>): bo
   (entry.solution ?? 'senses-and-central') === 'senses-and-central'
 
 /**
- * The index of the recordings these screens read. `index.json` also lists the rule tree's recordings, which have
- * files of their own (`decisions.jsonl` instead of `ticks.jsonl`), so they are left out here.
+ * The index of the recordings, split by solution: `episodes` are the senses and central's, `rules` the rule tree's,
+ * which have files of their own (`decisions.jsonl` instead of `ticks.jsonl`).
  */
 export async function loadIndex(root = 'episodes', fetcher: Fetcher = defaultFetcher): Promise<EpisodeIndex> {
   const index = parseJson<EpisodeIndex>(await fetchText(`${root}/index.json`, fetcher), `${root}/index.json`)
   checkSchemaVersion(index.schema_version, `${root}/index.json`)
-  return { ...index, episodes: index.episodes.filter(isSensesRecording) }
+  return {
+    ...index,
+    episodes: index.episodes.filter(isSensesRecording),
+    rules: index.episodes.filter((e) => !isSensesRecording(e)),
+  }
 }
 
 export interface LoadOptions {

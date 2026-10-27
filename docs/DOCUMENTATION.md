@@ -1294,7 +1294,8 @@ the panels that show it and names its code); how this recording was made
 budget, calls and misses, the result, the `export` command that records
 one like it and the `serve` command that plays live); and the keys.
 
-**The recordings.** Nine bundles ship in `web/public/episodes/`, all of
+**The recordings.** Nine bundles of the senses and central ship in
+`web/public/episodes/` (with the rule tree's five, §8.17 and §15), all of
 `deadly_corridor.cfg` with the best networks as evidence. Four show the
 agent as it is now, the senses choosing the motor's targets:
 `optimized-corridor-9` to `optimized-corridor-12`, seeds 9 to 12 from
@@ -1762,6 +1763,44 @@ segment's keys one tic at a time; the game plays the same (a test plays
 a seed both ways). `--check` checks that every decision has a walk, that
 the action played is the action of the node the walk reached, and that
 every frame exists.
+
+**On the website.** A side tab on the left of every page (two buttons
+above the top bar on a phone) switches between the senses and central
+and the rule tree. The rule tree has six screens of its own, keys 1 to 6:
+
+- **Watch**: the recording at the agent's pace, beside the walk of the
+  decision shown: one row per question (where it was asked, Jev's pick
+  and its probability), the skill steps, and the action played with the
+  rule it came from.
+- **The questions**: every question of one decision, each with the text
+  Jev was sent exactly as sent (the state text, and after a focus its
+  `[focus]` line), the screen, every option with Jev's probability, and
+  where the answer led.
+- **How the rules were written**: `build.jsonl` step by step: each pass
+  over the training seeds, each proposal with the writer's reason, its
+  check and its gate, the rules added, and the held-out seeds.
+- **Results**: the seeds cleared at each pass, the benchmark of §15 (cited,
+  not computed from the recording), how often each rule was walked into
+  and played in this recording, and its calls and cost.
+- **The rule tree**: the whole tree as an outline with this decision's
+  walk marked, and for any rule its action, who wrote it and why, the
+  proposal that added it, and its cornerstone.
+- **Reference**: the one rule and principles as they apply here, a
+  drawing of the walk and the soft loop, the glossary's rule-tree terms
+  (§18), how this recording was made, and the keys.
+
+Its links are `#rules/<recording>/<decision>/<screen>`, with the screen
+ids `watch`, `questions`, `written`, `results`, `tree` and `reference`; a
+link without a screen opens The questions, and every senses-and-central
+link works as before. Switching keeps the screen at the same position and
+opens the other solution's recording of the same seed at its first
+decision; the picker lists only the shown solution's recordings, and the
+choice is remembered with the theme and the pace, so a later visit
+without a link lands on that solution's Watch. Without a link the rule
+tree opens a `general-11` recording (`DEFAULT_TREE`), the newest that
+cleared. A browser test rebuilds the text each question was sent from
+`decisions.jsonl` and compares it with The questions character for
+character.
 
 ---
 
@@ -2470,8 +2509,9 @@ run, as above, not across days.
 
 **The rule tree's recordings** (2026-10-27, `export --solution rule-tree
 --tree general-11`, seeds 9 to 12, the seeds of the senses' recordings
-`optimized-corridor-9` to `-12`; 10 s budget). All four ship in
-`web/public/episodes/`, 2.9 MB in all.
+`optimized-corridor-9` to `-12`, and `--tree codex-11` on seed 9, so the
+site shows both trees and how each was written; 10 s budget). All five
+ship in `web/public/episodes/`, 3.6 MB in all.
 
 | Recording | Decisions | Result | Calls | Cost | Misses | Time per decision | Size |
 |---|---:|---|---:|---:|---:|---:|---:|
@@ -2479,6 +2519,7 @@ run, as above, not across days.
 | `rules-corridor-10` | 37 | cleared, 6 kills, health 46 (reward 2,278) | 119 | $0.0100 | 0 | 0.91 s | 0.65 MB |
 | `rules-corridor-11` | 47 | cleared, 6 kills, health 100 (reward 2,280) | 166 | $0.0138 | 0 | 0.96 s | 0.80 MB |
 | `rules-corridor-12` | 42 | cleared, 6 kills, health 46 (reward 2,282) | 141 | $0.0117 | 0 | 0.93 s | 0.73 MB |
+| `rules-codex-corridor-9` (`codex-11`) | 43 | cleared, 6 kills, health 70 (reward 2,281) | 140 | $0.0117 | 0 | 0.92 s | 0.72 MB |
 
 Every call was answered by `jev-1.14.0`, and no decision was marked
 stalled. On the same seeds the senses' recordings cleared one of four
@@ -2547,9 +2588,9 @@ minute with them.
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run lint`
-(oxlint), `npx prettier --check src e2e`, `npm test` (Vitest, 73 tests in
-6 files), `npm run build` (type-check and bundle) and `npm run e2e`
-(Playwright, 31 tests in 5 files, about 30 s with the build). Both read
+(oxlint), `npx prettier --check src e2e`, `npm test` (Vitest, 88 tests in
+7 files), `npm run build` (type-check and bundle) and `npm run e2e`
+(Playwright, 44 tests in 7 files, about 50 s with the build). Both read
 `web/e2e/fixtures/episodes/fixture-corridor`, a 40-tick schema-2 bundle
 the fake d1-ultra plays on the corridor (`web/scripts/record_fixture.py`
 records it, without the real API), whose System 2 admits a macro
@@ -2565,11 +2606,14 @@ give the app a miss of each kind to show.
 | `src/data/system2.test.ts` | A cycle's nine reflectors in call order with who proposed what, and those not called with why; the cycle a screen opens on; a cycle's trial verdict; outcomes and changes in words; the history test's ticks (bad, good, rest) with old and new answers and each metric; the configuration at start and end; the relevance points over episodes; the tried counts of this tick's situation |
 | `src/data/live.test.ts`, `src/data/playback.test.ts` | Live events applied to the open episode: newer ticks only, each of System 2's records once and in order, the proposals and the catalog, the final meta; the picker's list with the live episodes; an episode in progress with no tick yet, read with the ledger it started from; the live status, and none without `serve` or from a `serve` of the old schema; the pace (8 game frames a decision, or one a second), the end's hold and the start once eight frames are ready |
 | `src/content/glossary.test.ts` | Every term of §18 is in the app's glossary (as a term or alias) and every app term is in §18, at least 16; the design's words are there and the removed architecture's are not; every link names a screen and panel that exist; every `code` names a real `.py` under `src/system1_doom/` and a symbol defined in it; unique ids and aliases, none one letter or a bare “gate”; only the n-step return and the history test explain with a formula; linked words are whole words, longest first, once each |
+| `src/data/rules.test.ts` | On the shipped rule-tree recordings: a recording's decisions in order, its tree and record; a decision count that disagrees with `episode.json`, or a senses recording, refused; the text each question was sent (the state text, the `[focus]` line after a focus, none for a skill step); actions in words; every walk counted at the root and each decision once where it ended; both formats of `build.jsonl` (outcomes, a stopped check, a round played again, the held-out runs); the default tree's recording opened first |
 | `e2e/watch.spec.ts` | On the fixture: a fresh visit lands on Watch and plays within 1.5 s; pausing holds the decision in the address; no sideways scroll at 390 px |
 | `e2e/instances.spec.ts` | The strip shows five senses and the central, with spoke, silent or missed and the pick; a central miss; the configuration line moving to version 2; a click on a row opens that instance; the survival evidence is verbatim with no `[pickups]` and the combat evidence has no `[messages]`, both equal to `ticks.jsonl`; the frame; the miss's reason and raw answer; the answers as bars |
 | `e2e/screens.spec.ts` | The slow system's version timeline, the history test's table (12 ticks, the metrics, the verdict), the trial and the judge's evidence, a sampled tick opening The instances, a cycle's reflectors and their evidence, the ledger; Learning's chart and tables; Growing the menu's proposal, stages and admit instance; Reference's rule, drawing, glossary and provenance; a linked word opening its entry; no sideways scroll at 390 px on any screen; the top bar on one row at 1280 px |
 | `e2e/live.spec.ts` | Against the live stand-in: Watch follows schema-2 ticks as they arrive; The slow system fills in from `reflection` events (cycles, versions 2 and 3, the history test); The instances follows the newest tick |
 | `e2e/recordings.spec.ts` | Against the built site with the shipped recordings: the landing plays the newest cleared one, and the cards mark the ones recorded before the senses chose targets; on it, Act names the motor's targets and the combat sense shows its target answer; every recording opens on every screen without an error and with no sideways scroll at 390 px; the top bar on one row at 1280 px |
+| `e2e/solutions.spec.ts` | Against the shipped recordings: the side tab switches solution at the same screen position, to the recording of the same seed, and Back crosses between them; the picker lists only the shown solution's recordings; the choice is remembered, and links to either solution still open it; the rule tree's top bar on one row at 1280 px beside the side tab, and the side tab above it at 390 px |
+| `e2e/rules.spec.ts` | Against the shipped recordings: Watch's rows, picks, skills and action equal `decisions.jsonl`; a row opens its question; the text of every question on The questions equals the text rebuilt from `decisions.jsonl`, character for character (every decision of one recording, every seventh of the others); a rule added by the soft loop links to the tree and back; Results' counts add up to the decisions; The rule tree marks the walk; Reference's drawing, glossary and provenance; every screen of every recording without an error or sideways scroll at 390 px |
 
 **Continuous integration.** `.github/workflows/checks.yml` runs on every
 pull request and every push to main, in two jobs of at most ten minutes
@@ -2647,7 +2691,10 @@ play; call `ctrl.wait_system2(timeout)` before reading its records.
 The web app's glossary (`web/src/content/glossary.ts`, on its Reference
 screen) carries every term below in its own words, with where to see it
 and the code that keeps it, and a test reads this table: a term added
-here fails the app's tests until the glossary has it. The words of the
+here fails the app's tests until the glossary has it. The terms after
+**Slow path** are the rule tree's (§8.17); Jev, channel, miss and bundle
+are used by both solutions, and the glossary gives each its rule-tree
+meaning beside the senses and central's. The words of the
 architecture this design replaced (the arbiter, the modules, the gate
 network, budget modes, committed picks, exploration pressure) are gone
 from both; the Reference screen names them in one line of history.
@@ -2655,13 +2702,13 @@ from both; the Reference screen names them in one line of history.
 | Term | Meaning |
 |---|---|
 | **d1-ultra** | Liquid AI's decision model; answers typed `choice`/`noul`/`score` questions with distributions. Every decision is one of its answers: the five senses, the central and the admit instance are each one call (§8.6, §8.10), and so are System 2's reflectors, its central and the trial judge (§8.16). |
-| **Jev** | TypeSafe's decision model, which answers the same typed questions in the same form at `api.typesafe.ai`; with `--decider jev` every instance of both systems calls it instead of d1-ultra, with the same evidence and questions (§8.10). The screen goes to it as an image asset, and its cost is counted at its published price per input token, since its usage block names none. Six of the shipped recordings were played by it (§15). |
+| **Jev** | TypeSafe's decision model, which answers the same typed questions in the same form at `api.typesafe.ai`; with `--decider jev` every instance of both systems calls it instead of d1-ultra, with the same evidence and questions (§8.10). The screen goes to it as an image asset, and its cost is counted at its published price per input token, since its usage block names none. Six of the shipped senses-and-central recordings were played by it (§15), and every rule-tree recording: each question of a walk is one call. |
 | **System 1** | The fast system that decides every action, once per tick: five senses, then the central, then Act (`system1.py`, §7, §8.7). It never waits for System 2. |
 | **System 2** | The slow system, on its own thread: it reads the history and changes the configuration one change at a time — reflectors propose, its central chooses one change or none, a scope change must pass the history test, and every change is a trial the judge keeps or reverts (§8.16). |
 | **Instance** | One d1-ultra call with its own scope and its own finite questions (`InstanceSpec`, `run_instance`). Its instructions name its concern and say it sees only the evidence given; they never say how to weigh anything (§8.6). |
 | **Sense** | One of the five System 1 instances — survival, combat, navigation, resource, goal. Each sees only its scope and answers `speak` (noul), `action` (a choice over the legal menu) and `reason` (a choice over its reasons) (§8.6). |
 | **Central** | The instance that chooses the executed action: one choice over the legal menu, after the messages, each sense's relevance record and the exploration level (§8.7). System 2 has a central of its own, which chooses one configuration change or none. |
-| **Channel** | One named piece of evidence rendered as plain text under a `[name]` header; eighteen in all, in a fixed order. `messages`, `relevance` and `exploration` are for the central only (§8.5). |
+| **Channel** | One named piece of evidence rendered as plain text under a `[name]` header; eighteen in all, in a fixed order. `messages`, `relevance` and `exploration` are for the central only (§8.5). The rule tree's state has its own eleven, `goal` to `history`, and `[focus]` after a focus question (`ruletree/game.py`). |
 | **Scope** | The channels an instance is shown: at most 7, always with `menu`. Whatever a scope leaves out never reaches the instance; System 2 widens or narrows a scope one channel at a time (§8.4, §8.16). |
 | **Message** | What a sense that spoke sends the central: action, reason, strength — one line of the central's `messages` channel. A silent or missed sense sends nothing (§8.6). |
 | **Target** | What the motor aims or walks at, chosen by a sense: the combat sense's `target` answer is the visible enemy the aim locks onto, the resource sense's the remembered pickup a pickup-seeking action walks to (`system1.targets_of`, §8.7). With one candidate no question is asked and that one is the target; a sense that missed leaves its target empty, and the motor never picks one of its own. |
@@ -2669,7 +2716,7 @@ from both; the Reference screen names them in one line of history.
 | **Relevance / relevance ledger** | Each sense's track record per context signature: spoke, followed and paid off, overruled and whether the chosen action paid off, mean strength either way. Shown to the central as counts; nothing in it is multiplied into a decision (`relevance.py`, §8.8). |
 | **Paid off / n-step return** | A decision paid off when its n-step return (n = 8, γ = 0.9, over the per-decision game reward, truncated at the episode's end; `features.n_step_returns`) was positive. The ledger, the history test's strata and the trials all read it (§8.8). |
 | **Configuration** | Everything System 2 may change, as versioned data: scopes, the exploration level, the active strategy, the admitted macros, and the bounds. Version 1 is the design's; each change makes the next version and takes effect only at a tick boundary (§8.4). |
-| **Miss** | An answer that did not come or could not be read: timeout, error, HTTP 429 past the budget, off the menu, malformed. Nothing stands in for it: a missed sense is silent, a missed central holds no keys (§8.6, §14). |
+| **Miss** | An answer that did not come or could not be read: timeout, error, HTTP 429 past the budget, off the menu, malformed. Nothing stands in for it: a missed sense is silent, a missed central holds no keys (§8.6, §14). In the rule tree the walk stops at the node it has reached and plays that node's action (§8.17). |
 | **Pick** | How the central's answer becomes the action: `top` under `exploit`, `drawn` from d1's own distribution under `explore` (seeded), or `missed` (`system1.pick_action`, §8.7). |
 | **Exploration level** | Configuration: `exploit` or `explore`, stated to the central in its `exploration` channel. There is no temperature and no bonus (§8.7). |
 | **Reflector** | One of System 2's nine instances — five sense auditors, a central auditor, the menu, strategy and exploration reflectors — each reading history channels over three windows and proposing at most one change from a menu the bounds have filtered (`reflectors.py`, §8.16). |
@@ -2686,9 +2733,22 @@ from both; the Reference screen names them in one line of history.
 | **Value network** | One of five small networks trained between episodes on the agent's own play, one per sense's reward. Their predicted returns are evidence in the `values` channel, with how often each action was tried there in training; they decide nothing (`learning.py`, §8.9). |
 | **Network share** | Experience-weighted mean of `n/(n+25)` over the tries seen in training: how familiar play has become to the value networks. A report only; it weighs nothing. |
 | **Tick** | One decision: state → evidence → five senses → central → the action's primitives over ≈ 8 game tics, not one ViZDoom game tic. |
-| **Bundle** | One recorded episode as the web app reads it: `episode.json`, `ticks.jsonl`, `reflections.jsonl`, `proposals.jsonl`, the relevance ledger, the training counts and the frames, written and checked by `python -m system1_doom.export` (§8.15). |
+| **Bundle** | One recorded episode as the web app reads it: `episode.json`, `ticks.jsonl`, `reflections.jsonl`, `proposals.jsonl`, the relevance ledger, the training counts and the frames, written and checked by `python -m system1_doom.export` (§8.15). A rule-tree bundle holds `episode.json`, `decisions.jsonl` (every walk, question by question), `tree.json` with its cornerstones, `build.jsonl` and the frames (`export --solution rule-tree`, §8.17). |
 | **Live episode** | An episode being played right now by `python -m system1_doom.serve` and streamed tick by tick, with System 2's records as they happen; when it ends it is a bundle like any recording (§8.15). |
 | **Slow path** | The async proposal worker (Codex or templates) and the admission bounds and admit instance that can grow the menu, asked by System 2's menu reflector; never blocks a tick, and changes the configuration only at a tick boundary (§9). |
+| **Rule tree** | The second solution: a tree of rules Jev walks at every decision (`ruletree/`, §8.17). A tree is a file: rules, focus questions, skills, and each added rule's cornerstone. |
+| **Rule** | A node of the tree: a condition and an action. A rule under another is an exception to it; the walk goes into it when Jev picks its condition (`RuleNode`). |
+| **Condition** | A rule's sentence about what the state shows ("The focus channel says the enemy is more than 400 units away."), offered to Jev as one option of a choice; the program never tests it. |
+| **Walk** | One decision of the rule tree: from the root, "Which of these is true right now?" at each node with children, into the child Jev picks, until it picks `none` or reaches a leaf; that node's action plays (`walk.decide`). |
+| **Focus** | One listed item Jev picked at a node with a focus question (the biggest danger among the threats, the goal among the landmarks); later questions read it as a `[focus]` channel (`walk.with_focus`). |
+| **Skill** | A set of rules any rule can call as its action, with a `then` code that finishes the decision; the shipped trees have one, `aim` (`SkillCall`). |
+| **Action code** | Four letters, walk/sidestep/turn/fire (`F001` walks forward and fires), held for the decision's 8 tics, or a sequence such as `00R0:3+0001:5` (`ruletree/codes.py`). |
+| **Tic** | One game frame, 1/35 s. A rule-tree decision is 8 tics; a senses-and-central tick holds its action for about as long. |
+| **Soft loop** | How a tree's rules are written between games: play the training seeds, have a rule writer propose a rule for a failure, check it on that game (sees, unchanged, avoids), gate it on every training seed, and add it only if it passes both (`ruletree/loop.py`). |
+| **Rule writer** | The model that proposes rules in the soft loop, Codex or Claude, from a dossier of the failed game (`ruletree/writers.py`). It never plays; Jev judges every condition. |
+| **Cornerstone** | The decision a rule was written for, kept with it: seed, prefix of actions, state text, screen, expected route and standing. Later rules must keep it on its route or end no worse (`Cornerstone`). |
+| **Training seed** | A seed the soft loop plays and writes rules for: 9–19 for the shipped trees. A rule's gate counts training seeds cleared with and without it. |
+| **Held-out seed** | A seed the soft loop writes no rule for, played once every training seed clears: 20–39 for the shipped trees. |
 
 ---
 

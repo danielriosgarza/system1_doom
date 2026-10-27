@@ -1,9 +1,19 @@
 import { deciderName } from '../content/decider'
 import { LIVE_COPY } from '../content/live'
+import { rulesRecordingLabel } from '../content/rules/words'
 import { recordingName, resultWords, scenarioWords } from '../content/watch'
 import { type PickerEntry, mergedEpisodes } from '../data/live'
 import type { BundleIndexEntry } from '../schema/bundle'
-import { SCREENS, followLive, openEpisode, openRecording, setScreen, setState, useApp } from '../store'
+import {
+  followLive,
+  openEpisode,
+  openRecording,
+  openRulesEpisode,
+  screensOf,
+  setScreen,
+  setState,
+  useApp,
+} from '../store'
 
 /** How a recording is named in the picker, in the words Watch's cards use. */
 function recordingLabel(e: BundleIndexEntry): string {
@@ -60,7 +70,10 @@ function LiveBadge() {
 /** Four things on every screen: the name, the screens, the episode picker and the theme. */
 export function TopBar() {
   const index = useApp((s) => s.index)
-  const bundle = useApp((s) => s.bundle)
+  const solution = useApp((s) => s.solution)
+  const sensesBundle = useApp((s) => s.bundle)
+  const rules = useApp((s) => s.rules)
+  const bundle = solution === 'senses' ? sensesBundle : null
   const screen = useApp((s) => s.screen)
   const theme = useApp((s) => s.theme)
   const live = useApp((s) => s.live)
@@ -70,7 +83,10 @@ export function TopBar() {
   const recordings = items.filter((e) => e.live === null)
   // On Watch a recording picked here plays from the start, as a card does; elsewhere it opens at its first decision.
   const pick = (name: string) => {
-    if (name === live?.current) followLive()
+    if (solution === 'rules') {
+      if (screen === 'watch') void openRecording(name)
+      else void openRulesEpisode(name)
+    } else if (name === live?.current) followLive()
     else if (screen === 'watch') void openRecording(name)
     else void openEpisode(name)
   }
@@ -78,10 +94,10 @@ export function TopBar() {
     <header className={`topbar ${bundle && liveOpen === bundle.name ? 'is-live' : ''}`}>
       <div className="brand">
         <h1>System 1 Doom</h1>
-        <span>every decision made by {deciderName(bundle?.meta.decider)}</span>
+        <span>every decision made by {deciderName(solution === 'rules' ? 'jev' : bundle?.meta.decider)}</span>
       </div>
       <nav className="screens" aria-label="Screens">
-        {SCREENS.map((s) => (
+        {screensOf(solution).map((s) => (
           <button
             key={s.id}
             type="button"
@@ -92,10 +108,20 @@ export function TopBar() {
           </button>
         ))}
       </nav>
-      <LiveBadge />
+      {solution === 'senses' && <LiveBadge />}
       <label className="control">
-        <select value={bundle?.name ?? ''} onChange={(e) => pick(e.target.value)} aria-label="Episode">
-          {liveItems.length > 0 ? (
+        <select
+          value={(solution === 'rules' ? rules?.name : bundle?.name) ?? ''}
+          onChange={(e) => pick(e.target.value)}
+          aria-label="Episode"
+        >
+          {solution === 'rules' ? (
+            (index?.rules ?? []).map((e) => (
+              <option key={e.name} value={e.name} title={e.title}>
+                {rulesRecordingLabel(e)}
+              </option>
+            ))
+          ) : liveItems.length > 0 ? (
             <>
               <optgroup label={LIVE_COPY.pickerGroup}>
                 {liveItems.map((e) => (

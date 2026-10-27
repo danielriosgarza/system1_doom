@@ -173,6 +173,25 @@
       "tree": null
     },
     {
+      "name": "rules-codex-corridor-9",
+      "title": "deadly corridor, rule tree codex-11, seed 9",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "none",
+      "seed": 9,
+      "cleared": true,
+      "died": false,
+      "reward": 2280.5,
+      "ticks": 43,
+      "kills": 6.0,
+      "configuration_start": 1,
+      "configuration_end": 1,
+      "decider": "jev",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-27T10:32:35.049815+00:00",
+      "solution": "rule-tree",
+      "tree": "codex-11"
+    },
+    {
       "name": "rules-corridor-9",
       "title": "deadly corridor, rule tree general-11, seed 9",
       "scenario": "deadly_corridor.cfg",

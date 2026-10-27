@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Scrubber } from './components/Scrubber'
+import { SolutionTabs } from './components/SolutionTabs'
 import { TopBar } from './components/TopBar'
 import { LIVE_COPY } from './content/live'
 import { PACE_MS } from './data/playback'
@@ -9,11 +10,13 @@ import { Menu } from './screens/Menu'
 import { Reference } from './screens/Reference'
 import { SlowSystem } from './screens/SlowSystem'
 import { Watch } from './screens/Watch'
+import { RulesScreens } from './screens/rules/RulesScreens'
 import {
-  SCREENS,
+  decisionCount,
   followLive,
   getState,
   onHashChange,
+  screensOf,
   setScreen,
   setState,
   setTickIndex,
@@ -39,6 +42,9 @@ export default function App() {
   const theme = useApp((s) => s.theme)
   const pace = useApp((s) => s.pace)
   const screen = useApp((s) => s.screen)
+  const solution = useApp((s) => s.solution)
+  const rules = useApp((s) => s.rules)
+  const both = useApp((s) => (s.index?.rules?.length ?? 0) > 0 && (s.index?.episodes.length ?? 0) > 0)
   // The playback timer runs here, so a recording plays on every screen.
   usePlayback()
 
@@ -74,9 +80,9 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
-      const count = getState().bundle?.ticks.length ?? 0
+      const count = decisionCount()
       const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
-      const target = /^[1-9]$/.test(key) ? SCREENS[Number(key) - 1] : undefined
+      const target = /^[1-9]$/.test(key) ? screensOf(getState().solution)[Number(key) - 1] : undefined
       if (target) setScreen(target.id)
       else if (key === 'l') followLive()
       else if (e.key === 'ArrowRight') step(e.shiftKey ? 10 : 1)
@@ -92,18 +98,28 @@ export default function App() {
   }, [])
 
   const tick = bundle?.ticks[tickIndex]
+  const decision = rules?.decisions[tickIndex]
   return (
     // One decision's span on screen, for animations that run once per decision.
-    <div className="app" style={{ ['--decision-ms' as string]: `${Math.round(PACE_MS[pace])}ms` }}>
+    <div
+      className={`app ${both ? 'has-solutions' : ''}`}
+      data-solution={solution}
+      style={{ ['--decision-ms' as string]: `${Math.round(PACE_MS[pace])}ms` }}
+    >
+      <SolutionTabs />
       <TopBar />
       {error && (
         <p className="status error" role="alert">
           {error}
         </p>
       )}
-      {!error && loading && !bundle && <p className="status">Loading the episode…</p>}
-      {!error && bundle && !tick && <p className="status">{LIVE_COPY.waiting}</p>}
-      {bundle && tick && (
+      {solution === 'rules' && !error && loading && !rules && <p className="status">Loading the episode…</p>}
+      {solution === 'rules' && rules && decision && (
+        <RulesScreens bundle={rules} decision={decision} index={tickIndex} screen={screen} />
+      )}
+      {solution === 'senses' && !error && loading && !bundle && <p className="status">Loading the episode…</p>}
+      {solution === 'senses' && !error && bundle && !tick && <p className="status">{LIVE_COPY.waiting}</p>}
+      {solution === 'senses' && bundle && tick && (
         <>
           {screen === 'watch' && <Watch bundle={bundle} tick={tick} tickIndex={tickIndex} />}
           {screen === 'instances' && <Instances bundle={bundle} tick={tick} tickIndex={tickIndex} />}
