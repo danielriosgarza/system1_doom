@@ -1,5 +1,7 @@
 // What each panel explains when its "?" is opened: one sentence always shown, a few paragraphs, the code it
-// reads, and a formula only where one applies (the n-step return and the history test's metrics).
+// reads, and a formula only where one applies (the n-step return and the history test's metrics). The rule tree's
+// panels are in `rules/explainers.ts`.
+import { RULE_EXPLAINERS } from './rules/explainers'
 
 export interface Explainer {
   title: string
@@ -243,8 +245,9 @@ export const EXPLAINERS = {
   keys: {
     title: 'Keyboard shortcuts',
     sentence: 'Moving through a recording without the mouse.',
-    paragraphs: ['The shortcuts do nothing while a text field has the focus.'],
+    paragraphs: ['The shortcuts do nothing while you type in a text field.'],
   },
+  ...RULE_EXPLAINERS,
 } satisfies Record<string, Explainer>
 
 export type PanelId = keyof typeof EXPLAINERS

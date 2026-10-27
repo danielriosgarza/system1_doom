@@ -1,4 +1,4 @@
-// A tiny external store: one episode, one current tick, the screen, and the viewer's settings.
+// A tiny external store: the solution shown, one episode, one current tick, the screen, and the viewer's settings.
 import { useEffect, useSyncExternalStore } from 'react'
 import {
   LIVE_NAME,
@@ -18,12 +18,25 @@ import {
   loadIndex,
 } from './data/loader'
 import { END_HOLD_MS, PACE_MS, type Pace } from './data/playback'
+import { type RulesBundle, defaultRulesEpisode, loadRulesEpisode } from './data/rules'
+import type { BundleIndexEntry } from './schema/bundle'
 
 export type Theme = 'dark' | 'light'
-export type Screen = 'watch' | 'instances' | 'slow' | 'learning' | 'menu' | 'reference'
 
-/** The screens in the order the tabs and the keys 1 to 6 list them; the ids are the URL's. */
-export const SCREENS: Array<{ id: Screen; label: string }> = [
+/** The two ways this package plays: the senses and central, and the rule tree. */
+export type Solution = 'senses' | 'rules'
+export type SensesScreen = 'watch' | 'instances' | 'slow' | 'learning' | 'menu' | 'reference'
+export type RulesScreen = 'watch' | 'questions' | 'written' | 'results' | 'tree' | 'reference'
+export type Screen = SensesScreen | RulesScreen
+
+/** The side tab's two tabs, in its order. */
+export const SOLUTIONS: Array<{ id: Solution; label: string }> = [
+  { id: 'senses', label: 'Senses and central' },
+  { id: 'rules', label: 'Rule tree' },
+]
+
+/** The senses and central's screens, in the order the tabs and the keys 1 to 6 list them; the ids are the URL's. */
+export const SCREENS: Array<{ id: SensesScreen; label: string }> = [
   { id: 'watch', label: 'Watch' },
   { id: 'instances', label: 'The instances' },
   { id: 'slow', label: 'The slow system' },
@@ -32,17 +45,44 @@ export const SCREENS: Array<{ id: Screen; label: string }> = [
   { id: 'reference', label: 'Reference' },
 ]
 
+/** The rule tree's screens, at the same positions: screen 2 of one solution is screen 2 of the other. */
+export const RULE_SCREENS: Array<{ id: RulesScreen; label: string }> = [
+  { id: 'watch', label: 'Watch' },
+  { id: 'questions', label: 'The questions' },
+  { id: 'written', label: 'How the rules were written' },
+  { id: 'results', label: 'Results' },
+  { id: 'tree', label: 'The rule tree' },
+  { id: 'reference', label: 'Reference' },
+]
+
+export const screensOf = (solution: Solution): Array<{ id: Screen; label: string }> =>
+  solution === 'rules' ? RULE_SCREENS : SCREENS
+
+const hasScreen = (solution: Solution, screen: string | undefined): screen is Screen =>
+  screensOf(solution).some((s) => s.id === screen)
+
 export interface AppState {
   index: EpisodeIndex | null
+  /** Which solution's screens show; the side tab switches it. */
+  solution: Solution
+  /** The senses and central's open recording. */
   bundle: EpisodeBundle | null
+  /** The rule tree's open recording. */
+  rules: RulesBundle | null
   loading: boolean
   error: string | null
-  /** Position in bundle.ticks, not the tick number. */
+  /** Position in bundle.ticks (or in rules.decisions), not the tick number. */
   tickIndex: number
   screen: Screen
   theme: Theme
   /** The instance open on The instances: a sense's name or `central`. */
   instance: string
+  /** The step of the walk open on The questions, by its position in the decision's steps. */
+  question: number
+  /** The rule open on The rule tree; null shows the rule the decision's walk ended at. */
+  rule: string | null
+  /** The entry of the build record open on How the rules were written; null opens the first proposal. */
+  round: number | null
   playing: boolean
   /** Real time (one decision every 8 game frames) or slow (one a second). */
   pace: Pace
@@ -72,7 +112,7 @@ export interface AppState {
   liveOpen: string | null
 }
 
-type Settings = Partial<Pick<AppState, 'theme' | 'pace'>>
+type Settings = Partial<Pick<AppState, 'theme' | 'pace' | 'solution'>>
 
 const SETTINGS_KEY = 'system1-doom-site'
 
@@ -103,13 +143,18 @@ let themePicked = saved.theme === 'light' || saved.theme === 'dark'
 
 let state: AppState = {
   index: null,
+  solution: saved.solution === 'rules' ? 'rules' : 'senses',
   bundle: null,
+  rules: null,
   loading: true,
   error: null,
   tickIndex: 0,
   screen: 'watch',
   theme: themePicked ? (saved.theme as Theme) : prefersLight ? 'light' : 'dark',
   instance: 'survival',
+  question: 0,
+  rule: null,
+  round: null,
   playing: false,
   pace: saved.pace === 'slow' ? 'slow' : 'real',
   playWhenReady: false,
@@ -132,8 +177,8 @@ export function getState(): AppState {
 export function setState(patch: Partial<AppState>): void {
   const next = { ...state, ...patch }
   if (next.theme !== state.theme) themePicked = true
-  if (next.theme !== state.theme || next.pace !== state.pace) {
-    writeSettings({ pace: next.pace, ...(themePicked ? { theme: next.theme } : {}) })
+  if (next.theme !== state.theme || next.pace !== state.pace || next.solution !== state.solution) {
+    writeSettings({ pace: next.pace, solution: next.solution, ...(themePicked ? { theme: next.theme } : {}) })
   }
   state = next
   listeners.forEach((listener) => listener())
@@ -145,17 +190,31 @@ function subscribe(listener: () => void): () => void {
 }
 
 export function useApp<T>(selector: (s: AppState) => T): T {
-  return useSyncExternalStore(subscribe, () => selector(state))
+  const get = () => selector(state)
+  // The same snapshot on the server, where the glossary's tests render linked text.
+  return useSyncExternalStore(subscribe, get, get)
+}
+
+/** How many decisions the open recording of the solution showing has. */
+export function decisionCount(s: AppState = state): number {
+  return s.solution === 'rules' ? (s.rules?.decisions.length ?? 0) : (s.bundle?.ticks.length ?? 0)
+}
+
+/** The name of the open recording of the solution showing. */
+export function openName(s: AppState = state): string | null {
+  return (s.solution === 'rules' ? s.rules?.name : s.bundle?.name) ?? null
 }
 
 // ---------------------------------------------------------------------------------------------
 // The URL hash: `#<episode name>/<tick>/<screen>`; without a screen it means The instances, so a link to a
 // decision opens that decision. `#live/<screen>` follows the live episode, whichever it is; plain `#live`
-// lands on Watch. While a recording plays, the hash keeps the tick it started from and is written when
-// playback stops: browsers limit how often a page may rewrite its address, and real time is more than four
-// decisions a second.
+// lands on Watch. The rule tree's are `#rules/<episode name>/<decision>/<screen>`; without a screen it means The
+// questions. While a recording plays, the hash keeps the tick it started from and is written when playback
+// stops: browsers limit how often a page may rewrite its address, and real time is more than four decisions a
+// second.
 
 const LIVE_HASH = 'live'
+const RULES_HASH = 'rules'
 
 /** The viewer asked the system for less motion: nothing plays on its own, and nothing fades. */
 export function prefersReducedMotion(): boolean {
@@ -166,26 +225,43 @@ export function prefersReducedMotion(): boolean {
   )
 }
 
-function readHash(): { episode: string | null; tick: number | null; screen: Screen | null } {
+interface Wanted {
+  /** Null for a visit without a hash. */
+  solution: Solution | null
+  episode: string | null
+  tick: number | null
+  screen: Screen | null
+}
+
+function readHash(): Wanted {
   const parts = decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/')
-  const [episode, tick, screen] = parts[0] === LIVE_HASH ? [LIVE_HASH, '', parts[1]] : parts
+  const rules = parts[0] === RULES_HASH
+  const [episode, tick, screen] = rules ? parts.slice(1) : parts[0] === LIVE_HASH ? [LIVE_HASH, '', parts[1]] : parts
   const parsed = tick === undefined || tick === '' ? NaN : Number(tick)
+  const solution: Solution | null = rules ? 'rules' : episode ? 'senses' : null
   return {
+    solution,
     episode: episode || null,
     tick: Number.isInteger(parsed) ? parsed : null,
-    screen: SCREENS.some((s) => s.id === screen) ? (screen as Screen) : null,
+    screen: hasScreen(solution ?? 'senses', screen) ? screen : null,
   }
 }
 
 /** Ticks replace the history entry; a change of screen adds one, so Back returns to the last screen. */
 function writeHash(push = false): void {
-  const { bundle, tickIndex, screen, following, live } = state
-  if (!bundle) return
-  const tick = bundle.ticks[tickIndex]?.tick ?? 0
-  const hash =
-    following && live?.current === bundle.name
-      ? `#${LIVE_HASH}/${screen}`
-      : `#${encodeURIComponent(bundle.name)}/${tick}/${screen}`
+  const { bundle, rules, solution, tickIndex, screen, following, live } = state
+  let hash: string
+  if (solution === 'rules') {
+    if (!rules) return
+    hash = `#${RULES_HASH}/${encodeURIComponent(rules.name)}/${rules.decisions[tickIndex]?.decision ?? 0}/${screen}`
+  } else {
+    if (!bundle) return
+    const tick = bundle.ticks[tickIndex]?.tick ?? 0
+    hash =
+      following && live?.current === bundle.name
+        ? `#${LIVE_HASH}/${screen}`
+        : `#${encodeURIComponent(bundle.name)}/${tick}/${screen}`
+  }
   if (window.location.hash === hash) return
   if (push) window.history.pushState(null, '', hash)
   else window.history.replaceState(null, '', hash)
@@ -199,7 +275,7 @@ const INTERACTED: Partial<AppState> = { loop: false, playWhenReady: false }
 
 /** Move the cursor; any move the viewer makes stops following the live episode and the landing's looping. */
 export function setTickIndex(index: number): void {
-  const count = state.bundle?.ticks.length ?? 0
+  const count = decisionCount()
   if (count === 0) return
   const clamped = Math.max(0, Math.min(count - 1, index))
   if (clamped !== state.tickIndex || state.following || state.ended || state.loop || state.playWhenReady) {
@@ -214,9 +290,15 @@ export function step(delta: number): void {
 
 /**
  * Switch screen. Leaving the landing while it plays on its own pauses it, so the next screen holds still on the
- * decision that was showing; playback the viewer started carries on.
+ * decision that was showing; playback the viewer started carries on. A screen only the other solution has
+ * switches to that solution.
  */
 export function setScreen(screen: Screen): void {
+  if (!hasScreen(state.solution, screen)) {
+    const other: Solution = state.solution === 'rules' ? 'senses' : 'rules'
+    if (hasScreen(other, screen)) void switchSolution(other, screen)
+    return
+  }
   if (screen === state.screen) return
   const autoplaying = state.loop || state.playWhenReady
   // The entry being left keeps the decision that was showing, which playback has not written.
@@ -245,18 +327,114 @@ export function openTerm(term: string): void {
   setState({ term })
 }
 
+/** Open one question of the decision showing on The questions; playback pauses there. */
+export function openQuestion(step: number): void {
+  setState({ question: step, playing: false, ended: false, ...INTERACTED })
+  setScreen('questions')
+  writeHash()
+}
+
+/** Open one rule on The rule tree; null follows the decision showing. */
+export function openRule(id: string | null): void {
+  setState({ rule: id, ...INTERACTED })
+  setScreen('tree')
+}
+
+/** Open one entry of the build record on How the rules were written. */
+export function openRound(entry: number): void {
+  setState({ round: entry, ...INTERACTED })
+  setScreen('written')
+}
+
+/** The recording a solution opens when nothing names one. */
+function defaultOf(solution: Solution, entries: BundleIndexEntry[]): string | null {
+  return solution === 'rules' ? defaultRulesEpisode(entries) : defaultEpisode({ episodes: entries })
+}
+
+/**
+ * The recording a solution opens when switched to: one of the same seed as the one left (the one it had open, if
+ * it is), else the one it had open, else its default.
+ */
+function recordingFor(
+  solution: Solution,
+  entries: BundleIndexEntry[],
+  seed: number | undefined,
+  loaded: string | null,
+): string | null {
+  const same = entries.filter((e) => e.seed === seed)
+  if (loaded && same.some((e) => e.name === loaded)) return loaded
+  if (same.length > 0) return defaultOf(solution, same)
+  if (loaded && entries.some((e) => e.name === loaded)) return loaded
+  return defaultOf(solution, entries)
+}
+
+/** The seed of the recording the solution showing has open, or is opening when it has not loaded yet. */
+function seedShowing(): number | undefined {
+  const { solution, index } = state
+  if (state.loading && openingName?.solution === solution) {
+    const entries = (solution === 'rules' ? index?.rules : index?.episodes) ?? []
+    const name = openingName.name
+    const entry = entries.find((e) => e.name === name)
+    if (entry) return entry.seed
+  }
+  return solution === 'rules' ? state.rules?.meta.seed : state.bundle?.meta.seed
+}
+
+/**
+ * Show the other solution: the screen at the same position (screen 3 opens screen 3), and the recording of the same
+ * seed when it has one, at its first decision. Playback stops; the choice is remembered with the theme and pace.
+ */
+export async function switchSolution(to: Solution, screen?: Screen): Promise<void> {
+  if (to === state.solution) {
+    if (screen) setScreen(screen)
+    return
+  }
+  const position = Math.max(
+    0,
+    screensOf(state.solution).findIndex((s) => s.id === state.screen),
+  )
+  const target = screen ?? screensOf(to)[position]?.id ?? 'watch'
+  const seed = seedShowing()
+  // The entry being left keeps the decision that was showing; while a recording loads, its hash already names it.
+  if (!state.loading) writeHash()
+  setState({
+    solution: to,
+    screen: target,
+    playing: false,
+    ended: false,
+    following: false,
+    error: null,
+    tickIndex: 0,
+    ...INTERACTED,
+  })
+  window.scrollTo({ top: 0 })
+  const entries = (to === 'rules' ? state.index?.rules : state.index?.episodes) ?? []
+  const loaded = to === 'rules' ? (state.rules?.name ?? null) : (state.bundle?.name ?? null)
+  const name = recordingFor(to, entries, seed, loaded)
+  if (!name) {
+    setState({ error: 'episodes/index.json lists no recording of this solution.' })
+    return
+  }
+  if (name === loaded) {
+    writeHash(true)
+    return
+  }
+  if (to === 'rules') await openRulesEpisode(name, null, true)
+  else await openEpisode(name, null, false, true)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Playback. The timer lives in usePlayback (App), so a recording plays on every screen.
 
 /** Play or pause. Play at the last decision starts again from the first. */
 export function togglePlay(): void {
-  const { playing, bundle, tickIndex, ended } = state
+  const { playing, tickIndex, ended } = state
   if (playing) {
     setState({ playing: false, ...INTERACTED })
     writeHash()
     return
   }
-  const last = (bundle?.ticks.length ?? 1) - 1
+  const last = Math.max(1, decisionCount()) - 1
   setState({
     playing: true,
     played: true,
@@ -274,7 +452,7 @@ export function setPace(pace: Pace): void {
 
 /** The open recording's first frames are decoded: start the playback a fresh visit or a card asked for. */
 export function playWhenReady(): void {
-  if (!state.playWhenReady || !state.bundle) return
+  if (!state.playWhenReady || !openName()) return
   setState({ playWhenReady: false, playing: true, played: true, ended: false })
 }
 
@@ -283,14 +461,14 @@ export function playWhenReady(): void {
  * anything else stops. A live episode still being played only ever stops at its newest decision.
  */
 export function advancePlayback(): void {
-  const { bundle, tickIndex, loop, ended, live } = state
-  const count = bundle?.ticks.length ?? 0
-  if (!bundle || count === 0 || ended) return
+  const { bundle, tickIndex, loop, ended, live, solution } = state
+  const count = decisionCount()
+  if (count === 0 || ended) return
   if (tickIndex < count - 1) {
     setState({ tickIndex: tickIndex + 1 })
     return
   }
-  if (live?.current === bundle.name) {
+  if (solution === 'senses' && bundle && live?.current === bundle.name) {
     setState({ playing: false, ...INTERACTED })
     writeHash()
     return
@@ -329,7 +507,7 @@ export function usePlayback(): void {
  */
 export async function openRecording(name: string): Promise<void> {
   const play = !prefersReducedMotion()
-  if (state.bundle?.name === name) {
+  if (openName() === name) {
     setState({
       tickIndex: 0,
       ended: false,
@@ -342,12 +520,32 @@ export async function openRecording(name: string): Promise<void> {
     return
   }
   setState({ ...INTERACTED, ended: false })
-  await openEpisode(name, null)
-  if (state.bundle?.name === name && !state.error) setState({ playWhenReady: play })
+  if (state.solution === 'rules') await openRulesEpisode(name, null)
+  else await openEpisode(name, null)
+  if (openName() === name && !state.error) setState({ playWhenReady: play })
 }
 
-/** Counts calls to openEpisode, so a slow load never replaces a later one. */
+/** Counts calls to openEpisode and openRulesEpisode, so a slow load never replaces a later one. */
 let opening = 0
+/** The recording the latest of those calls opens, and its solution. */
+let openingName: { solution: Solution; name: string } | null = null
+
+/** Open a rule-tree recording at a decision, or at the first; `push` adds a history entry for it. */
+export async function openRulesEpisode(name: string, decision: number | null = null, push = false): Promise<void> {
+  const mine = ++opening
+  openingName = { solution: 'rules', name }
+  setState({ loading: true, error: null, playing: false, following: false, ended: false, ...INTERACTED })
+  try {
+    const rules = await loadRulesEpisode(name)
+    if (mine !== opening) return
+    const found = decision === null ? -1 : rules.decisions.findIndex((d) => d.decision === decision)
+    setState({ rules, loading: false, tickIndex: Math.max(0, found) })
+    writeHash(push)
+  } catch (error) {
+    if (mine !== opening) return
+    setState({ loading: false, error: error instanceof Error ? error.message : String(error) })
+  }
+}
 /** Live events that arrive while the live episode's files load; applied once they have. */
 let pending: LiveEvent[] | null = null
 
@@ -356,8 +554,14 @@ let pending: LiveEvent[] | null = null
  * kept up to date by the live events. With `follow`, the cursor rides the newest tick; a live episode
  * that has just ended is then shown at its end, marked ended, until the next one starts.
  */
-export async function openEpisode(name: string, tick: number | null = null, follow = false): Promise<void> {
+export async function openEpisode(
+  name: string,
+  tick: number | null = null,
+  follow = false,
+  push = false,
+): Promise<void> {
   const mine = ++opening
+  openingName = { solution: 'senses', name }
   const live = state.live?.current === name
   // Following holds while the files load, so an episode that starts meanwhile is still followed into.
   setState({ loading: true, error: null, playing: false, following: follow, ended: false, ...INTERACTED })
@@ -374,7 +578,7 @@ export async function openEpisode(name: string, tick: number | null = null, foll
       tickIndex: follow ? Math.max(0, bundle.ticks.length - 1) : Math.max(0, found),
       liveOpen: live || (follow && LIVE_NAME.test(name)) || name === state.liveOpen ? name : null,
     })
-    writeHash()
+    writeHash(push)
   } catch (error) {
     if (mine !== opening) return
     pending = null
@@ -389,6 +593,8 @@ export async function openEpisode(name: string, tick: number | null = null, foll
 export function followLive(): void {
   const { live, bundle } = state
   if (!live?.running && !live?.current) return
+  // Live play is the senses and central's.
+  if (state.solution === 'rules') setState({ solution: 'senses', screen: 'watch', tickIndex: 0 })
   setState({ ...INTERACTED, ended: false })
   if (!live.current) {
     setState({ following: true, playing: false })
@@ -483,12 +689,18 @@ export async function start(): Promise<void> {
     setState({ index, live })
     if (live?.running) await connectLive()
     const wanted = readHash()
-    // A fresh visit lands on Watch; a link to a decision without a screen opens The instances.
-    const screen = wanted.screen ?? (wanted.episode && wanted.episode !== LIVE_HASH ? 'instances' : 'watch')
-    setState({ screen })
     // While serve is playing, a visit without a link, or with #live, follows live play: the episode in
     // progress, or between two episodes the one that just ended, until the next starts.
     const wantsLive = !!state.live?.running && (!wanted.episode || wanted.episode === LIVE_HASH)
+    // A link names its solution; a visit without one opens the solution chosen last, if it has recordings here.
+    const solution = wanted.solution ?? (wantsLive ? 'senses' : state.solution)
+    if (solution === 'rules' && (index.rules ?? []).length > 0) {
+      await startRules(index.rules ?? [], wanted)
+      return
+    }
+    // A fresh visit lands on Watch; a link to a decision without a screen opens The instances.
+    const screen = wanted.screen ?? (wanted.episode && wanted.episode !== LIVE_HASH ? 'instances' : 'watch')
+    setState({ solution: 'senses', screen })
     const followed = wantsLive ? (state.live?.current ?? state.live?.episodes[0]?.name) : undefined
     if (followed) {
       await openEpisode(followed, null, true)
@@ -515,27 +727,57 @@ export async function start(): Promise<void> {
   }
 }
 
+/** The first visit's rule-tree half of `start`: the linked recording, or the newest cleared one, as for the senses. */
+async function startRules(entries: BundleIndexEntry[], wanted: Wanted): Promise<void> {
+  const screen = wanted.screen ?? (wanted.episode ? 'questions' : 'watch')
+  setState({ solution: 'rules', screen })
+  const names = entries.map((e) => e.name)
+  const name =
+    wanted.episode && names.includes(wanted.episode)
+      ? wanted.episode
+      : (defaultRulesEpisode(entries) ?? (names[0] as string))
+  await openRulesEpisode(name, wanted.episode === name ? wanted.tick : null)
+  if (screen === 'watch' && state.rules?.name === name && state.tickIndex === 0 && !prefersReducedMotion()) {
+    setState({ playWhenReady: true, loop: true })
+  }
+}
+
+/** The landing's own playback stops when the viewer goes elsewhere. */
+function showScreen(solution: Solution, screen: Screen): void {
+  if (solution === state.solution && screen === state.screen) return
+  const autoplaying = state.loop || state.playWhenReady
+  setState({ solution, screen, ...INTERACTED, ...(autoplaying ? { playing: false } : {}) })
+}
+
 export function onHashChange(): void {
   const wanted = readHash()
-  const { bundle } = state
   if (!wanted.episode) return
+  if (wanted.solution === 'rules') {
+    const before = state.solution
+    showScreen('rules', wanted.screen ?? 'questions')
+    const { rules } = state
+    if (!rules || rules.name !== wanted.episode) {
+      void openRulesEpisode(wanted.episode, wanted.tick)
+      return
+    }
+    const found = wanted.tick === null ? -1 : rules.decisions.findIndex((d) => d.decision === wanted.tick)
+    if (found >= 0 && found !== state.tickIndex) setState({ tickIndex: found, ended: false })
+    else if (found < 0 && before !== 'rules') setState({ tickIndex: 0, ended: false })
+    return
+  }
   if (wanted.episode === LIVE_HASH) {
-    const screen = wanted.screen ?? 'watch'
-    if (screen !== state.screen) setState({ screen, ...INTERACTED })
+    showScreen('senses', wanted.screen ?? 'watch')
     if (!state.following) followLive()
     return
   }
-  const screen = wanted.screen ?? 'instances'
-  if (screen !== state.screen) {
-    const autoplaying = state.loop || state.playWhenReady
-    setState({ screen, ...INTERACTED, ...(autoplaying ? { playing: false } : {}) })
-  }
+  const before = state.solution
+  showScreen('senses', wanted.screen ?? 'instances')
+  const { bundle } = state
   if (!bundle || bundle.name !== wanted.episode) {
     void openEpisode(wanted.episode, wanted.tick)
     return
   }
-  if (wanted.tick !== null) {
-    const found = bundle.ticks.findIndex((t) => t.tick === wanted.tick)
-    if (found >= 0 && found !== state.tickIndex) setState({ tickIndex: found, ended: false })
-  }
+  const found = wanted.tick === null ? -1 : bundle.ticks.findIndex((t) => t.tick === wanted.tick)
+  if (found >= 0 && found !== state.tickIndex) setState({ tickIndex: found, ended: false })
+  else if (found < 0 && before !== 'senses') setState({ tickIndex: 0, ended: false })
 }

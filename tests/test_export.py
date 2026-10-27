@@ -252,7 +252,8 @@ def test_a_bundle_recorded_before_the_senses_chose_targets_says_so_and_is_listed
     assert [(e.name, e.senses_choose_targets) for e in entries] == [("now", True), ("before", False)]
 
 
-SHIPPED = sorted(p.parent for p in RECORDINGS.glob("*/episode.json"))
+# The senses-and-central recordings; the rule tree's are checked in test_ruletree_bundle.py.
+SHIPPED = sorted(p.parent for p in RECORDINGS.glob("*/episode.json") if "solution" not in json.loads(p.read_text()))
 
 
 @pytest.mark.skipif(not SHIPPED, reason="no shipped recordings")
@@ -271,8 +272,9 @@ def test_every_shipped_recording_is_a_valid_schema_2_bundle_played_by_a_known_de
 def test_the_site_ships_recordings_played_by_each_decider():
     listed = json.loads((RECORDINGS / "index.json").read_text())["episodes"]
     assert {e["decider"] for e in listed} == set(DECIDERS)
-    # The landing plays the newest cleared recording, one in which the senses chose the motor's targets.
-    newest = max((e for e in listed if e["cleared"]), key=lambda e: e["recorded_at"])
+    # The landing plays the newest cleared senses recording, one in which the senses chose the motor's targets.
+    senses = [e for e in listed if e.get("solution", "senses-and-central") == "senses-and-central"]
+    newest = max((e for e in senses if e["cleared"]), key=lambda e: e["recorded_at"])
     assert newest["senses_choose_targets"] is True
 
 

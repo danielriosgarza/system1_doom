@@ -37,6 +37,9 @@ explicit = true
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"system1_doom.ruletree" = ["prompts/*.md", "trees/*/tree.json", "trees/*/build.jsonl", "trees/*/cornerstones/*.jpg"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]

@@ -72,6 +72,27 @@ else changes: the same evidence, questions, bounds and misses, and a
 bundle or a summary says which decider played (`decider`) and which
 model version answered (`models`).
 
+## The rule tree
+
+A second way to play, separate from the senses and the central
+(`docs/DOCUMENTATION.md` §8.17). At each decision Jev walks a tree of
+rules: each rule is a condition in plain words and an action, and its
+children are its exceptions. At each level Jev is asked "Which of these
+is true right now?" and the walk moves into the rule it picks; the rule
+where the walk ends gives the action. The rules were written between
+games by the soft loop: it plays the training seeds, a rule writer
+(Claude or Codex) proposes one rule for the moment a game went wrong,
+and the program adds it only if a replay of that game and a pass over
+every training seed show it helps. On 81 seeds the default tree,
+`general-11`, cleared 77 and 79 in two runs; on the 30 seeds both were
+played, it cleared 29 and 28 against the senses and central's 20 and 22
+(§15).
+
+```bash
+python -m system1_doom.ruletree show --tree general-11
+python -m system1_doom.ruletree play runs/rule-tree --tree general-11 --seed 9   # needs TYPESAFE_API_KEY
+```
+
 ## Web explainer
 
 **<https://danielriosgarza.github.io/system1_doom/>** opens on the agent
@@ -110,6 +131,14 @@ app reads trace schema 2 and is described in
 are made are in
 [`docs/DOCUMENTATION.md` §8.15](docs/DOCUMENTATION.md#815-episode-bundles--the-web-explainer--exportpy-servepy-web),
 and the recordings' numbers in §15.
+
+A side tab on the left switches to the rule tree, which has six screens
+of its own: Watch, with the questions of each walk beside the game; The
+questions, with the text Jev was sent for each question exactly as sent
+and its probability for every option; How the rules were written, the
+soft loop's record step by step; Results; the whole tree, with where each
+rule came from; and Reference. It ships five rule-tree recordings, all
+cleared: `general-11` on seeds 9 to 12, and `codex-11` on seed 9.
 
 To watch it decide live, `python -m system1_doom.serve` plays on your
 machine and the same app follows each decision as it is made, and each of

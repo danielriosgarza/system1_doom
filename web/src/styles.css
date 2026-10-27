@@ -2565,3 +2565,497 @@ kbd {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ------------------------------------------------------------------ the side tab: which solution */
+
+/* A vertical bar on the left edge of every screen; on a phone, two buttons above the top bar. */
+.solution-tabs {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 38px;
+  padding: 10px 4px;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.solution-tabs button {
+  flex: none;
+  padding: 12px 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.solution-label {
+  display: inline-block;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.solution-tabs button:hover {
+  color: var(--text);
+  background: var(--hover-soft);
+}
+
+.solution-tabs button[aria-current='page'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.app.has-solutions {
+  padding-left: 38px;
+}
+
+@media (max-width: 640px) {
+  .solution-tabs {
+    position: static;
+    flex-direction: row;
+    width: auto;
+    padding: 8px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .solution-tabs button {
+    flex: 1 1 0;
+    padding: 6px 8px;
+    border-color: var(--border);
+  }
+
+  .solution-label {
+    writing-mode: horizontal-tb;
+    transform: none;
+  }
+
+  .app.has-solutions {
+    padding-left: 0;
+  }
+}
+
+/* ------------------------------------------------------------------ the rule tree: the walk on Watch */
+
+.rule-id {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.walk-rows > li + li {
+  border-top: 1px solid var(--border);
+}
+
+/* A question on the first line, Jev's answer under it with the bar and the probability. */
+.walk-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 72px 44px;
+  grid-template-areas:
+    'num q q q'
+    'num a meter p';
+  align-items: center;
+  gap: 3px 10px;
+  width: 100%;
+  margin: 1px 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.walk-row:hover {
+  background: var(--hover-soft);
+}
+
+.walk-num {
+  grid-area: num;
+  align-self: start;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.walk-q {
+  grid-area: q;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.walk-tag {
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.walk-a {
+  grid-area: a;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.walk-meter {
+  grid-area: meter;
+}
+
+.walk-row .meter-fill {
+  background: var(--accent);
+}
+
+.walk-p {
+  grid-area: p;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.walk-row.only .walk-meter {
+  display: none;
+}
+
+.walk-only {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.walk-row.missed .walk-a,
+.walk-missed {
+  color: var(--neg);
+}
+
+.walk-skill {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.walk-skill .walk-num {
+  grid-area: auto;
+}
+
+.walk-act {
+  display: grid;
+  grid-template-columns: 12px 40px minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 10px;
+  padding: 8px 8px 4px;
+}
+
+.walk-act .dot {
+  margin-top: 5px;
+}
+
+.walk-act-body {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.walk-source {
+  margin-top: 2px;
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------------ the rule tree: the questions */
+
+.ev-mark {
+  background: var(--accent-soft);
+}
+
+.ev-head.ev-mark {
+  color: var(--accent);
+}
+
+.question-text {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.option-bars .bar-row {
+  grid-template-columns: minmax(0, 2.4fr) minmax(50px, 1fr) 48px 64px;
+}
+
+.option-bars .bar-label {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* ------------------------------------------------------------------ the rule tree: how it was written */
+
+.build-detail h3 {
+  margin: 2px 0 6px;
+  font-size: 15px;
+}
+
+.build-detail .chips-label {
+  margin-top: 12px;
+}
+
+.proposed-rule {
+  margin: 6px 0;
+}
+
+.writer-why {
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.check-tests {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.build-added {
+  margin: 12px 0 6px;
+}
+
+.build-added .link-button {
+  margin-left: 6px;
+}
+
+.build-games td,
+.build-games th {
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ the rule tree: results */
+
+.results-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.screen > .results-grid,
+.screen > .tree-grid {
+  margin-top: 14px;
+}
+
+.cleared-cell,
+.uses-cell,
+.seeds-cell {
+  white-space: nowrap;
+}
+
+.cleared-bar {
+  display: inline-block;
+  width: 64px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 4px;
+  background: var(--panel-3);
+  overflow: hidden;
+  vertical-align: 0;
+}
+
+.cleared-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* ------------------------------------------------------------------ the rule tree: the tree */
+
+.tree-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.tree-detail {
+  position: sticky;
+  top: 70px;
+  min-width: 0;
+}
+
+.tree-list {
+  margin: 0;
+  padding: 0 0 0 18px;
+  list-style: none;
+  border-left: 1px solid var(--border);
+}
+
+.tree-outline > .tree-list {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.tree-node {
+  margin: 4px 0;
+}
+
+.tree-rule {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-rule:hover {
+  background: var(--hover-soft);
+}
+
+.tree-rule .rule-id {
+  justify-self: start;
+}
+
+.tree-cond {
+  font-weight: 600;
+}
+
+.tree-focus {
+  color: var(--accent);
+}
+
+.tree-act {
+  color: var(--muted);
+}
+
+.tree-node.on-route > .tree-rule {
+  background: var(--accent-soft);
+}
+
+.tree-node.ended > .tree-rule {
+  border-color: var(--accent);
+}
+
+.tree-node.selected > .tree-rule {
+  box-shadow: 0 0 0 2px var(--text) inset;
+}
+
+.tree-skill h3 {
+  margin: 16px 0 2px;
+  font-size: 14px;
+}
+
+.tree-legend {
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+.tree-key {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+
+.tree-key.on-route {
+  background: var(--accent-soft);
+}
+
+.tree-key.ended {
+  border-color: var(--accent);
+}
+
+.rule-detail h3 {
+  margin: 2px 0 8px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+/* ------------------------------------------------------------------ the rule tree: the timeline and drawing */
+
+.band-top0 {
+  fill: var(--combat);
+}
+
+.band-top1 {
+  fill: var(--goal);
+}
+
+.band-top2 {
+  fill: var(--navigation);
+}
+
+.band-none {
+  fill: var(--n3);
+}
+
+.band-missed {
+  fill: var(--neg);
+}
+
+.node.writer {
+  border-color: var(--navigation);
+}
+
+.node.writer .node-badge {
+  color: var(--navigation);
+}
+
+.legend-node.writer {
+  border-color: var(--navigation);
+  color: var(--navigation);
+}
+
+@media (max-width: 1100px) {
+  .results-grid,
+  .tree-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tree-detail {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .walk-row {
+    grid-template-columns: 18px minmax(0, 1fr) 56px 40px;
+  }
+
+  .option-bars .bar-row {
+    grid-template-columns: minmax(0, 1fr) 48px;
+  }
+
+  .option-bars .bar-track,
+  .option-bars .bar-note {
+    display: none;
+  }
+}

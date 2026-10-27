@@ -1,7 +1,8 @@
 // The glossary: every term the screens use, with where to see it and where the code keeps it. It carries
 // exactly the terms of the documentation's glossary (docs/DOCUMENTATION.md, section 18), and a test keeps the
-// two in step.
-import type { Screen } from '../store'
+// two in step. Each entry belongs to one solution's screens or to both; a term both use in different senses has
+// its rule-tree meaning beside the senses and central's.
+import type { Screen, Solution } from '../store'
 import type { PanelId } from './explainers'
 
 /** Where to see a term: a screen, and the panel on it to flash. */
@@ -20,7 +21,35 @@ export interface GlossaryEntry {
   see: SeeLink[]
   /** `file.py · Name`: where in the package it lives. */
   code: string
+  /** The solutions whose screens use the term; the senses and central's alone when not given. */
+  solutions?: Solution[]
+  /** What the term means on the rule tree's screens, where that differs. */
+  rules?: Pick<GlossaryEntry, 'meaning' | 'see' | 'code'>
 }
+
+/** An entry as one solution's screens show it. */
+export interface ShownEntry {
+  id: string
+  term: string
+  aliases: string[]
+  meaning: string
+  see: SeeLink[]
+  code: string
+}
+
+/** Whether a solution's screens use an entry. */
+export const usedBy = (entry: GlossaryEntry, solution: Solution): boolean =>
+  (entry.solutions ?? ['senses']).includes(solution)
+
+/** An entry in the words of one solution. */
+export function shown(entry: GlossaryEntry, solution: Solution): ShownEntry {
+  const own = solution === 'rules' && entry.rules ? entry.rules : entry
+  return { id: entry.id, term: entry.term, aliases: entry.aliases, meaning: own.meaning, see: own.see, code: own.code }
+}
+
+/** The glossary of one solution's screens, in order. */
+export const glossaryOf = (solution: Solution): ShownEntry[] =>
+  GLOSSARY.filter((e) => usedBy(e, solution)).map((e) => shown(e, solution))
 
 export const GLOSSARY: GlossaryEntry[] = [
   {
@@ -40,6 +69,13 @@ export const GLOSSARY: GlossaryEntry[] = [
       'TypeSafe’s decision model. It answers the same typed questions as d1-ultra in the same form, so a recording can be played by it instead: every instance of both systems then makes its calls to Jev, with the same evidence and the same questions. The screen goes to it as an image asset, and its cost is counted at its published price per input token, since its usage report names none. Each recording’s card, the top bar and How this recording was made say which model played it.',
     see: [{ screen: 'reference', panel: 'provenance', label: 'which model played this recording' }],
     code: 'd1_client.py · Decider',
+    solutions: ['senses', 'rules'],
+    rules: {
+      meaning:
+        'TypeSafe’s decision model. Each question of the rule tree is one call to it: a multiple-choice question sent with the state as text and the screen as an image, answered with a probability for each option. The option with the highest probability is its answer. When a focus list has only one item, there is nothing to choose and Jev is not asked.',
+      see: [{ screen: 'questions', panel: 'rt-answer', label: 'its answers at this decision' }],
+      code: 'ruletree/walk.py · Jev',
+    },
   },
   {
     id: 'system-1',
@@ -94,6 +130,13 @@ export const GLOSSARY: GlossaryEntry[] = [
       'One named piece of evidence, rendered as plain text under a [name] header: vitals, threats, pickups, projections, values and so on, eighteen in all. Three of them, messages, relevance and exploration, can be shown only to the central instance.',
     see: [{ screen: 'instances', panel: 'evidence', label: 'the evidence text, exactly as sent' }],
     code: 'evidence.py · render_scope',
+    solutions: ['senses', 'rules'],
+    rules: {
+      meaning:
+        'One named part of the state text, under a [name] header, always in the same order: goal, vitals, threats, incoming, outgoing, pickups, landmarks, geometry, position, progress and history, and focus after a focus question.',
+      see: [{ screen: 'questions', panel: 'rt-sent', label: 'the state text, exactly as sent' }],
+      code: 'ruletree/game.py · Game.observe',
+    },
   },
   {
     id: 'scope',
@@ -178,6 +221,13 @@ export const GLOSSARY: GlossaryEntry[] = [
       'An answer that did not arrive or could not be read: a timeout, a failed call, rate limits that outlasted the retries, an option outside the menu, or malformed probabilities. Nothing replaces it. A missed sense sends no message; a missed central instance presses no keys.',
     see: [{ screen: 'instances', panel: 'answers', label: 'a miss and its raw answer' }],
     code: 'instance.py · run_instance',
+    solutions: ['senses', 'rules'],
+    rules: {
+      meaning:
+        'A call that failed, ran out of time, or answered with an option that was not offered. The walk stops at the rule it has reached and that rule’s action is played. Nothing replaces the missing answer.',
+      see: [{ screen: 'questions', panel: 'rt-answer', label: 'Jev’s answers at this decision' }],
+      code: 'ruletree/walk.py · decide',
+    },
   },
   {
     id: 'pick',
@@ -334,6 +384,13 @@ export const GLOSSARY: GlossaryEntry[] = [
       'One recorded episode in the form this site reads: episode.json, every tick in ticks.jsonl, System 2’s records in reflections.jsonl, the slow path’s proposals, the relevance ledger and the video frames.',
     see: [{ screen: 'reference', panel: 'provenance', label: 'how this recording was made' }],
     code: 'export.py · record_bundle',
+    solutions: ['senses', 'rules'],
+    rules: {
+      meaning:
+        'One recorded game in the form this site reads. A rule-tree recording holds episode.json, every decision in decisions.jsonl with each question, its options and Jev’s answer, the tree it was played with, the record of how that tree was written, and the video frames.',
+      see: [{ screen: 'reference', panel: 'rt-provenance', label: 'how this recording was made' }],
+      code: 'ruletree/bundle.py · record_episode',
+    },
   },
   {
     id: 'live-episode',
@@ -352,6 +409,146 @@ export const GLOSSARY: GlossaryEntry[] = [
       'The background worker that writes a new macro when System 2 requests one (from templates, or with the Codex CLI), together with the checks and the admit instance the macro must pass. It never delays a decision, and a macro joins the menu only between two decisions.',
     see: [{ screen: 'menu', panel: 'proposals', label: 'proposals and their stages' }],
     code: 'llm_worker.py · SlowLLMWorker',
+  },
+  // The rule tree's own terms.
+  {
+    id: 'rule-tree',
+    term: 'rule tree',
+    aliases: ['tree of rules'],
+    meaning:
+      'The second way this package plays: a tree of rules. At every decision the program walks it, asking Jev at each level which rule is true. A tree is a file: its rules, the questions that pick a focus, its skills, and for each rule the soft loop added, the decision it was written for.',
+    see: [{ screen: 'tree', panel: 'rt-outline', label: 'the whole tree' }],
+    code: 'ruletree/tree.py · RuleTree',
+    solutions: ['rules'],
+  },
+  {
+    id: 'rule',
+    term: 'rule',
+    aliases: ['rules', 'exception', 'exceptions'],
+    meaning:
+      'A condition and an action. The walk goes into a rule when Jev picks its condition as true. A rule under another rule is an exception to it: when its condition is true as well, its action is played instead.',
+    see: [{ screen: 'tree', panel: 'rt-rule', label: 'one rule and where it came from' }],
+    code: 'ruletree/tree.py · RuleNode',
+    solutions: ['rules'],
+  },
+  {
+    id: 'condition',
+    term: 'condition',
+    aliases: ['conditions'],
+    meaning:
+      'A sentence about what the state shows, such as “The focus channel says the enemy is more than 400 units away.” Jev judges it, as one option of a question; the program never tests it.',
+    see: [{ screen: 'questions', panel: 'rt-answer', label: 'the options of a question' }],
+    code: 'ruletree/tree.py · RuleNode',
+    solutions: ['rules'],
+  },
+  {
+    id: 'walk',
+    term: 'walk',
+    aliases: [],
+    meaning:
+      'How the rule tree makes one decision. From the top of the tree, at each rule with rules under it, Jev is asked “Which of these is true right now?” and the walk moves into the rule it picks, until it picks none or reaches a rule with nothing under it. That rule’s action is played.',
+    see: [{ screen: 'watch', panel: 'rt-walk', label: 'the questions at this decision' }],
+    code: 'ruletree/walk.py · decide',
+    solutions: ['rules'],
+  },
+  {
+    id: 'focus',
+    term: 'focus',
+    aliases: [],
+    meaning:
+      'What the rules under a rule speak about: one item Jev picked from a list in the state, such as the visible enemy that is the biggest danger, or the landmark that is the goal. The questions after it are sent a [focus] channel that names it.',
+    see: [{ screen: 'questions', panel: 'rt-sent', label: 'the [focus] channel' }],
+    code: 'ruletree/walk.py · with_focus',
+    solutions: ['rules'],
+  },
+  {
+    id: 'skill',
+    term: 'skill',
+    aliases: ['skills'],
+    meaning:
+      'A set of rules any rule can use as its action. The aim skill’s rules each turn toward the focus by an amount that fits its angle; the rule that used the skill says what to do for the rest of the decision.',
+    see: [{ screen: 'tree', panel: 'rt-outline', label: 'the aim skill' }],
+    code: 'ruletree/tree.py · SkillCall',
+    solutions: ['rules'],
+  },
+  {
+    id: 'action-code',
+    term: 'action code',
+    aliases: ['action codes'],
+    meaning:
+      'Four characters, one for each group of keys held during a decision: walk (F forward, B backward), sidestep (L, R), turn (L, R) and fire (1), with 0 for none. F001 walks forward and fires. A sequence such as 00R0:3+0001:5 turns right for 3 tics, then fires for 5.',
+    see: [{ screen: 'watch', panel: 'rt-walk', label: 'the Act row on Watch, which says it in words' }],
+    code: 'ruletree/codes.py · segments',
+    solutions: ['rules'],
+  },
+  {
+    id: 'tic',
+    term: 'tic',
+    aliases: ['tics'],
+    meaning: 'One step of the game clock. Doom runs at 35 tics a second, and a decision of the rule tree lasts 8 tics.',
+    see: [{ screen: 'watch', panel: 'rt-walk', label: 'the Act row on Watch' }],
+    code: 'ruletree/codes.py · segments',
+    solutions: ['rules'],
+  },
+  {
+    id: 'soft-loop',
+    term: 'soft loop',
+    aliases: [],
+    meaning:
+      'The part of the program that adds rules to a tree, between games. It plays the training seeds; for a game that went wrong, a rule writer proposes one rule. The check replays that game with and without the rule, and the gate plays every training seed with and without it. The rule is added only if it passes both. The shipped trees started from general-9, whose rules were written before the loop ran.',
+    see: [{ screen: 'written', panel: 'rt-rounds', label: 'the record of how this tree was written' }],
+    code: 'ruletree/loop.py · run_loop',
+    solutions: ['rules'],
+  },
+  {
+    id: 'rule-writer',
+    term: 'rule writer',
+    aliases: ['writer'],
+    meaning:
+      'The model that proposes rules in the soft loop: Claude or Codex. It reads a dossier of the game that went wrong and writes one rule, or a small group of rules, in plain words. It does not play: Jev judges every condition.',
+    see: [{ screen: 'written', panel: 'rt-round', label: 'a proposal and its reason' }],
+    code: 'ruletree/writers.py · Writer',
+    solutions: ['rules'],
+  },
+  {
+    id: 'cornerstone',
+    term: 'cornerstone',
+    aliases: ['cornerstones'],
+    meaning:
+      'The decision a rule was written for, kept with the rule: the seed, the actions that led there, the state text and the screen. Every later rule must leave that decision on the same route, or end its game no worse.',
+    see: [{ screen: 'tree', panel: 'rt-rule', label: 'a rule’s cornerstone' }],
+    code: 'ruletree/tree.py · Cornerstone',
+    solutions: ['rules'],
+  },
+  {
+    id: 'seed',
+    term: 'seed',
+    aliases: ['seeds'],
+    meaning:
+      'A number that sets the game’s random events, so each seed is a different game. A recording is one game on one seed, and the soft loop’s seeds are split into training and held-out seeds.',
+    see: [{ screen: 'results', panel: 'rt-benchmark', label: 'the benchmark seeds' }],
+    code: 'ruletree/game.py · Game.reset',
+    solutions: ['rules'],
+  },
+  {
+    id: 'training-seed',
+    term: 'training seed',
+    aliases: ['training seeds'],
+    meaning:
+      'A game the soft loop plays and writes rules for: seeds 9 to 19 for the shipped trees. A rule is added only if the tree with it clears at least as many training seeds as the tree without it.',
+    see: [{ screen: 'results', panel: 'rt-passes', label: 'seeds cleared, step by step' }],
+    code: 'ruletree/loop.py · run_loop',
+    solutions: ['rules'],
+  },
+  {
+    id: 'held-out-seed',
+    term: 'held-out seed',
+    aliases: ['held-out seeds'],
+    meaning:
+      'A game the soft loop writes no rule for: seeds 20 to 39, played after every training seed clears, to see whether the rules work on games they were not written for, and seeds 40 to 59, never played while the shipped trees were written.',
+    see: [{ screen: 'results', panel: 'rt-passes', label: 'seeds cleared, step by step' }],
+    code: 'ruletree/loop.py · run_loop',
+    solutions: ['rules'],
   },
 ]
 

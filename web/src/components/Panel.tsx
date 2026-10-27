@@ -56,11 +56,12 @@ export function Panel({
 /** The explanation behind a panel's "?": its paragraphs, its formula where it has one, and the code. */
 export function ExplainerBody({ id, bodyId }: { id: PanelId; bodyId?: string }) {
   const explainer: (typeof EXPLAINERS)[PanelId] & { formula?: string; code?: string } = EXPLAINERS[id]
+  const solution = useApp((s) => s.solution)
   const seen = new Set<string>()
   return (
     <div className="explainer" id={bodyId}>
       {explainer.paragraphs.map((p) => (
-        <p key={p.slice(0, 40)}>{linkTerms(p, seen)}</p>
+        <p key={p.slice(0, 40)}>{linkTerms(p, seen, solution)}</p>
       ))}
       {explainer.formula && <p className="formula mono">{explainer.formula}</p>}
       {explainer.code && (

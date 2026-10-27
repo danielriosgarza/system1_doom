@@ -17,3 +17,4 @@ bundles/
 live/
 !web/public/episodes/**/*.jsonl
 !web/e2e/fixtures/**/*.jsonl
+!src/system1_doom/ruletree/trees/*/build.jsonl

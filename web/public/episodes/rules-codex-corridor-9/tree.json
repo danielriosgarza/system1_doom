@@ -1,0 +1,259 @@
+{
+ "name": "codex-11",
+ "writer": "codex",
+ "nodes": {
+  "root": {
+   "id": "root",
+   "parent": null,
+   "condition": null,
+   "action": "random",
+   "focus": null,
+   "children": [
+    "r1",
+    "r3"
+   ],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree"
+   }
+  },
+  "r1": {
+   "id": "r1",
+   "parent": "root",
+   "condition": "The threats list shows at least one enemy.",
+   "action": {
+    "skill": "aim",
+    "then": "0001"
+   },
+   "focus": {
+    "from": [
+     "threats"
+    ],
+    "question": "Which of these enemies is the biggest danger to me right now?"
+   },
+   "children": [
+    "r2"
+   ],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r2": {
+   "id": "r2",
+   "parent": "r1",
+   "condition": "The focus channel says the enemy is more than 400 units away.",
+   "action": {
+    "skill": "aim",
+    "then": "F001"
+   },
+   "focus": null,
+   "children": [
+    "r11",
+    "r12"
+   ],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r3": {
+   "id": "r3",
+   "parent": "root",
+   "condition": "The threats list says no enemy is visible.",
+   "action": {
+    "skill": "aim",
+    "then": "F000"
+   },
+   "focus": {
+    "from": [
+     "landmarks"
+    ],
+    "question": "Which of these is the goal I am trying to reach?"
+   },
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "aim": {
+   "id": "aim",
+   "parent": null,
+   "condition": null,
+   "action": "then",
+   "focus": null,
+   "children": [
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9"
+   ],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r4": {
+   "id": "r4",
+   "parent": "aim",
+   "condition": "The focus channel says it is between 3 and 7 degrees to the right.",
+   "action": "00R0:3",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r5": {
+   "id": "r5",
+   "parent": "aim",
+   "condition": "The focus channel says it is between 7 and 12 degrees to the right.",
+   "action": "00R0:5",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r6": {
+   "id": "r6",
+   "parent": "aim",
+   "condition": "The focus channel says it is more than 12 degrees to the right.",
+   "action": "00R0:7",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r7": {
+   "id": "r7",
+   "parent": "aim",
+   "condition": "The focus channel says it is between 3 and 7 degrees to the left.",
+   "action": "00L0:3",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r8": {
+   "id": "r8",
+   "parent": "aim",
+   "condition": "The focus channel says it is between 7 and 12 degrees to the left.",
+   "action": "00L0:5",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r9": {
+   "id": "r9",
+   "parent": "aim",
+   "condition": "The focus channel says it is more than 12 degrees to the left.",
+   "action": "00L0:7",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r11": {
+   "id": "r11",
+   "parent": "r2",
+   "condition": "The focus channel shows the enemy at most 2 pixels wide, at least 6 pixels tall, and to the left.",
+   "action": {
+    "skill": "aim",
+    "then": "0R01"
+   },
+   "focus": null,
+   "children": [],
+   "cornerstones": [
+    {
+     "seed": 12,
+     "prefix": [
+      "00L0:7+0001:1",
+      "00L0:7+0001:1",
+      "00L0:3+0001:5",
+      "00R0:7+0001:1",
+      "00R0:7+0001:1",
+      "00R0:5+0001:3",
+      "00L0:7+F000:1",
+      "00L0:3+F000:5",
+      "F000",
+      "00R0:3+F001:5",
+      "00L0:3+F000:5",
+      "00R0:5+F001:3",
+      "F001",
+      "F001",
+      "0001",
+      "0001",
+      "0001",
+      "0001",
+      "00L0:7+0001:1",
+      "00L0:5+0001:3",
+      "0001",
+      "00R0:7+F000:1",
+      "F000",
+      "F000"
+     ],
+     "state_text": "[goal]\nYou are the player in Doom's Deadly Corridor. Reach the green armor at the far end of the corridor alive. Enemies stand along both sides. Each action is held for about a quarter of a second, then you choose again.\n\n[vitals]\nhealth 46, armor 0, ammo 44, weapon pistol\n\n[threats]\n1 enemy visible, nearest first:\n- ChaingunGuy at distance 621, 4 deg left, size 1x6 px\n\n[incoming]\ndamage taken since the last decision 0; consecutive decisions under fire 0\n\n[outgoing]\ndamage dealt since the last decision 0, hits 0, kills 0\n\n[pickups]\n3 pickups visible, nearest first:\n- Chaingun (weapon) at distance 216, 10 deg right\n- Clip (ammo) at distance 231, 14 deg left\n- GreenArmor (armor) at distance 904, 1 deg right\n\n[landmarks]\n5 pickups seen this episode and not picked up, where each lies now from your position and facing, nearest first:\n- Chaingun (weapon): 216 away, 12 deg right, in view; no reward link yet\n- Clip (ammo): 231 away, 17 deg left, in view; no reward link yet\n- Clip (ammo): 244 away, 167 deg right, behind you, out of view, last seen 14 decisions ago; no clear link between its distance and reward (agreement -0.16 over 13 moves)\n- Shotgun (weapon): 245 away, 163 deg left, behind you, out of view, last seen 14 decisions ago; no clear link between its distance and reward (agreement -0.18 over 13 moves)\n- GreenArmor (armor): 904 away, 1 deg right, in view; reward rose as you got closer (agreement +1.00 over 15 moves)\n\n[geometry]\nwall distance ahead 194, left 80, right 36; moving\n\n[position]\nx 408, y -14, facing 2 deg; 6 sectors discovered this episode\n\n[progress]\ndecisions so far 24, reward so far 407.9, reward from the last decision +48.5, kills 4, last displacement 49 units, stall streak 0\n\n[history]\nlast 6 primitives executed, oldest first: turn left for 7 tics, then fire for 1 tics, turn left for 5 tics, then fire for 3 tics, fire, turn right for 7 tics, then walk forward for 1 tics, walk forward, walk forward\nlast 3 decisions, oldest first:\n- tick=22 act=turn right for 7 tics, then walk forward for 1 tics hp=46 r=+0.8\n- tick=23 act=walk forward hp=46 r=+26.9\n- tick=24 act=walk forward hp=46 r=+48.5",
+     "frame": "cornerstones/r11-0.jpg",
+     "expect": "r1/r2/r11/aim/r7",
+     "event_at": 31,
+     "horizon": 55,
+     "standing": [
+      1,
+      1,
+      46.0,
+      1259.0
+     ]
+    }
+   ],
+   "provenance": {
+    "trace": "trace-s12-01",
+    "frame": 24,
+    "why": "The focus was already a one-pixel sliver before repeated misses and the fatal approach; extending forward movement failed the gate. These rules seek a clearer shot by strafing away from the sliver's side while firing, without deliberately closing the distance.",
+    "writer": "codex"
+   }
+  },
+  "r12": {
+   "id": "r12",
+   "parent": "r2",
+   "condition": "The focus channel shows the enemy at most 2 pixels wide, at least 6 pixels tall, and to the right.",
+   "action": {
+    "skill": "aim",
+    "then": "0L01"
+   },
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "trace": "trace-s12-01",
+    "frame": 24,
+    "why": "The focus was already a one-pixel sliver before repeated misses and the fatal approach; extending forward movement failed the gate. These rules seek a clearer shot by strafing away from the sliver's side while firing, without deliberately closing the distance.",
+    "writer": "codex"
+   }
+  }
+ }
+}

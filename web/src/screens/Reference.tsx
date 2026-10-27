@@ -3,7 +3,7 @@ import { Drawing } from '../components/Drawing'
 import { Panel } from '../components/Panel'
 import { linkTerms } from '../components/Terms'
 import { deciderOf, deciderWords } from '../content/decider'
-import { GLOSSARY, REMOVED_TERMS } from '../content/glossary'
+import { REMOVED_TERMS, glossaryOf } from '../content/glossary'
 import { REFERENCE } from '../content/reference'
 import { resultWords } from '../content/watch'
 import type { EpisodeBundle } from '../data/loader'
@@ -61,11 +61,13 @@ export function Reference({ bundle }: { bundle: EpisodeBundle }) {
   )
 }
 
-function Glossary() {
+/** The glossary of the solution showing, with a filter; a term opened from a linked word is scrolled to and marked. */
+export function Glossary() {
   const term = useApp((s) => s.term)
+  const solution = useApp((s) => s.solution)
   const [filter, setFilter] = useState('')
   const q = filter.trim().toLowerCase()
-  const entries = GLOSSARY.filter(
+  const entries = glossaryOf(solution).filter(
     (e) =>
       e.id === term ||
       !q ||

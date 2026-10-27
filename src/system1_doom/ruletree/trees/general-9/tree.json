@@ -1,0 +1,179 @@
+{
+ "name": "general-9",
+ "writer": "claude",
+ "nodes": {
+  "root": {
+   "id": "root",
+   "parent": null,
+   "condition": null,
+   "action": "random",
+   "focus": null,
+   "children": [
+    "r1",
+    "r3"
+   ],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree"
+   }
+  },
+  "r1": {
+   "id": "r1",
+   "parent": "root",
+   "condition": "The threats list shows at least one enemy.",
+   "action": {
+    "skill": "aim",
+    "then": "0001"
+   },
+   "focus": {
+    "from": [
+     "threats"
+    ],
+    "question": "Which of these enemies is the biggest danger to me right now?"
+   },
+   "children": [
+    "r2"
+   ],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r2": {
+   "id": "r2",
+   "parent": "r1",
+   "condition": "The focus channel says the enemy is more than 400 units away.",
+   "action": {
+    "skill": "aim",
+    "then": "F001"
+   },
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r3": {
+   "id": "r3",
+   "parent": "root",
+   "condition": "The threats list says no enemy is visible.",
+   "action": {
+    "skill": "aim",
+    "then": "F000"
+   },
+   "focus": {
+    "from": [
+     "landmarks"
+    ],
+    "question": "Which of these is the goal I am trying to reach?"
+   },
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "aim": {
+   "id": "aim",
+   "parent": null,
+   "condition": null,
+   "action": "then",
+   "focus": null,
+   "children": [
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9"
+   ],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r4": {
+   "id": "r4",
+   "parent": "aim",
+   "condition": "The focus channel says it is between 3 and 7 degrees to the right.",
+   "action": "00R0:3",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r5": {
+   "id": "r5",
+   "parent": "aim",
+   "condition": "The focus channel says it is between 7 and 12 degrees to the right.",
+   "action": "00R0:5",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r6": {
+   "id": "r6",
+   "parent": "aim",
+   "condition": "The focus channel says it is more than 12 degrees to the right.",
+   "action": "00R0:7",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r7": {
+   "id": "r7",
+   "parent": "aim",
+   "condition": "The focus channel says it is between 3 and 7 degrees to the left.",
+   "action": "00L0:3",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r8": {
+   "id": "r8",
+   "parent": "aim",
+   "condition": "The focus channel says it is between 7 and 12 degrees to the left.",
+   "action": "00L0:5",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "r9": {
+   "id": "r9",
+   "parent": "aim",
+   "condition": "The focus channel says it is more than 12 degrees to the left.",
+   "action": "00L0:7",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  }
+ }
+}

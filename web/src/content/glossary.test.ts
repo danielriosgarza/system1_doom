@@ -4,9 +4,9 @@ import { Fragment, type ReactNode, createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { linkTerms } from '../components/Terms'
-import { SCREENS } from '../store'
+import { type Solution, screensOf } from '../store'
 import { EXPLAINERS } from './explainers'
-import { GLOSSARY, REMOVED_TERMS } from './glossary'
+import { GLOSSARY, REMOVED_TERMS, glossaryOf, shown, usedBy } from './glossary'
 
 const REPO = new URL('../../../', import.meta.url)
 
@@ -77,22 +77,54 @@ describe('the glossary', () => {
     }
   })
 
-  it('links only to screens and panels that exist, and names code that exists', () => {
-    const screens = new Set(SCREENS.map((s) => s.id))
+  it('names the rule tree’s words, which only its screens link', () => {
+    const rules = new Set(
+      glossaryOf('rules')
+        .flatMap((e) => [e.term, ...e.aliases])
+        .map((w) => w.toLowerCase()),
+    )
+    const senses = new Set(
+      glossaryOf('senses')
+        .flatMap((e) => [e.term, ...e.aliases])
+        .map((w) => w.toLowerCase()),
+    )
+    const design = ['rule tree', 'rule', 'condition', 'walk', 'focus', 'skill', 'soft loop', 'rule writer']
+    expect(design.filter((w) => !rules.has(w))).toEqual([])
+    expect(design.filter((w) => senses.has(w))).toEqual([])
+    for (const shared of ['jev', 'miss', 'bundle', 'channel']) {
+      expect(rules.has(shared) && senses.has(shared), shared).toBe(true)
+    }
+  })
+
+  it('gives a term both solutions use its rule-tree meaning, and a rule-tree term no second one', () => {
     for (const entry of GLOSSARY) {
+      const solutions = entry.solutions ?? ['senses']
+      expect(!!entry.rules, entry.id).toBe(solutions.includes('senses') && solutions.includes('rules'))
+    }
+  })
+
+  const variants = GLOSSARY.flatMap((entry) =>
+    (['senses', 'rules'] as Solution[])
+      .filter((s) => usedBy(entry, s))
+      .map((s) => ({ solution: s, ...shown(entry, s) })),
+  )
+
+  it('links only to screens and panels that exist, and names code that exists', () => {
+    for (const entry of variants) {
+      const screens = new Set(screensOf(entry.solution).map((s) => s.id))
       expect(entry.see.length, entry.id).toBeGreaterThan(0)
       for (const link of entry.see) {
         expect(screens.has(link.screen), `${entry.id}: ${link.screen}`).toBe(true)
         if (link.panel) expect(EXPLAINERS, `${entry.id}: ${link.panel}`).toHaveProperty(link.panel)
       }
-      expect(entry.code, entry.id).toMatch(/^[a-z0-9_]+\.py · [A-Za-z_][A-Za-z0-9_.]*$/)
+      expect(entry.code, entry.id).toMatch(/^[a-z0-9_]+(\/[a-z0-9_]+)?\.py · [A-Za-z_][A-Za-z0-9_.]*$/)
       const file = entry.code.split(' · ')[0] ?? ''
       expect(existsSync(fileURLToPath(new URL(`src/system1_doom/${file}`, REPO))), `${entry.id}: ${file}`).toBe(true)
     }
   })
 
   it('names code at real symbols, defined in the file it names', () => {
-    for (const entry of GLOSSARY) {
+    for (const entry of variants) {
       const [file = '', symbol = ''] = entry.code.split(' · ')
       const source = readFileSync(new URL(`src/system1_doom/${file}`, REPO), 'utf8')
       const name = symbol.split('.').at(-1) ?? ''
@@ -151,6 +183,14 @@ describe('linkTerms', () => {
     ])
     expect(links(html(linkTerms('The Scope again, and a reflector.', seen)))).toEqual([['reflector', 'reflector']])
     expect([...seen]).toEqual(['d1-ultra', 'scope', 'reflector'])
+  })
+
+  it('links each solution’s own terms: the rule tree’s focus is plain text on the senses and central’s screens', () => {
+    expect(links(html(linkTerms('The focus of the walk; a scope.', new Set(), 'rules')))).toEqual([
+      ['focus', 'focus'],
+      ['walk', 'walk'],
+    ])
+    expect(links(html(linkTerms('The focus of the walk; a scope.', new Set())))).toEqual([['scope', 'scope']])
   })
 
   it('links a word at the very start and words one character apart', () => {

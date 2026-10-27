@@ -1,11 +1,13 @@
 import { useId } from 'react'
-import { GLOSSARY_BY_ID } from '../content/glossary'
-import { openTerm } from '../store'
+import { GLOSSARY_BY_ID, shown } from '../content/glossary'
+import { openTerm, useApp } from '../store'
 
 /** A linked word: its meaning on hover and focus, its glossary entry on the Reference screen on click. */
 export function TermLink({ id, text }: { id: string; text?: string }) {
   const tipId = useId()
-  const entry = GLOSSARY_BY_ID[id]
+  const solution = useApp((s) => s.solution)
+  const found = GLOSSARY_BY_ID[id]
+  const entry = found ? shown(found, solution) : undefined
   return (
     <span className="tip term-tip">
       <button type="button" className="term" data-term={id} aria-describedby={tipId} onClick={() => openTerm(id)}>
