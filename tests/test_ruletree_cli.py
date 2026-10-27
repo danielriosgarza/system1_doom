@@ -7,6 +7,7 @@ import pytest
 
 from system1_doom.ruletree.__main__ import main, parse_seeds
 from system1_doom.ruletree.tree import save_tree
+from system1_doom.ruletree.walk import Jev
 from tests.fake_d1 import FakeD1
 from tests.ruletree_fixtures import CorridorGame, general_tree, jev_client, scripted, sees_imp, walk_on_tree
 
@@ -91,6 +92,11 @@ def test_eval_on_a_local_model_needs_no_key_and_sends_the_text_alone(tmp_path, m
     fake.timeouts.clear()
     main(["play", str(tmp_path / "run"), "--seed", "9", "--decider", decider, "--budget", "30"], game_factory=CorridorGame, out=io.StringIO())
     assert 10.0 < max(fake.timeouts) <= 30.0
+    # --ahead reaches every walk of the run (the walk's own test shows what it sends).
+    seen = []
+    monkeypatch.setattr("system1_doom.ruletree.run.Jev", lambda *a, **kw: seen.append(kw["ahead"]) or Jev(*a, **kw))
+    main(["play", str(tmp_path / "run"), "--seed", "9", "--decider", decider, "--ahead"], game_factory=CorridorGame, out=io.StringIO())
+    assert seen and all(seen)
 
 
 def test_play_needs_the_key(tmp_path, monkeypatch):

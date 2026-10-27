@@ -97,6 +97,9 @@ def _parser() -> argparse.ArgumentParser:
             p.add_argument("--endpoint", help="the decider's System One URL, when it differs from the default")
             p.add_argument("--budget", type=float, default=DEFAULT_BUDGET,
                            help=f"seconds a question may take before it is a miss (default {DEFAULT_BUDGET:g})")
+            p.add_argument("--ahead", action="store_true",
+                           help="ask the questions the walk may ask next about the same state in one request (for a model "
+                                "that answers each question on its own, such as Kev or Laya)")
     return ap
 
 
@@ -122,7 +125,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         say(f"{decider.key_env} is not set. {decider.name.capitalize()} makes every decision of the rule tree, so play "
             "needs the key (in the environment or a .env file).")
         return 2
-    kwargs = {"workers": args.workers, "budget": args.budget}
+    kwargs = {"workers": args.workers, "budget": args.budget, "ahead": args.ahead}
     if client is not None:
         kwargs["client"] = client
     elif args.model or args.endpoint or decider.name != "jev":

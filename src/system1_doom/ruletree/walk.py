@@ -11,6 +11,12 @@ plays its `then`). Nothing stands in for a missing answer.
 
 Answers are kept: a game asks afresh and records what Jev answered; a check reads every recorded answer first, so
 that a replayed state gets the answer it got in play and an old and a new tree are compared on equal terms.
+
+Asking ahead (`Jev(ahead=True)`, for a model that answers each question of a request on its own, such as Kev or Laya):
+before a rule question, every question the walk may ask next about the same text (`upcoming`: the node's own, its
+children's focus questions while the text has no focus, and the questions of the children and skills reached without a
+focus) goes in one request, and the walk takes the answers it reaches from there. A model that reads the state once per
+request answers the extra questions almost for free; the walk and its picks are the same.
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ import json
 import random
 import threading
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -34,6 +40,7 @@ NONE = "none"
 NONE_TEXT = "None of these is true right now."
 FOCUS_HEAD = "\n\n[focus]\n"
 DEFAULT_BUDGET = 10.0
+AHEAD = 6  # questions asked together at most
 
 
 class Answer(BaseModel):
@@ -46,6 +53,8 @@ class Answer(BaseModel):
     latency_ms: float = 0.0
     cost: float = 0.0
     cached: bool = False
+    batch: Optional[int] = Field(default=None, description="Questions in the request it came from, when more than one; "
+                                                           "latency and cost are its share")
 
 
 class Step(BaseModel):
@@ -131,14 +140,18 @@ class AnswerBook:
 
 
 class Jev:
-    """Asks Jev one choice question at a time through the package's client, and keeps the answers in a book."""
+    """Asks Jev one choice question at a time through the package's client, and keeps the answers in a book. With
+    `ahead`, the questions `upcoming` names go in one request before a rule question, and are answered from there."""
 
-    def __init__(self, client: D1UltraClient, book: Optional[AnswerBook] = None, budget: float = DEFAULT_BUDGET) -> None:
+    def __init__(self, client: D1UltraClient, book: Optional[AnswerBook] = None, budget: float = DEFAULT_BUDGET,
+                 ahead: bool = False) -> None:
         self.client = client
         self.book = book if book is not None else AnswerBook()
         self.budget = budget
+        self.ahead = ahead
         self.calls = 0
         self._count = threading.Lock()
+        self._early: Dict[str, Answer] = {}
 
     def key(self, kind: str, text: str, frame_b64: str, question: str, options: Dict[str, str]) -> str:
         return hashlib.sha256(json.dumps([self.client.model, kind, text, frame_b64, question, sorted(options.items())]).encode()).hexdigest()
@@ -149,6 +162,11 @@ class Jev:
         if known is not None:
             return Answer(probabilities=known, pick=max(known, key=known.get), cached=True)
         with self._count:
+            early = self._early.pop(key, None)
+        if early is not None:
+            self.book.put(key, early.probabilities)
+            return early
+        with self._count:
             self.calls += 1
         result = self.client.call(
             f"{kind}:{node}",
@@ -157,28 +175,96 @@ class Jev:
             images=[f"data:image/jpeg;base64,{frame_b64}"],
             budget=self.budget,
         )
-        timing = {"latency_ms": result.latency_ms, "cost": result.usage.cost}
+        answer = self._read(result, kind, f"{kind}:{node}", options, {"latency_ms": result.latency_ms, "cost": result.usage.cost})
+        if answer.miss is None:
+            self.book.put(key, answer.probabilities)
+        return answer
+
+    def ask_together(self, text: str, frame_b64: str, questions: Sequence[Tuple[str, str, str, Dict[str, str]]]) -> None:
+        """Ask (kind, node, question, options) about one text in one request, and keep each answer for `ask`; nothing
+        when fewer than two are not known yet. A miss keeps nothing: `ask` then asks on its own."""
+        todo: Dict[str, Tuple[str, str, str, Dict[str, str]]] = {}
+        for kind, node, question, options in questions:
+            key = self.key(kind, text, frame_b64, question, options)
+            with self._count:
+                early = key in self._early
+            if not early and self.book.get(key) is None:
+                todo.setdefault(key, (kind, node, question, options))
+        if len(todo) < 2:
+            return
+        names = [kind if i == 0 else f"{kind}.{i}" for i, (kind, *_rest) in enumerate(todo.values())]
+        with self._count:
+            self.calls += 1
+        first_kind, first_node = next(iter(todo.values()))[:2]
+        result = self.client.call(
+            f"ahead:{first_kind}:{first_node}",
+            text,
+            {name: ChoiceQuestion(instructions=q[2], criteria=q[3]) for name, q in zip(names, todo.values())},
+            images=[f"data:image/jpeg;base64,{frame_b64}"],
+            budget=self.budget,
+        )
+        n = len(todo)
+        share = {"latency_ms": round(result.latency_ms / n, 3), "cost": result.usage.cost / n, "batch": n}
+        for name, (key, (kind, node, _question, options)) in zip(names, todo.items()):
+            answer = self._read(result, name, f"{kind}:{node}", options, share)
+            if answer.miss is None:
+                with self._count:
+                    self._early[key] = answer
+
+    def _read(self, result: Any, name: str, instance: str, options: Dict[str, str], timing: Dict[str, Any]) -> Answer:
+        """The answer to question `name` of a call, or the miss it is: none, malformed or off the menu."""
         if not result.answered:
             return Answer(miss=result.miss_reason, error=result.error, **timing)
         try:
-            probs = dict(result.response.choice(kind).probabilities)
+            probs = dict(result.response.choice(name).probabilities)
         except (KeyError, ValidationError) as exc:
-            self.client.note_miss(f"{kind}:{node}", "malformed")
+            self.client.note_miss(instance, "malformed")
             return Answer(miss="malformed", error=f"{type(exc).__name__}: {exc}"[:300], **timing)
         if not probs or any(p < 0 for p in probs.values()) or sum(probs.values()) > 1.01:
-            self.client.note_miss(f"{kind}:{node}", "malformed")
+            self.client.note_miss(instance, "malformed")
             return Answer(probabilities=probs, miss="malformed", error="probabilities out of range", **timing)
         pick = max(probs, key=probs.get)
         if pick not in options:
-            self.client.note_miss(f"{kind}:{node}", "off_menu")
+            self.client.note_miss(instance, "off_menu")
             return Answer(probabilities=probs, miss="off_menu", error=f"picked {pick!r}", **timing)
-        self.book.put(key, probs)
         return Answer(probabilities=probs, pick=pick, **timing)
+
+
+def focus_items(text: str, focus: Focus) -> List[Tuple[str, str]]:
+    """(channel, item) for every item a focus picks among, in the order of its options i0, i1, ..."""
+    return [(ch, it) for ch in focus.from_channels for it in items(text, ch)]
+
+
+def upcoming(tree: RuleTree, node: RuleNode, text: str) -> List[Tuple[str, str, str, Dict[str, str]]]:
+    """The questions about `text` the walk may ask from `node` on, before its focus changes the text: (kind, node,
+    question, options), the node's own rule question first, at most AHEAD."""
+    out: List[Tuple[str, str, str, Dict[str, str]]] = []
+    queue, seen = [node], set()
+    while queue and len(out) < AHEAD:
+        n = queue.pop(0)
+        if n.id in seen:
+            continue
+        seen.add(n.id)
+        if n.children:
+            options = {c: tree.nodes[c].condition for c in n.children}
+            options[NONE] = NONE_TEXT
+            out.append(("rule", n.id, NODE_QUESTION, options))
+            for c in n.children:
+                child = tree.nodes[c]
+                if child.focus is None:
+                    queue.append(child)
+                elif FOCUS_HEAD not in text:
+                    picks = focus_items(text, child.focus)
+                    if len(picks) > 1:
+                        out.append(("focus", child.id, child.focus.question, {f"i{k}": it for k, (_, it) in enumerate(picks)}))
+        if isinstance(n.action, SkillCall):
+            queue.append(tree.nodes[n.action.skill])
+    return out[:AHEAD]
 
 
 def with_focus(text: str, frame_b64: str, node: RuleNode, focus: Focus, jev: Jev) -> Step:
     """Jev picks the focus among the items of the node's channels; the step carries the `[focus]` line to show."""
-    options = [(ch, it) for ch in focus.from_channels for it in items(text, ch)]
+    options = focus_items(text, focus)
     step = Step(kind="focus", node=node.id, question=focus.question, options={f"i{k}": it for k, (_, it) in enumerate(options)})
     if len(options) > 1:
         step.answer = jev.ask("focus", node.id, text, frame_b64, focus.question, step.options)
@@ -210,6 +296,8 @@ def decide(tree: RuleTree, jev: Jev, state_text: str, frame_b64: str, seed: int,
             options = {c: tree.nodes[c].condition for c in node.children}
             options[NONE] = NONE_TEXT
             s = Step(kind="rule", node=node.id, question=NODE_QUESTION, options=options)
+            if jev.ahead:
+                jev.ask_together(text, frame_b64, upcoming(tree, node, text))
             s.answer = jev.ask("rule", node.id, text, frame_b64, NODE_QUESTION, options)
             steps.append(s)
             if s.answer.miss:

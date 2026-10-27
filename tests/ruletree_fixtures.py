@@ -64,9 +64,9 @@ def scripted(answer: Script, p: float = 0.8) -> Callable[[str, Dict[str, Any]], 
     """A FakeD1 policy for the rule tree: `answer(kind, options, state)` names the option to pick."""
 
     def policy(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        question = payload["questions"][name]
-        options = question["criteria"]
-        return {name: choice(list(options), answer(name, options, payload["state"]), p)}
+        # Every question of the call: asked ahead, a call holds several, named rule, focus.1, rule.2, ...
+        return {q: choice(list(question["criteria"]), answer(q.split(".")[0], question["criteria"], payload["state"]), p)
+                for q, question in payload["questions"].items()}
 
     return policy
 

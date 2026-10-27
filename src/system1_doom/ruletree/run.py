@@ -40,11 +40,15 @@ class Run:
         workers: int = 6,
         game_factory: GameFactory = Game,
         budget: float = DEFAULT_BUDGET,
+        ahead: bool = False,
     ) -> None:
         self.folder = Path(folder)
         self.workers = max(1, workers)
         # Seconds a question may take, retries included; a slower model served on this machine may need more than Jev.
         self.budget = budget
+        # Ask every question about a state the walk may ask next in one request (walk.upcoming), for a model that
+        # answers each question of a request on its own.
+        self.ahead = ahead
         self.client = client if client is not None else D1UltraClient(decider="jev", max_workers=max(6, 2 * self.workers))
         self.game_factory = game_factory
         self._names = threading.Lock()
@@ -78,7 +82,7 @@ class Run:
 
     def jev(self, read: bool = True, shard: Optional[str] = None) -> Jev:
         """Jev for this run: `read` uses every recorded answer first (checks); `shard` keeps new answers there."""
-        return Jev(self.client, AnswerBook(self.folder / "answers", shard, read=read), budget=self.budget)
+        return Jev(self.client, AnswerBook(self.folder / "answers", shard, read=read), budget=self.budget, ahead=self.ahead)
 
     def game(self) -> Any:
         """The game a check replays in, one after the other."""

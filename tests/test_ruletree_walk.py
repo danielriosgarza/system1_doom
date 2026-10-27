@@ -93,3 +93,28 @@ def test_answers_are_kept_and_reused(tmp_path):
     again = decide(general_tree(), jev2, STATE, SCREEN, seed=9, step=0)
     assert len(fake2.calls) == 0 and again.action == first.action and again.calls == 0
     assert all(s.answer.cached for s in again.steps if s.answer)
+
+
+def test_asking_ahead_walks_the_same_with_fewer_requests():
+    """The questions about one state go in one request; the walk, its picks and its record are the same."""
+    def answer(kind, options, state):
+        if kind == "focus":
+            return "i1"
+        return by_text("at least one enemy", "between 3 and 7 degrees to the left")(kind, options, state)
+
+    one_by_one, jev = _jev(answer)
+    plain = decide(general_tree(), jev, STATE, SCREEN, seed=9, step=4)
+    together, jev_ahead = _jev(answer)
+    jev_ahead.ahead = True
+    ahead = decide(general_tree(), jev_ahead, STATE, SCREEN, seed=9, step=4)
+    assert (ahead.action, ahead.node, ahead.route) == (plain.action, plain.node, plain.route)
+    assert [(s.kind, s.node, s.pick, s.focus_line) for s in ahead.steps] == [(s.kind, s.node, s.pick, s.focus_line) for s in plain.steps]
+    # Four questions one by one; ahead, the root and r1's focus about the state, then r1 and the aim skill about the
+    # state with its focus line: two requests.
+    assert len(one_by_one.calls) == 4 and len(together.calls) == 2
+    assert [sorted(p["questions"]) for _, p in together.calls] == [["focus.1", "rule"], ["rule", "rule.1"]]
+    answers = [s.answer for s in ahead.steps if s.answer]
+    assert all(a.batch == 2 and not a.cached for a in answers) and ahead.calls == 4
+    # A model's answers are kept as in play: a check replays them from the book.
+    assert all(jev_ahead.book.get(k) is not None for k in [jev_ahead.key("rule", STATE, SCREEN, "Which of these is true right now?",
+                                                                         plain.steps[0].options)])
