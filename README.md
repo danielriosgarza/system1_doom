@@ -93,15 +93,21 @@ python -m system1_doom.ruletree show --tree general-11
 python -m system1_doom.ruletree play runs/rule-tree --tree general-11 --seed 9   # needs TYPESAFE_API_KEY
 ```
 
-The tree also runs on Laya, Convai Innovations' open-weight decision
-model, served on your own machine by `laya-serve` (`--decider laya`, no
-key). Out of the box it cleared none of the 81 seeds: on the questions
-whose answer the state text settles it was right 43% of the time,
-against Jev's 99.6% (§15).
+The tree also runs on two open-weight decision models served on your own
+machine, with no key: Laya (Convai Innovations, 421M parameters,
+`--decider laya`) and Kev (Jared Palmer, `--decider kev`). Out of the box
+Laya cleared none of the 81 seeds. Fine-tuned on 3,212 of Jev's answers
+from other seeds (48 minutes on a Jetson Thor, `ruletree/teach.py` and
+`laya-train`), it cleared 75, against Jev's 77 and 79, at 50 ms a question.
+Kev-27B, without fine-tuning, cleared 77 at about 1.3 s a decision, once
+tuned for the Jetson Thor's tensor cores (`tools/kev_thor/`: Kev's fused
+kernels, FP8 and NVFP4 projections; 2.2 times as fast as installed) (§15).
 
 ```bash
 LAYA_HOST=127.0.0.1 LAYA_DEVICE=cuda LAYA_MODELS=english laya-serve   # in Laya's own environment
 python -m system1_doom.ruletree eval runs/rule-tree-laya --tree general-11 --seeds 9-19 --decider laya
+python tools/kev_thor/serve_thor.py --run jaredpalmer/kev-27b@v1.0 --port 8008   # with Kev's environment
+python -m system1_doom.ruletree eval runs/rule-tree-kev --tree general-11 --seeds 9-19 --decider kev --ahead --budget 60
 ```
 
 ## Web explainer
