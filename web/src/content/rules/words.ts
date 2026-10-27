@@ -179,7 +179,8 @@ export const WRITTEN = {
   check: 'The check',
   checkPassed: 'passed',
   checkFailed: 'failed',
-  checkError: (error: string) => `The check could not run: ${error}`,
+  checkError: (error: string) =>
+    `This check did not finish when the soft loop ran it: ${error.replace(/^the check stopped: /, '')}. The rule was neither added nor rejected. This happened while the tree was being written; it is part of the record, not a problem with this page.`,
   checkNoTests: 'The record keeps the check’s result, not its three tests.',
   tests: {
     sees: 'Reaches the rule: at the decision it was written for, the walk now goes into the new rule',
