@@ -4,6 +4,8 @@ import io
 import json
 from contextlib import redirect_stdout
 
+import pytest
+
 from system1_doom.d1_client import D1UltraClient
 from system1_doom.ruletree.agreement import compare, main, questions, settled
 from system1_doom.ruletree.walk import NODE_QUESTION, NONE, NONE_TEXT
@@ -91,3 +93,34 @@ def test_compare_scores_both_models_against_the_text(tmp_path):
                     client=D1UltraClient(api_key="", decider="laya", transport=fake, max_workers=1))
     assert code == 0 and json.loads((tmp_path / "out.json").read_text())["all"]["right"] == 1
     assert out.getvalue().splitlines()[-1].startswith("all             5 asked,    1 as Jev")
+
+
+def test_the_site_gets_each_models_answer_by_decision_and_step(tmp_path):
+    from system1_doom.ruletree.site_models import main as site_main, site_answers
+
+    ep = recording(tmp_path)
+    runs = []
+    for model, pick in (("kev-27b", "r1"), ("laya", "none")):
+        fake = FakeD1(scripted(by_text("at least one enemy" if pick == "r1" else "nothing")), decider="laya")
+        result = compare(D1UltraClient(api_key="", decider="laya", transport=fake, max_workers=1), [ep])
+        runs.append((model, result))
+    site = site_answers(ep, runs)
+    assert site["models"] == ["kev-27b", "laya"]
+    # One entry per question, at its step of the walk (the skill step 3 is not a question).
+    assert [(a["decision"], a["step"], a["kind"], a["node"]) for a in site["answers"]] == [
+        (0, 0, "rule", "root"), (0, 2, "rule", "r1"), (0, 4, "rule", "aim"), (1, 0, "rule", "root"), (1, 1, "focus", "r3")]
+    first = site["answers"][0]["picks"]
+    assert first["kev-27b"][0] == "r1" and first["laya"][0] == "none" and 0 < first["kev-27b"][1] <= 1
+    # Answers out of step with the recording are refused rather than shown against the wrong question.
+    bad = json.loads(json.dumps(runs[0][1]))
+    bad["rows"] = bad["rows"][1:]
+    with pytest.raises(ValueError, match="answers for"):
+        site_answers(ep, [("kev-27b", bad)])
+    paths = []
+    for model, result in runs:
+        p = tmp_path / f"{model}.json"
+        p.write_text(json.dumps(result))
+        paths.append(f"{model}={p}")
+    with redirect_stdout(io.StringIO()):
+        assert site_main([str(tmp_path), *paths]) == 0
+    assert json.loads((ep / "models.json").read_text())["models"] == ["kev-27b", "laya"]

@@ -36,23 +36,24 @@ EPISODES = "web/public/episodes/rules-*"
 FAR = 400  # r2: "more than 400 units away"
 FRUITLESS = 5  # r11: "the last 5 or more decisions in which I fired hit nothing"
 
-Question = Tuple[int, str, str, str, str, Dict[str, str], Dict[str, Any]]
+Question = Tuple[int, str, str, str, str, Dict[str, str], Dict[str, Any], int]
 
 
 def questions(decisions: Path) -> Iterator[Question]:
-    """Every question of a recording as it was sent: (decision, kind, node, text, question, options, Jev's answer)."""
+    """Every question of a recording as it was sent: (decision, kind, node, text, question, options, Jev's answer, the
+    step's index in the decision's walk)."""
     for line in decisions.read_text(encoding="utf-8").splitlines():
         row = json.loads(line)
         text = row["state_text"].split(FOCUS_HEAD, 1)[0]
-        for step in row["steps"]:
+        for i, step in enumerate(row["steps"]):
             if step["kind"] == "focus":
                 text = text.split(FOCUS_HEAD, 1)[0]
                 if step.get("answer"):
-                    yield row["decision"], "focus", step["node"], text, step["question"], step["options"], step["answer"]
+                    yield row["decision"], "focus", step["node"], text, step["question"], step["options"], step["answer"], i
                 if step.get("focus_line"):
                     text += FOCUS_HEAD + step["focus_line"]
             elif step["kind"] == "rule" and step.get("answer"):
-                yield row["decision"], "rule", step["node"], text, step["question"], step["options"], step["answer"]
+                yield row["decision"], "rule", step["node"], text, step["question"], step["options"], step["answer"], i
 
 
 def _channel(text: str, name: str) -> str:
@@ -92,11 +93,11 @@ def compare(client: D1UltraClient, episodes: Sequence[Path]) -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
     t0 = time.monotonic()
     for ep in episodes:
-        for decision, kind, node, text, question, options, jev in questions(Path(ep) / "decisions.jsonl"):
+        for decision, kind, node, text, question, options, jev, step in questions(Path(ep) / "decisions.jsonl"):
             a = ask.ask(kind, node, text, "", question, options)
             right = settled(kind, node, text, options)
             rows.append({
-                "episode": Path(ep).name, "decision": decision, "kind": kind, "node": node, "options": options,
+                "episode": Path(ep).name, "decision": decision, "step": step, "kind": kind, "node": node, "options": options,
                 "right": sorted(right) if right is not None else None, "jev": jev["pick"], "pick": a.pick,
                 "probabilities": a.probabilities, "miss": a.miss, "error": a.error, "latency_ms": a.latency_ms,
             })
