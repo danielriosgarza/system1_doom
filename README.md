@@ -98,7 +98,9 @@ machine, with no key: Laya (Convai Innovations, 421M parameters,
 `--decider laya`) and Kev (Jared Palmer, `--decider kev`). Out of the box
 Laya cleared none of the 81 seeds. Fine-tuned on 3,212 of Jev's answers
 from other seeds (48 minutes on a Jetson Thor, `ruletree/teach.py` and
-`laya-train`), it cleared 75, against Jev's 77 and 79, at 50 ms a question.
+`laya-train`), it cleared 75, against Jev's 77 and 79, at 50 ms a question;
+fine-tuned instead on 11,519 of Kev's answers, with no Jev answer at all, it
+cleared 76.
 Kev-27B, without fine-tuning, cleared 77 at about 1.3 s a decision, once
 tuned for the Jetson Thor's tensor cores (`tools/kev_thor/`: Kev's fused
 kernels, FP8 and NVFP4 projections; 2.2 times as fast as installed) (§15).
@@ -149,12 +151,13 @@ are made are in
 [`docs/DOCUMENTATION.md` §8.15](docs/DOCUMENTATION.md#815-episode-bundles--the-web-explainer--exportpy-servepy-web),
 and the recordings' numbers in §15.
 
-A side tab on the left switches to the rule tree, which has six screens
+A side tab on the left switches to the rule tree, which has seven screens
 of its own: Watch, with the questions of each walk beside the game; The
 questions, with the text Jev was sent for each question exactly as sent
 and its probability for every option; How the rules were written, the
 soft loop's record step by step; Results; the whole tree, with where each
-rule came from; and Reference. It ships five rule-tree recordings, all
+rule came from; Reference; and Local models, how Laya was trained on
+Kev's answers and what each local model answered at each decision. It ships five rule-tree recordings, all
 cleared: `general-11` on seeds 9 to 12, and `codex-11` on seed 9.
 
 To watch it decide live, `python -m system1_doom.serve` plays on your

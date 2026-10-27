@@ -1789,7 +1789,7 @@ every frame exists.
 
 **On the website.** A side tab on the left of every page (two buttons
 above the top bar on a phone) switches between the senses and central
-and the rule tree. The rule tree has six screens of its own, keys 1 to 6:
+and the rule tree. The rule tree has seven screens of its own, keys 1 to 7:
 
 - **Watch**: the recording at the agent's pace, beside the walk of the
   decision shown: one row per question (where it was asked, Jev's pick
@@ -1811,9 +1811,18 @@ and the rule tree. The rule tree has six screens of its own, keys 1 to 6:
 - **Reference**: the one rule and principles as they apply here, a
   drawing of the walk and the soft loop, the glossary's rule-tree terms
   (§18), how this recording was made, and the keys.
+- **Local models**: answering without Jev (§15). How Laya was trained on
+  Kev's answers, in four steps; each model's results on the recorded
+  questions and the benchmark seeds (cited, not computed); this
+  decision's questions with Jev's pick and each local model's, read from
+  the recording's `models.json` (written by `python -m
+  system1_doom.ruletree.site_models` from saved agreement runs); and Kev
+  on the Jetson Thor, as installed and tuned. It has no counterpart among
+  the senses and central's screens: switching from it opens Watch.
 
 Its links are `#rules/<recording>/<decision>/<screen>`, with the screen
-ids `watch`, `questions`, `written`, `results`, `tree` and `reference`; a
+ids `watch`, `questions`, `written`, `results`, `tree`, `reference` and
+`models`; a
 link without a screen opens The questions, and every senses-and-central
 link works as before. Switching keeps the screen at the same position and
 opens the other solution's recording of the same seed at its first
@@ -2617,6 +2626,15 @@ with 122 GB of unified memory, every model served on its GPU at
   41% before. It is served beside the base checkpoint with
   `LAYA_EXTRA_MODELS='{"ruletree-jev-v1": "<checkpoint folder>"}'` and
   asked with `--model ruletree-jev-v1`.
+- **Laya, fine-tuned on Kev's answers** (`ruletree-kev-v1`), with no
+  answer of Jev's: tuned Kev-27B played `general-11` on 100 seeds used
+  nowhere else (500–599, `--ahead`; it cleared 89 and answered 13,598
+  questions with no miss). `teach.py` wrote the questions of seeds 500–589
+  once each with Kev's probabilities as targets (11,519) and kept seeds
+  590–599 to check (1,258). The same `laya-train` recipe (four epochs,
+  `--micro-batch 16 --grad-accum 4`, the same effective batch of 64) took
+  2 hours 20 minutes for 11,119 questions, 400 held for calibration. On
+  the 1,258 it picked as Kev did 99.1% of the time, against 44% before.
 - **Kev-27B**, base: `jaredpalmer/kev-27b` at tag `v1.0` (a full-weight
   fine-tune of Qwen3.8-27B, 51 GB in bf16), with torch 2.14.1+cu130 (Kev
   pins torch below 2.9, which has no CUDA 13 build for the Thor's GPU, so
@@ -2638,15 +2656,15 @@ asked each model the 709 questions Jev answered in the five recordings
 above, with the same text and options. The state text settles the answer
 of 561 of them:
 
-| Question | Settled | Jev | Laya | Laya, fine-tuned | Kev-27B as installed | Kev-27B tuned | Uniform pick |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Root: does the threats list name an enemy? | 212 | 212 | 148 | 212 | 212 | 212 | 33% |
-| Aim: which band is the focus angle in? | 158 | 157 | 57 | 158 | 158 | 157 | 14% |
-| r1: is the focus far, or has firing hit nothing for 5 decisions? | 89 | 88 | 20 | 89 | 89 | 89 | 33% |
-| Goal focus: which landmark is the GreenArmor? | 102 | 102 | 17 | 102 | 102 | 102 | 21% |
-| All settled | 561 | 559 (99.6%) | 242 (43%) | 561 (100%) | 561 (100%) | 560 (99.8%) | 26% |
-| Same pick as Jev, of all 709 | | | 322 | 698 | 699 | 697 | |
-| A question (median) | | about 300 ms | 51 ms | 51 ms | 1,075 ms | 464 ms | |
+| Question | Settled | Jev | Laya | Laya on Jev | Laya on Kev | Kev-27B as installed | Kev-27B tuned | Uniform pick |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Root: does the threats list name an enemy? | 212 | 212 | 148 | 212 | 212 | 212 | 212 | 33% |
+| Aim: which band is the focus angle in? | 158 | 157 | 57 | 158 | 158 | 158 | 157 | 14% |
+| r1: is the focus far, or has firing hit nothing for 5 decisions? | 89 | 88 | 20 | 89 | 89 | 89 | 89 | 33% |
+| Goal focus: which landmark is the GreenArmor? | 102 | 102 | 17 | 102 | 102 | 102 | 102 | 21% |
+| All settled | 561 | 559 (99.6%) | 242 (43%) | 561 (100%) | 561 (100%) | 561 (100%) | 560 (99.8%) | 26% |
+| Same pick as Jev, of all 709 | | | 322 | 698 | 696 | 699 | 697 | |
+| A question (median) | | about 300 ms | 51 ms | 51 ms | 50 ms | 1,075 ms | 464 ms | |
 
 Base Laya's probabilities were nearly flat (the median top probability
 0.45 at the root, 0.23 in the aim skill), and its picks kept to a few
@@ -2654,8 +2672,9 @@ options whatever the state said: none for 147 of the 212 aim questions,
 r11 for 83 of the 109 under r1. Its other setups did no better on the
 561: its own 512-token window 241 (43%), the multilingual checkpoint 156
 (28%), the typed-decisions checkpoint 176 (31%). The recordings were
-made on seeds 9 to 12, which the fine-tuned Laya never saw. Tuned, Kev-27B
-gave the same pick as installed on 706 of the 709 (FP8 alone: 707).
+made on seeds 9 to 12, which neither fine-tuned Laya saw. Tuned, Kev-27B
+gave the same pick as installed on 706 of the 709 (FP8 alone: 707); the
+Laya trained on its answers gave the same pick as tuned Kev on 702.
 
 *Play.* `eval --tree general-11` on the 81 benchmark seeds (201–215,
 301–315 and 9–59). The Laya runs played six games at a time. Kev-27B,
@@ -2669,20 +2688,28 @@ clock, the game's own work included): three questions about a new state
 take 544 ms in one request against 488 ms for one, but most states here
 are asked one or two questions.
 
-| | Jev (above, two runs) | Laya | Laya, fine-tuned | Kev-27B |
-|---|---:|---:|---:|---:|
-| Cleared | 77 and 79 of 81 | 0 of 81 | 75 of 81 | 77 of 81 |
-| 201–215 / 301–315 / 9–19 / 20–39 / 40–59 | 14–15 / 14 / 11 / 19–20 / 18–20 | 0 / 0 / 0 / 0 / 0 | 15 / 12 / 11 / 19 / 18 | 15 / 15 / 11 / 18 / 18 |
-| Games not cleared | 4 and 2, deaths in the last fights | 81, all deaths | 6, deaths in the last fights (x 692–829) | 4 deaths: three in the last fights (x 698–798), one at the first pair (seed 40, x 324) |
-| Decisions | 44.6 to clear (mean) | 10 before dying (median; at most 33) | 43.9 to clear (mean) | 42.6 to clear (mean) |
-| Questions per decision | 3.3 | 4.1 | 3.3 | 3.3 |
-| Misses | 0 | 0 | 0 | 0 |
-| Cost per game | $0.0125 | $0 (this machine) | $0 (this machine) | $0 (this machine) |
+| | Jev (above, two runs) | Laya | Laya on Jev | Laya on Kev | Kev-27B tuned |
+|---|---:|---:|---:|---:|---:|
+| Cleared | 77 and 79 of 81 | 0 of 81 | 75 of 81 | 76 of 81 | 77 of 81 |
+| 201–215 / 301–315 / 9–19 / 20–39 / 40–59 | 14–15 / 14 / 11 / 19–20 / 18–20 | 0 / 0 / 0 / 0 / 0 | 15 / 12 / 11 / 19 / 18 | 15 / 13 / 11 / 19 / 18 | 15 / 15 / 11 / 18 / 18 |
+| Games not cleared | 4 and 2, deaths in the last fights | 81, all deaths | 6, deaths in the last fights (x 692–829) | 5 deaths: four in the last fights (x 741–829), one at the first pair (seed 40, x 324) | 4 deaths: three in the last fights (x 698–798), one at the first pair (seed 40, x 324) |
+| Decisions | 44.6 to clear (mean) | 10 before dying (median; at most 33) | 43.9 to clear (mean) | 43.1 to clear (mean) | 42.6 to clear (mean) |
+| Questions per decision | 3.3 | 4.1 | 3.3 | 3.3 | 3.3 |
+| Misses | 0 | 0 | 0 | 0 | 0 |
+| Cost per game | $0.0125 | $0 (this machine) | $0 (this machine) | $0 (this machine) | $0 (this machine) |
 
 The fine-tuned Laya's 75 of 81 does not differ from Jev's 156 of 162 over
 its two runs beyond chance (Fisher's exact p ≈ 0.22). Jev's runs were made
 earlier that day, not in the same run, and Jev's results move from run to
-run (above), so the comparison is not within one run. Kev-27B, never trained on these questions, cleared 77 of 81, as many as Jev's first run (Fisher's exact p ≈ 0.74 against Jev's 156 of 162). The 81 games took 61 minutes four at a time on this PC; alone, a decision takes about 1.3 s, against about 1.1 s on Jev.
+run (above), so the comparison is not within one run. Kev-27B, never
+trained on these questions, cleared 77 of 81, as many as Jev's first run
+(Fisher's exact p ≈ 0.74 against Jev's 156 of 162). The 81 games took 61
+minutes four at a time on this PC; alone, a decision takes about 1.3 s,
+against about 1.1 s on Jev. Laya trained on Kev's answers, with no answer
+of Jev's, cleared 76 (p ≈ 0.51 against Jev; it lost seed 40 where Kev
+did) at about 0.17 s of model time a decision, and its 81 games took 9
+minutes six at a time. Kev's answers cost no money, so the training set
+of a new tree or task can be made on this machine.
 
 Laya's model card reports that its base checkpoints are near chance on
 decision sets they were not fine-tuned for and that strong results
@@ -2752,7 +2779,7 @@ minute with them.
 | `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy; `--decider jev` reaches the summary (`decider`, `models`) and every call goes to TypeSafe; `--decider jev` fails fast naming `TYPESAFE_API_KEY` |
 | `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra or Jev and is listed in the index with its decider and whether the senses chose the motor's targets, and the site ships recordings by each decider, the newest cleared one with the senses choosing targets; a bundle whose configuration names no sense's target is indexed as recorded before the senses chose targets, after the ones since; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
 | `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration`; `--decider jev` reaches the status |
-| `test_ruletree_codes.py`, `test_ruletree_tree.py`, `test_ruletree_walk.py`, `test_ruletree_game.py`, `test_ruletree_check.py`, `test_ruletree_loop.py`, `test_ruletree_cli.py`, `test_ruletree_agreement.py`, `test_ruletree_teach.py`, `test_ruletree_bundle.py` | The rule tree (§8.17): codes and sequences; rules added as exceptions, groups, a rule's own focus, actions checked where they are placed, a tree folder with its cornerstones, the shipped trees; the walk on the fake Jev (none, the focus asked before the children, a skill finished by `then`, one focus option needs no question, misses, kept answers, and asking ahead: the same walk in two requests instead of four); the game on ViZDoom (8-tic decisions, a replayed prefix is the same game, deaths and stalls, true angles, the run of fruitless firing, keys pressed only in `game.py`, the same game when keys are held one tic at a time); the comparisons, and a check, gate and commit on a stand-in corridor (`tests/ruletree_fixtures.py`); the loop end to end with scripted writers and its `build.jsonl`; the command line, `--budget` and `--ahead` reaching every walk, and `eval --decider laya` and `--decider kev` with no key, every question at that model's server on this machine with the text alone; the agreement check (`test_ruletree_agreement.py`: a recording's questions rebuilt as they were sent, the answers the text settles, both models scored); training data from games (`test_ruletree_teach.py`: each question once as it was sent, the teacher's or the text's label, misses and other seeds left out); a recording of seed 9 on ViZDoom (every decision with its walk and screen, `--check` finding a changed action and a missing frame, the schema, the index listing it after the senses' recordings, the shipped rule-tree recordings) |
+| `test_ruletree_codes.py`, `test_ruletree_tree.py`, `test_ruletree_walk.py`, `test_ruletree_game.py`, `test_ruletree_check.py`, `test_ruletree_loop.py`, `test_ruletree_cli.py`, `test_ruletree_agreement.py`, `test_ruletree_teach.py`, `test_ruletree_bundle.py` | The rule tree (§8.17): codes and sequences; rules added as exceptions, groups, a rule's own focus, actions checked where they are placed, a tree folder with its cornerstones, the shipped trees; the walk on the fake Jev (none, the focus asked before the children, a skill finished by `then`, one focus option needs no question, misses, kept answers, and asking ahead: the same walk in two requests instead of four); the game on ViZDoom (8-tic decisions, a replayed prefix is the same game, deaths and stalls, true angles, the run of fruitless firing, keys pressed only in `game.py`, the same game when keys are held one tic at a time); the comparisons, and a check, gate and commit on a stand-in corridor (`tests/ruletree_fixtures.py`); the loop end to end with scripted writers and its `build.jsonl`; the command line, `--budget` and `--ahead` reaching every walk, and `eval --decider laya` and `--decider kev` with no key, every question at that model's server on this machine with the text alone; the agreement check (`test_ruletree_agreement.py`: a recording's questions rebuilt as they were sent, the answers the text settles, both models scored, and the site's `models.json` matched to each question's step, out-of-step answers refused); training data from games (`test_ruletree_teach.py`: each question once as it was sent, the teacher's or the text's label, misses and other seeds left out); a recording of seed 9 on ViZDoom (every decision with its walk and screen, `--check` finding a changed action and a missing frame, the schema, the index listing it after the senses' recordings, the shipped rule-tree recordings) |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run lint`
@@ -2775,13 +2802,14 @@ give the app a miss of each kind to show.
 | `src/data/live.test.ts`, `src/data/playback.test.ts` | Live events applied to the open episode: newer ticks only, each of System 2's records once and in order, the proposals and the catalog, the final meta; the picker's list with the live episodes; an episode in progress with no tick yet, read with the ledger it started from; the live status, and none without `serve` or from a `serve` of the old schema; the pace (8 game frames a decision, or one a second), the end's hold and the start once eight frames are ready |
 | `src/content/glossary.test.ts` | Every term of §18 is in the app's glossary (as a term or alias) and every app term is in §18, at least 16; the design's words are there and the removed architecture's are not; every link names a screen and panel that exist; every `code` names a real `.py` under `src/system1_doom/` and a symbol defined in it; unique ids and aliases, none one letter or a bare “gate”; only the n-step return and the history test explain with a formula; linked words are whole words, longest first, once each |
 | `src/data/rules.test.ts` | On the shipped rule-tree recordings: a recording's decisions in order, its tree and record; a decision count that disagrees with `episode.json`, or a senses recording, refused; the text each question was sent (the state text, the `[focus]` line after a focus, none for a skill step); actions in words; every walk counted at the root and each decision once where it ended; both formats of `build.jsonl` (outcomes, a stopped check, a round played again, the held-out runs); the default tree's recording opened first |
+| `src/data/models.test.ts` | The shipped recordings' `models.json`: one entry per question Jev answered, at its step, of its kind and node, each pick one of the question's options with a probability; Kev-27B picking as Jev did on more than 90%; a missing file read as none, a broken one refused |
 | `e2e/watch.spec.ts` | On the fixture: a fresh visit lands on Watch and plays within 1.5 s; pausing holds the decision in the address; no sideways scroll at 390 px |
 | `e2e/instances.spec.ts` | The strip shows five senses and the central, with spoke, silent or missed and the pick; a central miss; the configuration line moving to version 2; a click on a row opens that instance; the survival evidence is verbatim with no `[pickups]` and the combat evidence has no `[messages]`, both equal to `ticks.jsonl`; the frame; the miss's reason and raw answer; the answers as bars |
 | `e2e/screens.spec.ts` | The slow system's version timeline, the history test's table (12 ticks, the metrics, the verdict), the trial and the judge's evidence, a sampled tick opening The instances, a cycle's reflectors and their evidence, the ledger; Learning's chart and tables; Growing the menu's proposal, stages and admit instance; Reference's rule, drawing, glossary and provenance; a linked word opening its entry; no sideways scroll at 390 px on any screen; the top bar on one row at 1280 px |
 | `e2e/live.spec.ts` | Against the live stand-in: Watch follows schema-2 ticks as they arrive; The slow system fills in from `reflection` events (cycles, versions 2 and 3, the history test); The instances follows the newest tick |
 | `e2e/recordings.spec.ts` | Against the built site with the shipped recordings: the landing plays the newest cleared one, and the cards mark the ones recorded before the senses chose targets; on it, Act names the motor's targets and the combat sense shows its target answer; every recording opens on every screen without an error and with no sideways scroll at 390 px; the top bar on one row at 1280 px |
 | `e2e/solutions.spec.ts` | Against the shipped recordings: the side tab switches solution at the same screen position, to the recording of the same seed, and Back crosses between them; the picker lists only the shown solution's recordings; the choice is remembered, and links to either solution still open it; the rule tree's top bar on one row at 1280 px beside the side tab, and the side tab above it at 390 px |
-| `e2e/rules.spec.ts` | Against the shipped recordings: Watch's rows, picks, skills and action equal `decisions.jsonl`; a row opens its question; the text of every question on The questions equals the text rebuilt from `decisions.jsonl`, character for character (every decision of one recording, every seventh of the others); a rule added by the soft loop links to the tree and back; Results' counts add up to the decisions; The rule tree marks the walk; Reference's drawing, glossary and provenance; every screen of every recording without an error or sideways scroll at 390 px |
+| `e2e/rules.spec.ts` | Against the shipped recordings: Watch's rows, picks, skills and action equal `decisions.jsonl`; a row opens its question; the text of every question on The questions equals the text rebuilt from `decisions.jsonl`, character for character (every decision of one recording, every seventh of the others); a rule added by the soft loop links to the tree and back; Results' counts add up to the decisions; The rule tree marks the walk; Reference's drawing, glossary and provenance; Local models' workflow, results and Thor tables, and this decision's questions with Jev's pick and each local model's equal to `models.json` and `decisions.jsonl`, a differing pick marked, and the side tab opening Watch from it; every screen of every recording without an error or sideways scroll at 390 px |
 
 **Continuous integration.** `.github/workflows/checks.yml` runs on every
 pull request and every push to main, in two jobs of at most ten minutes
@@ -2901,7 +2929,7 @@ from both; the Reference screen names them in one line of history.
 | **Value network** | One of five small networks trained between episodes on the agent's own play, one per sense's reward. Their predicted returns are evidence in the `values` channel, with how often each action was tried there in training; they decide nothing (`learning.py`, §8.9). |
 | **Network share** | Experience-weighted mean of `n/(n+25)` over the tries seen in training: how familiar play has become to the value networks. A report only; it weighs nothing. |
 | **Tick** | One decision: state → evidence → five senses → central → the action's primitives over ≈ 8 game tics, not one ViZDoom game tic. |
-| **Bundle** | One recorded episode as the web app reads it: `episode.json`, `ticks.jsonl`, `reflections.jsonl`, `proposals.jsonl`, the relevance ledger, the training counts and the frames, written and checked by `python -m system1_doom.export` (§8.15). A rule-tree bundle holds `episode.json`, `decisions.jsonl` (every walk, question by question), `tree.json` with its cornerstones, `build.jsonl` and the frames (`export --solution rule-tree`, §8.17). |
+| **Bundle** | One recorded episode as the web app reads it: `episode.json`, `ticks.jsonl`, `reflections.jsonl`, `proposals.jsonl`, the relevance ledger, the training counts and the frames, written and checked by `python -m system1_doom.export` (§8.15). A rule-tree bundle holds `episode.json`, `decisions.jsonl` (every walk, question by question), `tree.json` with its cornerstones, `build.jsonl` and the frames (`export --solution rule-tree`, §8.17), and the shipped ones a `models.json` with the local models' answers (`ruletree/site_models.py`). |
 | **Live episode** | An episode being played right now by `python -m system1_doom.serve` and streamed tick by tick, with System 2's records as they happen; when it ends it is a bundle like any recording (§8.15). |
 | **Slow path** | The async proposal worker (Codex or templates) and the admission bounds and admit instance that can grow the menu, asked by System 2's menu reflector; never blocks a tick, and changes the configuration only at a tick boundary (§9). |
 | **Rule tree** | The second solution: a tree of rules Jev walks at every decision (`ruletree/`, §8.17). A tree is a file: rules, focus questions, skills, and each added rule's cornerstone. |
