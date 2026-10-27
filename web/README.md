@@ -112,7 +112,7 @@ The choice is remembered with the theme and the pace, so a later visit
 without a link lands on that solution's Watch. Every old link still
 opens the senses and central.
 
-The rule tree has six screens of its own, keys 1 to 6:
+The rule tree has seven screens of its own, keys 1 to 7:
 
 - **Watch**: the recording at the agent's pace, beside the walk of the
   decision shown. One row per question Jev answered (where in the tree
@@ -141,12 +141,19 @@ The rule tree has six screens of its own, keys 1 to 6:
 - **Reference**: the one rule and the principles as they apply to the
   rule tree, a drawing of the walk and the soft loop, the glossary's
   rule-tree terms, how this recording was made, and the keys.
+- **Local models**: answering without Jev. How Laya was trained on Kev's
+  answers, in four steps; each model's results on the recorded questions
+  and the 81 benchmark seeds (from `docs/DOCUMENTATION.md` §15); this
+  decision's questions with Jev's pick and each local model's, from the
+  recording's `models.json`, a pick that differs from Jev's marked; and
+  how Kev-27B was tuned for the Jetson Thor. It has no counterpart among
+  the senses and central's screens, so switching from it opens Watch.
 
 Every screen but Watch shares a timeline like the senses and central's,
 with marks for damage, kills, a death and a miss, and a band under the
 decisions coloured by the rule picked at the top of the tree. Links are
 `#rules/<recording>/<decision>/<screen>`, with the screen ids `watch`,
-`questions`, `written`, `results`, `tree` and `reference`, for example
+`questions`, `written`, `results`, `tree`, `reference` and `models`, for example
 `#rules/rules-corridor-11/12/questions`; without a screen a link opens
 The questions. With nothing named, the rule tree opens the newest cleared
 recording of `general-11`, the tree the agent plays by default.
@@ -251,7 +258,7 @@ npm run lint         # oxlint, warnings fail
 npx prettier --check src e2e
 npm test             # Vitest, 88 tests: the loader (schema 1 refused), the strip and instance readings, System 2's records, learning, live events, playback, the rule tree's recordings, the glossary against the docs and the code
 npm run build        # type-check and production build into dist/
-npm run e2e          # Playwright, 44 tests: Watch, The instances (verbatim evidence, out-of-scope channels absent), the slow system's history test table, Learning, Growing the menu, Reference, phone width, the top bar, live mode, the shipped recordings, the side tab, the rule tree's six screens
+npm run e2e          # Playwright, 45 tests: Watch, The instances (verbatim evidence, out-of-scope channels absent), the slow system's history test table, Learning, Growing the menu, Reference, phone width, the top bar, live mode, the shipped recordings, the side tab, the rule tree's seven screens
 ```
 
 The unit tests and most browser tests read
@@ -332,7 +339,7 @@ message that says so.
 | `src/data/playback.ts` | The pace of play: one decision every 8 game frames in real time, one a second slow, and how long the end holds |
 | `src/data/rules.ts` | The rule tree's recordings: loads one, rebuilds the text each question was sent, reads each step of a walk, the tree's rules and skills, actions in words, the timeline marks, how often each rule decided, and the soft loop's record (`readBuild`, both of its formats) |
 | `src/store.ts` | The solution shown (remembered), the screens, one episode and its current decision, a rule-tree recording and its open question, rule and step of the record, playback (playing, the pace, the landing's start and loop), the instance and glossary term open, the theme; in live mode the status, whether the viewer is following, and the stream's events applied as they arrive |
-| `src/screens/` | `Watch`, `Instances`, `SlowSystem`, `Learning`, `Menu` and `Reference`; `rules/` holds the rule tree's six (`Watch`, `Questions`, `HowWritten`, `Results`, `Tree`, `Reference`) |
+| `src/screens/` | `Watch`, `Instances`, `SlowSystem`, `Learning`, `Menu` and `Reference`; `rules/` holds the rule tree's seven (`Watch`, `Questions`, `HowWritten`, `Results`, `Tree`, `Reference`, `Models`) |
 | `src/components/` | The strip, the stage with its crossfade, the recording cards, the timeline (`Scrubber`), the panel frame and its explanation, bars, verbatim evidence, the relevance chart, the two-system drawing, linked glossary words (`Terms`, `TermLink`), the top bar, the side tab (`SolutionTabs`) and the playback controls both solutions share (`Playback`) |
 | `src/content/` | Every word on the screens, one file per screen; `explainers.ts`, each panel's explanation and the code behind it; `glossary.ts`, the glossary a test keeps in step with the documentation and the code, each entry marked with the solutions it serves; `rules/`, the rule tree's words and explanations |
 | `public/episodes/` | The 14 recordings and their index |

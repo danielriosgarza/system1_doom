@@ -10,6 +10,7 @@ import type {
   SkillCall,
   WalkStep,
 } from '../schema/bundle'
+import { type ModelAnswers, parseModels } from './models'
 import {
   BundleError,
   type Fetcher,
@@ -31,6 +32,8 @@ export interface RulesBundle {
   tree: RuleTree
   /** The soft loop's record of how the tree was written, one line per step; empty when the tree has none. */
   build: BuildLine[]
+  /** What the open-weight models answered to the same questions (`models.json`); null when the recording has none. */
+  models?: ModelAnswers | null
 }
 
 /** One line of `build.jsonl`. Its fields depend on the step; `readBuild` reads them. */
@@ -63,8 +66,9 @@ export async function loadRulesEpisode(
     fetchText(`${base}/decisions.jsonl`, fetcher),
     fetchText(`${base}/tree.json`, fetcher),
     fetchText(`${base}/build.jsonl`, fetcher, true),
+    fetchText(`${base}/models.json`, fetcher, true),
   ])
-  const [metaText = '', decisionsText = '', treeText = '', buildText = ''] = settled.map((r) => {
+  const [metaText = '', decisionsText = '', treeText = '', buildText = '', modelsText = ''] = settled.map((r) => {
     if (r.status === 'rejected') throw r.reason
     return r.value
   })
@@ -86,6 +90,7 @@ export async function loadRulesEpisode(
     decisions,
     tree: parseJson<RuleTree>(treeText, `${name}/tree.json`),
     build: parseJsonl<BuildLine>(buildText, `${name}/build.jsonl`),
+    models: parseModels(modelsText, `${name}/models.json`),
   }
 }
 

@@ -26,7 +26,7 @@ export type Theme = 'dark' | 'light'
 /** The two ways this package plays: the senses and central, and the rule tree. */
 export type Solution = 'senses' | 'rules'
 export type SensesScreen = 'watch' | 'instances' | 'slow' | 'learning' | 'menu' | 'reference'
-export type RulesScreen = 'watch' | 'questions' | 'written' | 'results' | 'tree' | 'reference'
+export type RulesScreen = 'watch' | 'questions' | 'written' | 'results' | 'tree' | 'reference' | 'models'
 export type Screen = SensesScreen | RulesScreen
 
 /** The side tab's two tabs, in its order. */
@@ -45,7 +45,10 @@ export const SCREENS: Array<{ id: SensesScreen; label: string }> = [
   { id: 'reference', label: 'Reference' },
 ]
 
-/** The rule tree's screens, at the same positions: screen 2 of one solution is screen 2 of the other. */
+/**
+ * The rule tree's screens, at the same positions: screen 2 of one solution is screen 2 of the other. The seventh,
+ * Local models, has no counterpart; switching from it opens the other solution's Watch.
+ */
 export const RULE_SCREENS: Array<{ id: RulesScreen; label: string }> = [
   { id: 'watch', label: 'Watch' },
   { id: 'questions', label: 'The questions' },
@@ -53,6 +56,7 @@ export const RULE_SCREENS: Array<{ id: RulesScreen; label: string }> = [
   { id: 'results', label: 'Results' },
   { id: 'tree', label: 'The rule tree' },
   { id: 'reference', label: 'Reference' },
+  { id: 'models', label: 'Local models' },
 ]
 
 export const screensOf = (solution: Solution): Array<{ id: Screen; label: string }> =>

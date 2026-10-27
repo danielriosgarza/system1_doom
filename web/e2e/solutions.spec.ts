@@ -97,10 +97,10 @@ test('the choice of solution is remembered, and a link to either solution still 
   await expect(page.getByTestId('tick-counter')).toContainText('Decision 8 /')
 })
 
-test('at 1280 the rule tree’s top bar is one row with all six screens, beside the side tab', async ({ page }) => {
+test('at 1280 the rule tree’s top bar is one row with all seven screens, beside the side tab', async ({ page }) => {
   await page.goto('./#rules/rules-corridor-9/0/reference')
   const tabs = page.locator('.topbar .screens button, .topbar .screens a')
-  await expect(tabs).toHaveCount(6)
+  await expect(tabs).toHaveCount(7)
   const box = await page.locator('.topbar').boundingBox()
   expect(box?.height ?? 999).toBeLessThan(70)
   const side = await page.getByTestId('solution-tabs').boundingBox()

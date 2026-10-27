@@ -3059,3 +3059,48 @@ kbd {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------ the rule tree: local models */
+
+.workflow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: workflow;
+}
+
+.workflow li {
+  counter-increment: workflow;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 10px 12px;
+}
+
+.workflow h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.workflow h3::before {
+  content: counter(workflow) '. ';
+  color: var(--accent);
+}
+
+.workflow p {
+  margin: 0;
+}
+
+.model-picks td.differs {
+  color: var(--neg);
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .workflow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

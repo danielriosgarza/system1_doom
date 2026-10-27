@@ -6,13 +6,14 @@ import { type RulesBundle, type RulesMarkKind, NONE, ROOT, decisionMarks, topRul
 import type { RuleTreeDecision } from '../../schema/bundle'
 import type { Screen } from '../../store'
 import { HowWritten } from './HowWritten'
+import { Models } from './Models'
 import { Questions } from './Questions'
 import { RulesReference } from './Reference'
 import { Results } from './Results'
 import { Tree } from './Tree'
 import { RulesWatch } from './Watch'
 
-/** The rule tree's six screens, and the timeline under every one but Watch. */
+/** The rule tree's seven screens, and the timeline under every one but Watch. */
 export function RulesScreens({
   bundle,
   decision,
@@ -32,6 +33,7 @@ export function RulesScreens({
       {screen === 'results' && <Results bundle={bundle} />}
       {screen === 'tree' && <Tree bundle={bundle} decision={decision} />}
       {screen === 'reference' && <RulesReference bundle={bundle} />}
+      {screen === 'models' && <Models bundle={bundle} decision={decision} />}
       {screen !== 'watch' && <RulesScrubber bundle={bundle} />}
     </>
   )
