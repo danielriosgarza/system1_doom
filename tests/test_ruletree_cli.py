@@ -86,6 +86,11 @@ def test_eval_on_a_local_model_needs_no_key_and_sends_the_text_alone(tmp_path, m
     assert all(p.get("max_len") == extra.get("max_len") for _, p in fake.calls)
     eval_row = json.loads((tmp_path / "run" / "build.jsonl").read_text().splitlines()[-1])
     assert eval_row["step"] == "eval" and set(eval_row["models"]) == {answered_by}
+    # Each question's budget is the walk's 10 s unless --budget gives another.
+    assert set(fake.timeouts) and max(fake.timeouts) <= 10.0
+    fake.timeouts.clear()
+    main(["play", str(tmp_path / "run"), "--seed", "9", "--decider", decider, "--budget", "30"], game_factory=CorridorGame, out=io.StringIO())
+    assert 10.0 < max(fake.timeouts) <= 30.0
 
 
 def test_play_needs_the_key(tmp_path, monkeypatch):

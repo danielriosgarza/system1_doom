@@ -27,7 +27,7 @@ from system1_doom.d1_client import D1UltraClient
 from .dossier import write_dossier
 from .game import Game, outcome, play
 from .tree import RuleTree, load_tree, save_tree, tree_folder
-from .walk import AnswerBook, Jev
+from .walk import DEFAULT_BUDGET, AnswerBook, Jev
 
 GameFactory = Callable[[], Any]
 
@@ -39,9 +39,12 @@ class Run:
         client: Optional[D1UltraClient] = None,
         workers: int = 6,
         game_factory: GameFactory = Game,
+        budget: float = DEFAULT_BUDGET,
     ) -> None:
         self.folder = Path(folder)
         self.workers = max(1, workers)
+        # Seconds a question may take, retries included; a slower model served on this machine may need more than Jev.
+        self.budget = budget
         self.client = client if client is not None else D1UltraClient(decider="jev", max_workers=max(6, 2 * self.workers))
         self.game_factory = game_factory
         self._names = threading.Lock()
@@ -75,7 +78,7 @@ class Run:
 
     def jev(self, read: bool = True, shard: Optional[str] = None) -> Jev:
         """Jev for this run: `read` uses every recorded answer first (checks); `shard` keeps new answers there."""
-        return Jev(self.client, AnswerBook(self.folder / "answers", shard, read=read))
+        return Jev(self.client, AnswerBook(self.folder / "answers", shard, read=read), budget=self.budget)
 
     def game(self) -> Any:
         """The game a check replays in, one after the other."""

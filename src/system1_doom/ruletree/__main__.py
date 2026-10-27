@@ -37,6 +37,7 @@ from .gate import gate
 from .loop import ATTEMPTS, run_loop
 from .run import Run
 from .tree import DEFAULT_TREE, Proposal, load_tree, shipped_trees, tree_lines
+from .walk import DEFAULT_BUDGET
 from .writers import writer_named
 
 
@@ -94,6 +95,8 @@ def _parser() -> argparse.ArgumentParser:
             p.add_argument("--model", help="the decider's model (default: jev-latest for Jev, the english checkpoint for Laya, "
                                            "kev-latest for Kev)")
             p.add_argument("--endpoint", help="the decider's System One URL, when it differs from the default")
+            p.add_argument("--budget", type=float, default=DEFAULT_BUDGET,
+                           help=f"seconds a question may take before it is a miss (default {DEFAULT_BUDGET:g})")
     return ap
 
 
@@ -119,7 +122,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         say(f"{decider.key_env} is not set. {decider.name.capitalize()} makes every decision of the rule tree, so play "
             "needs the key (in the environment or a .env file).")
         return 2
-    kwargs = {"workers": args.workers}
+    kwargs = {"workers": args.workers, "budget": args.budget}
     if client is not None:
         kwargs["client"] = client
     elif args.model or args.endpoint or decider.name != "jev":
