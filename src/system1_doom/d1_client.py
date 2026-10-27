@@ -58,16 +58,18 @@ JEV_SCREEN_LABEL = "screen image"
 DEFAULT_LAYA_URL = "http://127.0.0.1:8000/v1/systemone"
 # The English checkpoint (ModernBERT-large); unnamed, the server routes each state by its language.
 DEFAULT_LAYA_MODEL = "english"
-# Laya's English checkpoint reads 512 tokens by default and drops the rest of a long state silently. A rule-tree
-# state runs to about 800 tokens and ends with the [focus] channel the aim skill's conditions read, so every
-# request asks for a window that holds all of it (ModernBERT's positions reach 8,192).
+# Laya's English checkpoint reads 512 tokens by default, question and options included, and drops the rest of a
+# long state silently. A rule-tree state runs to 350-750 tokens and ends with the [focus] channel the aim skill's
+# conditions read, so every request asks for a window that holds all of it (ModernBERT's positions reach 8,192).
 LAYA_MAX_LEN = 2048
 
 MissReason = Literal["timeout", "error", "http_429_exhausted", "off_menu", "malformed"]
 MISS_REASONS = ("timeout", "error", "http_429_exhausted", "off_menu", "malformed")
 
-DeciderName = Literal["d1-ultra", "jev", "laya"]
-DECIDER_NAMES = ("d1-ultra", "jev", "laya")
+# The hierarchy's deciders (`--decider` of play, train, export and serve, and a bundle's `decider`). Laya serves the
+# rule tree only so far: the combat sense reads the screen, which Laya is not sent.
+DeciderName = Literal["d1-ultra", "jev"]
+DECIDER_NAMES = ("d1-ultra", "jev")
 
 
 class Decider(BaseModel):
@@ -75,7 +77,7 @@ class Decider(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: DeciderName
+    name: Literal["d1-ultra", "jev", "laya"]
     vendor: str
     endpoint_url: str
     model: str

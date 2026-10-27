@@ -93,6 +93,17 @@ python -m system1_doom.ruletree show --tree general-11
 python -m system1_doom.ruletree play runs/rule-tree --tree general-11 --seed 9   # needs TYPESAFE_API_KEY
 ```
 
+The tree also runs on Laya, Convai Innovations' open-weight decision
+model, served on your own machine by `laya-serve` (`--decider laya`, no
+key). Out of the box it cleared none of the 81 seeds: on the questions
+whose answer the state text settles it was right 43% of the time,
+against Jev's 99.6% (§15).
+
+```bash
+LAYA_HOST=127.0.0.1 LAYA_DEVICE=cuda LAYA_MODELS=english laya-serve   # in Laya's own environment
+python -m system1_doom.ruletree eval runs/rule-tree-laya --tree general-11 --seeds 9-19 --decider laya
+```
+
 ## Web explainer
 
 **<https://danielriosgarza.github.io/system1_doom/>** opens on the agent

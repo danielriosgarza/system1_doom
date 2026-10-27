@@ -182,6 +182,8 @@ uv pip install -e ".[learn,dev]"    # + torch (CPU), matplotlib, pytest
 | ViZDoom scenarios + an IWAD | **Yes** | Scenario `.cfg` files ship with the `vizdoom` wheel (`vzd.scenarios_path`); an absolute path may also be passed. `_vizdoom.ini` in the repo root is the engine config ViZDoom generates/uses. `basic.cfg`, `deadly_corridor.cfg`, `defend_the_center.cfg`, `health_gathering*.cfg` are the scenarios referenced by code/tests. |
 | `LIQUID_API_KEY` | **Yes, to play on d1-ultra** | Read from env var `LIQUID_API_KEY`, else from `.env` in CWD or repo root (`d1_client.load_api_key()`). d1-ultra makes every decision, so `cli`, `train`, `export` and `serve` exit `2` without it. `export --check`, `--index` and `--schema` read files only and need no key. Tests answer from a fake transport and need no key except the seven live ones. |
 | `TYPESAFE_API_KEY` | **Yes, to play on Jev** (`--decider jev`) | Read the same way (`load_api_key("jev")`). TypeSafe's Jev answers the same System One request at `https://api.typesafe.ai/v1/systemone`, so every instance runs on it unchanged (§8.10); the entry points exit `2` without the key. |
+| `laya-serve` (pip `laya[serve]`, Convai Innovations) | Only for the rule tree on Laya (`--decider laya`) | Installed in an environment of its own (`laya` 0.4.15 brings torch and transformers) and started on the same machine with `LAYA_HOST=127.0.0.1 LAYA_DEVICE=cuda LAYA_MODELS=english laya-serve` (port 8000). The first start downloads the checkpoint from Hugging Face (`convaiinnovations/laya`, Apache 2.0). Without `LAYA_HOST` it listens on every interface with no key. |
+| `LAYA_API_KEY` | No | Only when `laya-serve` was started with it; then read the same way (`load_api_key("laya")`) and sent as the bearer token. Without it no key is sent. |
 | `codex` CLI (OpenAI Codex) | Only for real slow-path proposals | Detected with `shutil.which("codex")`. Absent ⇒ deterministic fallback templates are used instead (§8.11). Disable entirely with `--disable-slow-llm` / `--no-slow-path`. |
 | `ffmpeg` | Only for `--save-mp4` | GIF export needs only Pillow. |
 | Tkinter + a display | Only for the live dashboard | Enabled by `--visible` (unless `--no-dashboard`); any failure disables the dashboard silently and play continues. |
@@ -956,6 +958,19 @@ question name with a `usage` block (input and output tokens, cost).
   controller's clients (System 1's and the slow path's) use the same one,
   so the senses, the central, the admit instance, the reflectors,
   System 2's central, the history test and the trial judge all run on it.
+  A third decider, `laya`, is Convai Innovations' open-weight Laya (the
+  English checkpoint: ModernBERT-large with a decision head, 421M
+  parameters), served on the same machine by `laya-serve`, which answers
+  the same request at `POST http://127.0.0.1:8000/v1/systemone`. Its
+  `Decider` pins the `english` checkpoint, sends no screen
+  (`images="none"`; Laya reads text only), needs no key unless the server
+  has one (`key_required=False`), and carries `max_len: 2048` on every
+  request (`Decider.request`): the checkpoint's own window of 512 tokens,
+  question and options included, would cut a rule-tree state of 350 to
+  750 tokens before its `[focus]` line. It has no price, so its cost is 0;
+  every response names `laya-rl-agent`. Only the rule tree takes it so far
+  (`DECIDER_NAMES`, the hierarchy's choices, stays `d1-ultra` and `jev`),
+  since the combat sense reads the screen.
 
 * **Typed questions** — `noul` (the probability a proposition holds),
   `choice` (probabilities over named criteria), `score`; answers are
@@ -1802,6 +1817,19 @@ cleared. A browser test rebuilds the text each question was sent from
 `decisions.jsonl` and compares it with The questions character for
 character.
 
+**On Laya.** Every command that plays takes `--decider laya`: the same
+walk, with each question sent to Laya on this machine (§8.10) instead of
+Jev, and the same records, whose `models` then name `laya-rl-agent`. A
+run's answer book keys each answer by the model, so Jev's and Laya's
+answers are never mixed. `ruletree/agreement.py` asks a decider the
+questions of the shipped recordings again, with the text and options Jev
+was sent, and scores both models where the state text settles the
+answer: at the root whether the threats list names an enemy, in the aim
+skill which band the focus angle is in (an angle on a band's edge is
+left out), under r1 the focus's distance and the run of fruitless
+firing, and which landmark is the GreenArmor. Laya, out of the box,
+clears none of the benchmark seeds (§15).
+
 ---
 
 ## 9. The slow path end-to-end
@@ -2010,7 +2038,8 @@ python -m system1_doom.export --check live/live-1                            # a
 
 The rule tree's own entry point (§8.17). It needs `TYPESAFE_API_KEY`
 (Jev makes every decision); without it every command but `show` and
-`finish` exits `2`.
+`finish` exits `2`. With `--decider laya` Laya makes every decision
+instead, on the `laya-serve` of this machine (§3), and no key is needed.
 `RUN` is a run folder; the first command on it names the tree it starts
 from with `--tree` (a shipped tree's name or a tree folder). `play` and
 `eval` start from `general-11` when no tree is named; `show` prints it.
@@ -2027,15 +2056,26 @@ from with `--tree` (a shipped tree's name or a tree folder). `play` and
 | `finish RUN OUT` | Copy the run's tree and `build.jsonl` into a tree folder that plays on its own |
 
 Every command but `show` takes `--workers N` (games played at once,
-default 6) and `--model` (the Jev model; default `jev-latest`).
+default 6), `--decider jev|laya` (default `jev`), `--model` (default
+`jev-latest` for Jev, `english` for Laya) and `--endpoint` (the
+decider's System One URL, when it is not the default).
 `loop` also takes `--writer-cmd` (the writer's command, reading the
 prompt on stdin; `{out}` names its answer file) and `--attempts`
 (proposals per failure, default 3).
 
 ```bash
 python -m system1_doom.ruletree eval runs/rt --tree general-11 --seeds 9-19
+python -m system1_doom.ruletree eval runs/rt-laya --tree general-11 --seeds 9-19 --decider laya
 python -m system1_doom.ruletree loop runs/codex1 --tree general-9 --writer codex --train 9-19 --held 20-39
 ```
+
+`python -m system1_doom.ruletree.agreement OUT.json --decider laya`
+asks the questions of the shipped recordings again and prints, per
+question, how often the decider picked as Jev did and, where the state
+text settles the answer, how often each model was right and what a
+uniform pick would score; every answer goes to `OUT.json`. It takes
+`--model`, `--endpoint`, `--max-len N` (Laya's window; `0` sends none)
+and `--episodes`.
 
 There is no `python -m system1_doom` `__main__`; use the module entry
 points above (or embed `DoomDecisionController` directly — §17).
@@ -2525,6 +2565,55 @@ Every call was answered by `jev-1.14.0`, and no decision was marked
 stalled. On the same seeds the senses' recordings cleared one of four
 (seed 12, in 61 decisions).
 
+---
+
+**The rule tree on Laya** (2026-10-27, on a Jetson Thor with 122 GB of
+memory: `laya` 0.4.15, the `english` checkpoint at revision `7b928d8`,
+`laya-serve` on the GPU at 127.0.0.1, a window of 2,048 tokens).
+
+*The recorded questions.* `python -m system1_doom.ruletree.agreement`
+asked Laya the 709 questions Jev answered in the five recordings above,
+with the same text and options. The state text settles the answer of
+561 of them:
+
+| Question | Settled | Jev right | Laya right | Uniform pick |
+|---|---:|---:|---:|---:|
+| Root: does the threats list name an enemy? | 212 | 212 | 148 (70%) | 33% |
+| Aim: which band is the focus angle in? | 158 | 157 | 57 (36%) | 14% |
+| r1: is the focus far, or has firing hit nothing for 5 decisions? | 89 | 88 | 20 (22%) | 33% |
+| Goal focus: which landmark is the GreenArmor? | 102 | 102 | 17 (17%) | 21% |
+| All | 561 | 559 (99.6%) | 242 (43%) | 26% |
+
+Laya's probabilities were nearly flat (the median top probability 0.45
+at the root, 0.23 in the aim skill), and its picks keep to a few options
+whatever the state says: none for 147 of the 212 aim questions, r11 for
+83 of the 109 under r1. Of all 709 it picked as Jev did 322 times. Its
+other setups did no better on the 561: its own 512-token window 241
+(43%), the multilingual checkpoint 156 (28%), the typed-decisions
+checkpoint 176 (31%). A question took 51 ms (median) on Laya against
+about 300 ms on Jev.
+
+*Play.* `eval --decider laya --tree general-11` on the 81 benchmark
+seeds (201–215, 301–315 and 9–59), six games at a time:
+
+| | Jev (above, two runs) | Laya |
+|---|---:|---:|
+| Cleared | 77 and 79 of 81 | 0 of 81 |
+| Games not cleared | 4 and 2, deaths in the last fights | 81, all deaths |
+| Decisions | 44.6 to clear (mean) | 10 before dying (median; at most 33) |
+| Furthest x | about 1,260 when cleared, 728–824 in the deaths | 75 (median; at most 415) |
+| Questions per decision | 3.3 | 4.1 |
+| Misses | 0 | 0 |
+| Cost per game | $0.0125 | $0 (this machine) |
+
+Laya's model card reports that the base checkpoints are near chance on
+decision sets they were not fine-tuned for (0.36 on its own
+typed-decisions set) and that strong results depend on fine-tuning. These
+questions ask it to read numbers from a structured state of 350 to 750
+tokens and compare them with ranges in the options, which it was not
+trained for. As a drop-in replacement for Jev it does not play; whether a
+checkpoint fine-tuned on rule-tree questions would is not measured here.
+
 ## 16. Testing
 
 ```bash
@@ -2574,7 +2663,7 @@ minute with them.
 | `test_reflectors.py` | Nine reflectors, each over its history channel and `h_outcomes`; questions that name the reflector and never say how to weigh; one channel at a time, never `menu`; the menu, strategy and exploration menus; the bounds (cooling, the trial, scope size, built-ins, `menu`); a change bumps the version and the diff says what changed; one call, and a proposal only when it speaks for a change; a change outside the criteria is a miss |
 | `test_history_test.py` | The sense and central metrics on labelled ticks; the margin rule on both sides; strata by rank; the seeded stratified sample, the context cap and when it is relaxed; a change that quiets a sense on its unpaid messages passes, one under the margin fails; no test and no call under 24 ticks; the noise estimate; a missed re-run counts as silent; the screen attached when `frame` joins the scope; the central's test; one live re-run on 4 ticks |
 | `test_system2.py` | On a synthetic history and on `basic.cfg` with the fake: a cycle every 20 decisions or at an episode end, none during a trial; each reflector sees only its channels and the central its three; the central's criteria are the allowed proposals and `none`; one change per cycle, at a tick boundary; the judge keeps after 60 decisions; a revert restores the previous configuration exactly with the version bumped, then cooling; a revert queued again on restore; a missed judge extends the trial by 20; a judge that never answers ends the trial as revert with no verdict, and one that misses twice and then answers is followed; the safety revert; a missed central changes nothing and a tie goes to the first option; the calls counted and kept under the bound; a macro request through the slow path, and a reverted macro retired; the state saved and restored only onto its configuration; end to end, a widen tested, applied and kept, ending at configuration version 2, in the controller and in served bundles; off unless asked; one live cycle on a short real history |
-| `test_d1_client.py` | Request serialisation through an injected transport; typed misses counted per instance; `Retry-After` parsing; the default transport's typed 429; one live call; on Jev: the same request at TypeSafe with the screen as a 640×480 asset under its header, the state ending with the reference, no cost in the usage so the input tokens at the published price, each decider reading its own key, and a live Jev call |
+| `test_d1_client.py` | Request serialisation through an injected transport; typed misses counted per instance; `Retry-After` parsing; the default transport's typed 429; one live call; on Jev: the same request at TypeSafe with the screen as a 640×480 asset under its header, the state ending with the reference, no cost in the usage so the input tokens at the published price, each decider reading its own key, and a live Jev call; on Laya: the same request at the server on this machine with the text alone, the English checkpoint and a 2,048-token window, no key sent without one, and no cost |
 | `test_controller_e2e.py` | On `basic.cfg` with the fake: six instances per tick with the payload's state equal to the evidence; a fake that shoots when aimed clears the level; a scripted outage gives missed ticks with idle steps, then `connection_lost`; isolated misses do not end the episode; every motor step follows the action's plan; the value networks learn and appear in `values`; the ledger updates and is restored; a pending configuration applies at the boundary; explore draws reproduce; an admitted macro enters at the next boundary; play needs the key; one live tick with six instances answering; the whole hierarchy on the fake Jev (24 `basic.cfg` decisions with System 2 every 8): every call of every instance, System 1's and System 2's, at TypeSafe with the Jev key, the combat sense's state its evidence plus the one asset, every other state its evidence exactly, the cost at the published price, a trial and a verdict; a controller on Jev needs `TYPESAFE_API_KEY`; live on Jev: one tick with six instances, and 16 corridor decisions with System 2 |
 | `test_architecture.py` | The removed `modules.py`, `arbiter.py` and `exploration.py` are gone and nothing in `src/` or `tests/` imports them; keys are pressed only in `controller.py`, from the pick or the typed miss; only `system1.py` builds a `Pick`, and only it and `history_test.py` (the seeded sample of stored ticks) import `random`; at run time the executed action is the central's answer and a miss idles |
 | `test_llm_and_admission.py` | The bounds reject before any call; the admit instance admits at its yes; a missed admit rejects; the admit evidence and its determinism; the background worker |
@@ -2584,7 +2673,7 @@ minute with them.
 | `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy; `--decider jev` reaches the summary (`decider`, `models`) and every call goes to TypeSafe; `--decider jev` fails fast naming `TYPESAFE_API_KEY` |
 | `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra or Jev and is listed in the index with its decider and whether the senses chose the motor's targets, and the site ships recordings by each decider, the newest cleared one with the senses choosing targets; a bundle whose configuration names no sense's target is indexed as recorded before the senses chose targets, after the ones since; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
 | `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration`; `--decider jev` reaches the status |
-| `test_ruletree_codes.py`, `test_ruletree_tree.py`, `test_ruletree_walk.py`, `test_ruletree_game.py`, `test_ruletree_check.py`, `test_ruletree_loop.py`, `test_ruletree_cli.py`, `test_ruletree_bundle.py` | The rule tree (§8.17): codes and sequences; rules added as exceptions, groups, a rule's own focus, actions checked where they are placed, a tree folder with its cornerstones, the shipped trees; the walk on the fake Jev (none, the focus asked before the children, a skill finished by `then`, one focus option needs no question, misses, kept answers); the game on ViZDoom (8-tic decisions, a replayed prefix is the same game, deaths and stalls, true angles, the run of fruitless firing, keys pressed only in `game.py`, the same game when keys are held one tic at a time); the comparisons, and a check, gate and commit on a stand-in corridor (`tests/ruletree_fixtures.py`); the loop end to end with scripted writers and its `build.jsonl`; the command line; a recording of seed 9 on ViZDoom (every decision with its walk and screen, `--check` finding a changed action and a missing frame, the schema, the index listing it after the senses' recordings, the shipped rule-tree recordings) |
+| `test_ruletree_codes.py`, `test_ruletree_tree.py`, `test_ruletree_walk.py`, `test_ruletree_game.py`, `test_ruletree_check.py`, `test_ruletree_loop.py`, `test_ruletree_cli.py`, `test_ruletree_agreement.py`, `test_ruletree_bundle.py` | The rule tree (§8.17): codes and sequences; rules added as exceptions, groups, a rule's own focus, actions checked where they are placed, a tree folder with its cornerstones, the shipped trees; the walk on the fake Jev (none, the focus asked before the children, a skill finished by `then`, one focus option needs no question, misses, kept answers); the game on ViZDoom (8-tic decisions, a replayed prefix is the same game, deaths and stalls, true angles, the run of fruitless firing, keys pressed only in `game.py`, the same game when keys are held one tic at a time); the comparisons, and a check, gate and commit on a stand-in corridor (`tests/ruletree_fixtures.py`); the loop end to end with scripted writers and its `build.jsonl`; the command line, and `eval --decider laya` with no key, every question at the server on this machine with the text alone; the agreement check (`test_ruletree_agreement.py`: a recording's questions rebuilt as they were sent, the answers the text settles, both models scored); a recording of seed 9 on ViZDoom (every decision with its walk and screen, `--check` finding a changed action and a missing frame, the schema, the index listing it after the senses' recordings, the shipped rule-tree recordings) |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run lint`
