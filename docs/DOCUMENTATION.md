@@ -59,6 +59,7 @@ tests), online at <https://danielriosgarza.github.io/system1_doom/>
    - 8.14 [Traces & visualisation — `logger.py`, `tracing.py`, `visualizer.py`, `charts.py`](#814-traces--visualisation--loggerpy-tracingpy-visualizerpy-chartspy)
    - 8.15 [Episode bundles & the web explainer — `export.py`, `serve.py`, `web/`](#815-episode-bundles--the-web-explainer--exportpy-servepy-web)
    - 8.16 [System 2 — `system2.py`, `reflectors.py`, `history_channels.py`, `history_test.py`, `reflection.py`](#816-system-2--system2py-reflectorspy-history_channelspy-history_testpy-reflectionpy)
+   - 8.17 [The rule tree — `ruletree/`](#817-the-rule-tree--ruletree)
 9. [The slow path end-to-end](#9-the-slow-path-end-to-end)
 10. [The learning loop end-to-end](#10-the-learning-loop-end-to-end)
 11. [Entry points & CLI reference](#11-entry-points--cli-reference)
@@ -288,6 +289,7 @@ system1_doom/
 | `cli.py` | 220 | Play/watch entry point (`python -m system1_doom.cli`) |
 | `train.py` | 492 | Training/evaluation entry point, `RunStore`, resume, best-checkpoint tracking, which configuration a run starts from (`starting_configuration`) (`python -m system1_doom.train`) |
 | `__init__.py` | 3 | Package docstring + `__version__` |
+| `ruletree/` | 1,700 | The rule tree, a second way to play (§8.17): `codes.py` (action codes), `tree.py` (rules, focus, skills, cornerstones, proposals), `walk.py` (one decision as Jev's answers down the tree, kept answers), `game.py` (the corridor, one 8-tic decision at a time), `check.py`, `gate.py`, `dossier.py`, `writers.py`, `loop.py` (the soft loop), `run.py` (the run folder), `__main__.py` (`python -m system1_doom.ruletree`); `trees/` ships `general-9`, `general-11` and `codex-11`, `prompts/rule-writer.md` the rule writer's instructions |
 
 Dependencies point “downwards” only: `controller` wires everything;
 `system1` depends on `senses`, `instance`, `configuration` and
@@ -463,8 +465,10 @@ so all downstream logic is button-set-aware.
   `recent_outgoing_damage = Δhits·20`, `recent_incoming_damage` from the
   health drop since the previous snapshot.
 * **Labels buffer** → visible enemies/pickups. For each label: screen
-  centre, `angle_offset = (centre_x − cx)/centre_x · 45°` (positive =
-  left of crosshair), true distance from the objects buffer when
+  centre, `angle_offset = atan((centre_x − cx)/centre_x)` in degrees
+  (positive = left of crosshair; the screen spans 90°, so the edge is
+  45°; a linear map, used until 2026-10-27, understated every angle off
+  the centre), true distance from the objects buffer when
   available, else the sprite-size estimate `max(30, 3200/height)`.
   Name classification is keyword-based and shared with the motor
   (`is_enemy_name`, `is_pickup_name`, `is_ignored_actor` — dead actors,
@@ -1587,6 +1591,159 @@ which they were made.
 
 ---
 
+### 8.17 The rule tree — `ruletree/`
+
+The rule tree is a second way to play, separate from the senses and the
+central. It uses the same bridge (§8.1), the same evidence channels
+(§8.5) and the same Jev client (§8.10); nothing else of System 1 or
+System 2. Every decision is still an answer of the decision model: the
+code walks the tree, renders the state and presses the keys of the rule
+Jev's answers led to.
+
+**A decision is a walk down the tree.** Each node is a rule: a
+condition, one sentence Jev judges from the state, and an action. A
+rule's children are its exceptions. At a node with children Jev is asked
+one choice question, "Which of these is true right now?", whose options
+are the children's conditions and "None of these is true right now."
+The walk moves into the child with the highest probability and asks
+again. It stops at a node without children, or when Jev answers none,
+and that node's action is played for the decision's 8 tics. The root has
+no condition; its action is a random code, drawn from the game's seed and
+the decision's number so that a replay draws the same one.
+
+**Focus.** A node may have a focus. Before its children are asked, Jev
+picks one listed item of some channels, for example "Which of these
+enemies is the biggest danger to me right now?" over the threats list.
+The item is added to the state as a `[focus]` channel, so the rules below
+speak of "the focus" instead of naming a monster. With one item there is
+no question.
+
+**Skills.** An action may call a skill, `{"skill": "aim", "then":
+"0001"}`. A skill is a second tree without a condition at its top, and
+the walk goes on there. A rule inside a skill may give only the start of
+a decision, such as `00R0:3` (turn right for 3 tics); the caller's
+`then` fills the tics left. With no rule of the skill true, the caller's
+`then` is the whole decision.
+
+**Actions** (`codes.py`). A code has four letters: walk (`F`, `0`, `B`),
+sidestep (`L`, `0`, `R`), turn (`L`, `0`, `R`) and fire (`1`, `0`), so
+`F0R1` walks forward while turning right and firing. There are 54 codes.
+A code alone is held for 8 tics; a sequence `CODE:TICS+CODE:TICS` splits
+them (`00R0:3+0001:5`). The keys are pressed in `game.py` only.
+
+**Misses.** A failed call is a miss: the walk stops at the node it has
+reached and that node's action is played; a skill call stopped this way
+plays its `then`. The decision records the miss. Nothing stands in for
+the answer.
+
+**The state** (`game.py`). A goal paragraph ("Reach the green armor at
+the far end of the corridor alive ..."), then ten channels of §8.5 in
+order (vitals, threats, incoming, outgoing, pickups, landmarks,
+geometry, position, progress, history) and the screen. The outgoing
+channel adds "the last N decisions in which you fired hit nothing" once
+N is 2: firing at an enemy the shots cannot reach, behind the edge of a
+wall, otherwise looks like ordinary misses. Every game starts as on a new
+bridge (tick count and total reward at zero), so a replay shows Jev the
+same state as the game it replays.
+
+**The trees** (`ruletree/trees/`). A tree is a folder that plays on its
+own: `tree.json` (the rules, focus questions and skills), `cornerstones/`
+(the screen of each frame a rule was written from) and `build.jsonl`
+(the record of the soft loop that built it). Three ship; `general-11`
+plays when no tree is named (§15: it cleared about as many games as
+`codex-11`, in fewer decisions):
+
+| Tree | Rules | How it was made |
+|---|---:|---|
+| `general-9` | 9 | Written by hand from what the first two stages of the soft loop taught: a focus question picks the enemy or the goal, one aiming skill turns toward it, the caller says what to do next. No monster names and no map distances. |
+| `general-11` | 11 | `general-9` plus two rules the soft loop added with Claude as the rule writer (r11, r12 below). |
+| `codex-11` | 11 | `general-9` plus two rules the soft loop added with Codex as the rule writer: when the focus is at most 2 pixels wide, at least 6 tall and to one side, aim and sidestep away from that side while firing. |
+
+`python -m system1_doom.ruletree show --tree general-11`:
+
+```text
+root: default -> random walk
+  r1: if 'The threats list shows at least one enemy.' [focus: 'Which of these enemies is the biggest danger to me right now?' among threats] -> use skill aim, then fire
+    r2: if 'The focus channel says the enemy is more than 400 units away.' -> use skill aim, then walk forward + fire
+    r11: if 'The outgoing channel says the last 5 or more decisions in which I fired hit nothing.' -> use skill aim, then walk forward + fire
+      r12: if 'The focus channel shows the enemy at least 6 pixels wide.' -> use skill aim, then fire
+  r3: if 'The threats list says no enemy is visible.' [focus: 'Which of these is the goal I am trying to reach?' among landmarks] -> use skill aim, then walk forward
+skill aim:
+  aim: default -> the caller's action
+    r4: if 'The focus channel says it is between 3 and 7 degrees to the right.' -> turn right for 3 tics, then the caller's action (00R0:3)
+    r5: ... between 7 and 12 degrees to the right -> turn right for 5 tics (00R0:5)
+    r6: ... more than 12 degrees to the right -> turn right for 7 tics (00R0:7)
+    r7, r8, r9: the same three to the left
+```
+
+The turns come from the measured turning table: from rest, 3 tics turn
+5.3 degrees, 5 tics 8.8 and 7 tics 15.8. Every turning action ends with
+at least one tic without turning, because a turn that runs on into the
+next decision goes about twice as fast and overshoots.
+
+**The soft loop** (`loop.py`) writes the rules, one failure at a time:
+
+1. Play every training seed once with fresh answers.
+2. Take the first game that went wrong: the agent died, stalled (its
+   furthest point grew by less than 48 units over 24 decisions) or ran
+   out of time. Its dossier (`dossier.py`) shows the tree, the last 12
+   decisions (the action, the walk and its probabilities, health,
+   position, the screen, and where the enemies really were, for the
+   writer only) and the state Jev read at each, word for word.
+3. The rule writer (`writers.py`: Codex through `codex exec`, Claude
+   through `claude -p`, or a file a person fills in) answers one rule, or
+   a small group that forms one skill, written from one frame of that
+   game; or it says the state lacks what is needed. Its instructions are
+   `ruletree/prompts/rule-writer.md`.
+4. The check (`check.py`):
+   * **sees**: at its frame, the walk through the new tree passes
+     through the new rule;
+   * **unchanged**: the frames earlier rules were written from take the
+     same route, or replaying their game from there to their own horizon
+     with the new tree ends no worse than the rule's own check did;
+   * **avoids**: the game is replayed to the frame and played 24
+     decisions past the failure, once with the old tree and once with
+     the new one. Each ends as (alive, goal reached, health, furthest
+     point). Alive beats dead and the goal reached beats not reached;
+     otherwise the new tree must be no worse on health and furthest
+     point and better on one. If both die, the rule fails: dying a
+     little further on does not avoid the death.
+5. The gate (`gate.py`): every training seed is played with the current
+   tree and with the new one; the new one must clear at least as many.
+6. A rule that passes both is added as an exception to the node that
+   decided at its frame (or to a node on that walk the writer names), and
+   the frame becomes its cornerstone: the seed, the actions that led
+   there, the state text, the screen, the route the walk took, the
+   horizon and the standing there.
+
+A failed check or gate goes back to the writer with the report, up to
+three proposals per failure. The writer never plays: the engine plays
+and replays games and grades proposals, and Jev never sees the engine.
+
+**Answers are kept** (`walk.py`). A game asks Jev afresh and keeps each
+answer, keyed by the state, the screen, the question and the options. A
+check reads every kept answer first, so a replayed state gets the answer
+it got in play and the old and new trees are compared on the same
+answers up to the frame.
+
+**The run folder** (`run.py`):
+
+```text
+<run>/tree/              the tree being built (tree.json, cornerstones/)
+<run>/games/<game>.json  one game: seed, tree, and per decision the action, the walk with every
+                         question, option, probability, latency and cost, health, position, events,
+                         the state text and the screen
+<run>/games/<game>/      its dossier (dossier.md, frame-NNN.jpg)
+<run>/answers/           Jev's answers, one file per game or check
+<run>/proposals/         every prompt, answer, check report and gate report
+<run>/build.jsonl        one line per start, pass, proposal, check, gate, commit and evaluation
+```
+
+Games run in parallel threads (`--workers`, default 6), each borrowing a
+game from a pool, with one client for all.
+
+---
+
 ## 9. The slow path end-to-end
 
 ```text
@@ -1780,8 +1937,39 @@ python -m system1_doom.serve --scenario deadly_corridor.cfg --networks best   # 
 python -m system1_doom.export --check live/live-1                            # a finished live episode
 ```
 
-There is no `python -m system1_doom` `__main__`; use the four module
-entry points above (or embed `DoomDecisionController` directly — §17).
+### `python -m system1_doom.ruletree` — the rule tree
+
+The rule tree's own entry point (§8.17). It needs `TYPESAFE_API_KEY`
+(Jev makes every decision); without it every command but `show` and
+`finish` exits `2`.
+`RUN` is a run folder; the first command on it names the tree it starts
+from with `--tree` (a shipped tree's name or a tree folder). `play` and
+`eval` start from `general-11` when no tree is named; `show` prints it.
+
+| Command | What it does |
+|---|---|
+| `show [--tree T]` | Print a tree |
+| `play RUN --seed N` | Play one seed; the game and its dossier go to `RUN/games/` |
+| `eval RUN --seeds 201-215,301-315` | Play each seed once, in parallel, and print one line per seed and the number cleared |
+| `loop RUN --writer codex\|claude\|file --train 9-19 --held 20-39 --rounds 12` | Run the soft loop until every training seed clears (then play the held-out seeds) or the rounds run out |
+| `check RUN PROPOSAL.json` | Check a proposal against a game of the run; exit 0 if it passes |
+| `gate RUN PROPOSAL.json --seeds 9-19` | Check it, then play the seeds with and without it |
+| `commit RUN PROPOSAL.json` | Check it and, if it passes, add it to the run's tree |
+| `finish RUN OUT` | Copy the run's tree and `build.jsonl` into a tree folder that plays on its own |
+
+Every command but `show` takes `--workers N` (games played at once,
+default 6) and `--model` (the Jev model; default `jev-latest`).
+`loop` also takes `--writer-cmd` (the writer's command, reading the
+prompt on stdin; `{out}` names its answer file) and `--attempts`
+(proposals per failure, default 3).
+
+```bash
+python -m system1_doom.ruletree eval runs/rt --tree general-11 --seeds 9-19
+python -m system1_doom.ruletree loop runs/codex1 --tree general-9 --writer codex --train 9-19 --held 20-39
+```
+
+There is no `python -m system1_doom` `__main__`; use the module entry
+points above (or embed `DoomDecisionController` directly — §17).
 
 ---
 
@@ -2165,6 +2353,90 @@ unchanged on either, at the same tick, for about 45% more per decision
 on Jev, and that the two make different decisions from the same
 evidence.
 
+---
+
+**The rule tree on the benchmark seeds** (2026-10-27, `python -m
+system1_doom.ruletree eval RUN --tree general-11` and `--tree codex-11`,
+seeds 201–215, 301–315 and 9–59, six games at a time; every answer from
+`jev-1.14.0`, none reused from an earlier run). Each tree played every
+seed once before the angle fix (commit `ae9c029`) and once after
+(`4dc5d11`, which gives each enemy's and pickup's angle with atan, §8.1),
+eleven minutes apart. Neither tree was written on seeds 201–315; the
+soft loop trained on 9–19 and held out 20–39.
+
+| Seeds | `general-11` before | `general-11` after | `codex-11` before | `codex-11` after |
+|---|---:|---:|---:|---:|
+| 201–215 | 15 of 15 | 14 of 15 | 15 of 15 | 14 of 15 |
+| 301–315 | 14 of 15 | 14 of 15 | 15 of 15 | 15 of 15 |
+| 9–19 (trained on) | 11 of 11 | 11 of 11 | 11 of 11 | 11 of 11 |
+| 20–39 (held out) | 19 of 20 | 20 of 20 | 18 of 20 | 18 of 20 |
+| 40–59 (new) | 18 of 20 | 20 of 20 | 19 of 20 | 19 of 20 |
+| All | 77 of 81 | 79 of 81 | 78 of 81 | 77 of 81 |
+| Decisions to clear | 44.6 | 44.6 | 46.9 | 45.8 |
+| Jev calls per game | 147 | 149 | 154 | 150 |
+| Cost per game | $0.0124 | $0.0125 | $0.0129 | $0.0125 |
+
+Over the two runs `general-11` cleared 156 of 162 games and `codex-11`
+155. Every loss of `general-11` was a death in the last fights (furthest
+x 728–824; a cleared game ends near 1,260); `codex-11` died twice on
+seed 28 at x 323, at the first pair of enemies, and stalled once, on
+seed 27. `general-11`
+is the default tree for that reason and for its two fewer decisions per
+game; the difference in games cleared is within chance.
+
+A decision asks Jev 3.3 questions on average (a focus question when
+there is more than one item to pick from, then one question per level
+of the tree and of the skill), one after another, so it takes about
+1.1 s here (the median call 300 ms). It costs $0.00028. No call missed in
+48,591.
+
+**Senses and central before and after the angle fix** (2026-10-27,
+`cli --scenario deadly_corridor.cfg --decider jev --episodes 1
+--fresh-configuration` with the run folder's `best.pt`, 220 training
+episodes; slow path and System 2 on). The two versions alternated seed
+by seed, four games at a time, within ten minutes, on another machine
+than the rule tree's.
+
+| Seeds | Before the fix (`ae9c029`) | After (`4dc5d11`) |
+|---|---:|---:|
+| 201–215 | 10 of 15 | 11 of 15 |
+| 301–315 | 10 of 15 | 11 of 15 |
+| Decisions to clear | 81 | 72 |
+| Mean reward | 1,682 | 1,824 |
+| Cost per game (System 1 + System 2) | $0.0295 + $0.0014 | $0.0284 + $0.0014 |
+
+The fix cleared 5 seeds the old code lost (201, 202, 203, 305, 306) and
+lost 4 it cleared (210, 215, 312, 313): no measurable effect (Fisher's
+exact p ≈ 0.78). The code before the fix cleared 18 of 30 on these seeds
+on 2026-10-25 and 20 of 30 here, which shows how much results move from
+one run to the next. The mean tick was 458–503 ms, every game loaded the value
+networks and no instance missed.
+
+**The two solutions, on the same 30 seeds.**
+
+| | Senses and central | Rule tree, `general-11` | Rule tree, `codex-11` |
+|---|---:|---:|---:|
+| Cleared, before and after the fix | 20 and 22 of 30 | 29 and 28 of 30 | 30 and 29 of 30 |
+| Calls per decision | 6, in parallel, and System 2's | 3.3, one after another | 3.3 |
+| Cost per game | $0.030 | $0.0125 | $0.0127 |
+
+Pooled over both versions the rule tree cleared 57 (`general-11`) and
+59 (`codex-11`) of 60 against 42 of 60 (Fisher's exact p ≈ 0.0005 and
+0.00002). A rule-tree decision holds its buttons for 8 tics and a senses
+decision does not, so decisions to clear are not compared across the
+two.
+
+**How much Jev's answers move.** Jev is not fixed from hour to hour.
+Between 07:15 and 07:25 that day `general-11` cleared 27 of 31 of seeds
+9–39, with the module and with the experiment's own code alike; when the
+soft loop built it, its two passes on those seeds had cleared 61 of 62
+(p ≈ 0.04), and at 08:09 and 08:20 the tree cleared 30 and 31 of 31. Asked again the 519 questions of
+four games, with the same text, screen and options, Jev answered 4
+differently, each a near tie (an enemy 2° to the right read as "between
+3 and 7 degrees"). A game is a chain of about 150 answers, and one
+changed answer early on sends it elsewhere. Compare solutions within one
+run, as above, not across days.
+
 ## 16. Testing
 
 ```bash
@@ -2224,6 +2496,7 @@ minute with them.
 | `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy; `--decider jev` reaches the summary (`decider`, `models`) and every call goes to TypeSafe; `--decider jev` fails fast naming `TYPESAFE_API_KEY` |
 | `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra or Jev and is listed in the index with its decider and whether the senses chose the motor's targets, and the site ships recordings by each decider, the newest cleared one with the senses choosing targets; a bundle whose configuration names no sense's target is indexed as recorded before the senses chose targets, after the ones since; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
 | `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration`; `--decider jev` reaches the status |
+| `test_ruletree_codes.py`, `test_ruletree_tree.py`, `test_ruletree_walk.py`, `test_ruletree_game.py`, `test_ruletree_check.py`, `test_ruletree_loop.py`, `test_ruletree_cli.py` | The rule tree (§8.17): codes and sequences; rules added as exceptions, groups, a rule's own focus, actions checked where they are placed, a tree folder with its cornerstones, the shipped trees; the walk on the fake Jev (none, the focus asked before the children, a skill finished by `then`, one focus option needs no question, misses, kept answers); the game on ViZDoom (8-tic decisions, a replayed prefix is the same game, deaths and stalls, true angles, the run of fruitless firing, keys pressed only in `game.py`); the comparisons, and a check, gate and commit on a stand-in corridor (`tests/ruletree_fixtures.py`); the loop end to end with scripted writers and its `build.jsonl`; the command line |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run lint`

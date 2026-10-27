@@ -27,6 +27,9 @@ ROOT = "root"
 # The channels of the state the game renders, in order (see `game.py`); a focus picks from some of them.
 CHANNELS = ("vitals", "threats", "incoming", "outgoing", "pickups", "landmarks", "geometry", "position", "progress", "history")
 SHIPPED = Path(__file__).resolve().parent / "trees"
+# The tree that plays when none is named: over two benchmark runs it cleared 156 of 162 games to codex-11's 155, in
+# fewer decisions (§15 of docs/DOCUMENTATION.md).
+DEFAULT_TREE = "general-11"
 
 
 class Focus(BaseModel):

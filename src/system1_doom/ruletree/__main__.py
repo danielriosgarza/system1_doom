@@ -9,10 +9,12 @@
   python -m system1_doom.ruletree commit RUN PROPOSAL.json
   python -m system1_doom.ruletree finish RUN OUT
 
-RUN is a folder (see `run.py`); it starts from `--tree` (a shipped tree's name or a tree folder) the first time.
+RUN is a folder (see `run.py`); it starts from `--tree` (a shipped tree's name or a tree folder) the first time;
+`play` and `eval` start it from general-11 when no tree is named.
 `check` tests a proposal against a game of the run; `gate` checks it, then plays the seeds with and without it;
 `commit` checks it and, if it passed, adds it to the run's tree. `finish` copies the run's tree and record into a
-tree folder of its own. Jev is reached with TYPESAFE_API_KEY from the environment or `.env`.
+tree folder of its own. Jev is reached with TYPESAFE_API_KEY from the environment or `.env`; without it every
+command but `show` and `finish` stops with exit code 2.
 """
 
 from __future__ import annotations
@@ -23,13 +25,13 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Sequence
 
-from system1_doom.d1_client import D1UltraClient
+from system1_doom.d1_client import D1UltraClient, load_api_key
 
 from .check import ProposalError, check, commit
 from .gate import gate
 from .loop import ATTEMPTS, run_loop
 from .run import Run
-from .tree import Proposal, load_tree, shipped_trees, tree_lines
+from .tree import DEFAULT_TREE, Proposal, load_tree, shipped_trees, tree_lines
 from .writers import writer_named
 
 
@@ -50,11 +52,12 @@ def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="python -m system1_doom.ruletree", description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="command", required=True)
     show = sub.add_parser("show", help="print a tree")
-    show.add_argument("--tree", required=True, help=f"a tree folder, or a shipped tree: {', '.join(shipped_trees())}")
+    show.add_argument("--tree", default=DEFAULT_TREE,
+                      help=f"a tree folder, or a shipped tree: {', '.join(shipped_trees())} (default {DEFAULT_TREE})")
     for name, help_ in (("play", "play one seed"), ("eval", "play seeds once each, in parallel")):
         p = sub.add_parser(name, help=help_)
         p.add_argument("run")
-        p.add_argument("--tree", help="the tree to start the run from, the first time")
+        p.add_argument("--tree", help=f"the tree to start the run from, the first time (default {DEFAULT_TREE})")
         if name == "play":
             p.add_argument("--seed", type=int, required=True)
         else:
@@ -101,6 +104,10 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         say("\n".join(tree_lines(load_tree(args.tree))))
         return 0
 
+    if client is None and args.command not in ("finish",) and not load_api_key("jev"):
+        say("TYPESAFE_API_KEY is not set. Jev makes every decision of the rule tree, so play needs the key "
+            "(in the environment or a .env file).")
+        return 2
     kwargs = {"workers": args.workers}
     if client is not None:
         kwargs["client"] = client
@@ -116,8 +123,11 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         if getattr(args, "tree", None):
             run.start(args.tree)
         elif not (run.tree_dir / "tree.json").is_file():
-            say(f"{args.run} has no tree yet: start it with --tree")
-            return 2
+            if args.command not in ("play", "eval"):
+                say(f"{args.run} has no tree yet: start it with --tree")
+                return 2
+            say(f"starting {args.run} from {DEFAULT_TREE}")
+            run.start(DEFAULT_TREE)
 
         if args.command in ("play", "eval"):
             seeds = [args.seed] if args.command == "play" else parse_seeds(args.seeds)

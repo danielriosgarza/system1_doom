@@ -50,5 +50,22 @@ def test_eval_then_commit_a_rule_then_finish(tmp_path):
 
 
 def test_a_run_needs_a_tree(tmp_path):
-    code, out = _main("eval", str(tmp_path / "nothing"), "--seeds", "9")
+    code, out = _main("check", str(tmp_path / "nothing"), str(tmp_path / "p1.json"))
     assert code == 2 and "has no tree yet" in out
+
+
+def test_play_starts_from_the_default_tree(tmp_path):
+    code, out = _main("show")
+    assert code == 0 and "skill aim:" in out
+    code, out = _main("play", str(tmp_path / "run"), "--seed", "9")
+    assert code == 0 and out.splitlines()[0] == f"starting {tmp_path / 'run'} from general-11"
+    assert json.loads((tmp_path / "run" / "tree" / "tree.json").read_text())["name"] == "general-11"
+
+
+def test_play_needs_the_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("system1_doom.ruletree.__main__.load_api_key", lambda decider: None)
+    out = io.StringIO()
+    code = main(["eval", str(tmp_path / "run"), "--tree", "general-9", "--seeds", "9"], out=out)
+    assert code == 2 and "TYPESAFE_API_KEY is not set" in out.getvalue()

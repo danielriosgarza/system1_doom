@@ -7,7 +7,8 @@ current controller: its own module and command line, recorded episodes, a benchm
 section of the documentation, and a copy of the website for it, chosen from a side tab.
 
 **Starting point:** `experiments/soft-loop/` on branch `claude/project-thread-9jae9h` (code, prompt, the 9-rule
-starting tree) and `experiments/soft-loop/NOTES.md` (what the three stages of the soft loop found).
+starting tree) and `experiments/soft-loop/NOTES.md` (what the three stages of the soft loop found). Milestone 2
+removed the folder; the notes are now `docs/superpowers/notes/2026-10-27-soft-loop-stages.md`.
 
 **Tech stack:** as the rest of the package: Python 3.11+, ViZDoom, Pydantic v2, the Jev client in `d1_client.py`,
 Pytest; the web app's React, Vite, Vitest and Playwright. The rule writer is the Codex CLI (`codex exec`) or Claude.
@@ -38,19 +39,17 @@ keys, and replays games to grade a proposed rule.
 
 ## 2. Where each one stands
 
-| | Seeds | Cleared |
-|---|---|---|
-| Senses and central, Jev deciding | benchmark seeds 201–215 and 301–315 | 18 of 30 |
-| Senses and central, Jev deciding | shipped recordings, seeds 9–12 | 1 of 4 |
-| Rule tree, 11 rules (9 written to start, 2 added by the loop with Claude as writer) | training seeds 9–19, two passes | 22 of 22 |
-| same tree | seeds 20–39, two passes | 39 of 40 |
-| same tree | seeds 40–59, one pass | 18 of 20 |
-| Rule tree, 11 rules (same 9, 2 added with Codex as writer) | seeds 9–19, one pass | 11 of 11 |
-| same tree | seeds 20–39, one pass | 18 of 20 |
-| Rule tree of the second stage, 40 rules naming enemy types | seeds 40–59, one pass | 15 of 20 |
+Measured in milestone 2 (2026-10-27, every answer from `jev-1.14.0`; §15 of `docs/DOCUMENTATION.md`). Each
+solution played every seed twice, before and after the angle fix of decision 1:
 
-The rule trees have not been played on seeds 201–215 and 301–315 yet. Milestone 2 does that, so the two solutions
-are compared on the same seeds.
+| | Seeds 201–215 and 301–315 | Seeds 9–59 | Cost per game |
+|---|---|---|---|
+| Senses and central | 20 and 22 of 30 | not played | $0.030 |
+| Rule tree `general-11` (2 rules added with Claude as writer) | 29 and 28 of 30 | 48 and 51 of 51 | $0.0125 |
+| Rule tree `codex-11` (2 rules added with Codex as writer) | 30 and 29 of 30 | 48 and 48 of 51 | $0.0127 |
+
+Before milestone 2 (other days): senses and central 18 of 30 on the benchmark seeds and 1 of 4 in the shipped
+recordings (seeds 9–12); the rule tree of the second stage, 40 rules naming enemy types, 15 of 20 on seeds 40–59.
 
 ## 3. Decisions for Daniel
 
@@ -204,25 +203,34 @@ For example, the Watch screen of the rule tree opens with:
 
 - [x] **Step 1:** `python -m system1_doom.ruletree play|eval|show|check|gate|commit|loop`, with `--tree`,
   `--seeds`, `--writer codex|claude|file`.
-- [ ] **Step 2:** Remove `experiments/soft-loop/` once the module reproduces its results (milestone 2).
+- [x] **Step 2:** Remove `experiments/soft-loop/` once the module reproduces its results (milestone 2). Done: the
+  module's cornerstone replays matched the experiment's, and both codes cleared the same 27 of 31 seeds within the
+  same ten minutes; `NOTES.md` moved to `docs/superpowers/notes/2026-10-27-soft-loop-stages.md`.
 
 ## Milestone 2: benchmark
 
 ### Task 2.1: The same seeds as the current controller
 
-- [ ] **Step 1:** Play `general-11` and `codex-11` on seeds 201–215 and 301–315 with fresh Jev answers, and on
-  seeds 9–59. Record cleared, decisions to clear, Jev calls and cost per game, and the time per decision.
-- [ ] **Step 2:** If decision 1 is taken, re-run the senses-and-central benchmark after the perception fixes.
-- [ ] **Step 3:** Pick the default tree (decision 2).
+- [x] **Step 1:** Play `general-11` and `codex-11` on seeds 201–215 and 301–315 with fresh Jev answers, and on
+  seeds 9–59. Record cleared, decisions to clear, Jev calls and cost per game, and the time per decision. Done
+  twice, before and after decision 1 (§2 above; §15 of the documentation).
+- [x] **Step 2:** If decision 1 is taken, re-run the senses-and-central benchmark after the perception fixes. Done:
+  the angle fix went into `vizdoom_env.py` (commit `4dc5d11`); the missed-shots line was not needed there, since
+  the senses' evidence already says "your last N attacks on it hit nothing" per enemy. 20 of 30 before, 22 of 30
+  after (Fisher's exact p ≈ 0.78).
+- [x] **Step 3:** Pick the default tree (decision 2). `general-11`: 156 of 162 games over the two runs against
+  155 for `codex-11`, in about two fewer decisions per game, and no early deaths. `play` and `eval` use it when no
+  tree is named (`DEFAULT_TREE` in `tree.py`).
 
 ### Task 2.2: Documentation
 
 **Files:**
 - Modify: `docs/DOCUMENTATION.md` (new §8.17 "The rule tree", rows in §11 and §15, glossary entries in §18)
 
-- [ ] **Step 1:** Write the section in the same plain style: what a rule is, how the walk works, what the soft loop
+- [x] **Step 1:** Write the section in the same plain style: what a rule is, how the walk works, what the soft loop
   does, the checks, the measured results.
-- [ ] **Step 2:** Keep the glossary test in step (`web/src/content/glossary.test.ts` compares it with §18).
+- [ ] **Step 2:** Keep the glossary test in step (`web/src/content/glossary.test.ts` compares it with §18). Moved
+  to milestone 4: each glossary entry links to the screen that shows it, and the rule-tree screens come there.
 
 ## Milestone 3: recordings
 

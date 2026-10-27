@@ -1,7 +1,9 @@
 # Soft loop: notes from the three stages
 
-The folders named below (`pilot/`, `v2/`, `v3/`, `example-dossier/`) are kept with the project files, not in
-the repository; this folder has the code, the prompt and the general tree to start from.
+These notes were written in `experiments/soft-loop/` while the soft loop was an experiment. Its code now lives in
+`src/system1_doom/ruletree/` (§8.17 of `docs/DOCUMENTATION.md`; `python -m system1_doom.ruletree --help`), and the
+experiment's scripts named below were removed once the module reproduced their results. The folders named below
+(`pilot/`, `v2/`, `v3/`, `example-dossier/`) are kept with the project files, not in the repository.
 
 **Current result (third stage, below): 11 general rules, with no monster names and no map facts, clear the
 training seeds 22 of 22, held-out seeds 20 to 39 39 of 40, and new seeds 40 to 59 18 of 20.** The 40 scene-specific
