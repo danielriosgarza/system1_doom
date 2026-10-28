@@ -1673,7 +1673,7 @@ same state as the game it replays.
 **The trees** (`ruletree/trees/`). A tree is a folder that plays on its
 own: `tree.json` (the rules, focus questions and skills), `cornerstones/`
 (the screen of each frame a rule was written from) and `build.jsonl`
-(the record of the soft loop that built it). Six ship; `general-11`
+(the record of the soft loop that built it). Seven ship; `general-11`
 plays when no tree is named (§15: it cleared about as many games as
 `codex-11`, in fewer decisions):
 
@@ -1684,6 +1684,7 @@ plays when no tree is named (§15: it cleared about as many games as
 | `codex-11` | 11 | `general-9` plus two rules the soft loop added with Codex as the rule writer: when the focus is at most 2 pixels wide, at least 6 tall and to one side, aim and sidestep away from that side while firing. |
 | `steady-11` | 11 | `general-11` rewritten by hand for a player whose reaction time is anything from 0.2 to 1.5 s (§15): the same conditions and focus questions (so a decider trained on `general-11` answers them), but the aim skill turns about 0.4 of the angle its band names (1, 3 and 5 tics instead of 3, 5 and 7), because the next decision is made before the last turn shows in the state; and the root walks forward and fires instead of a random code, which may hold a turn. |
 | `realtime-5` | 5 | `goals-11` without the aim skill's six turning rules, for real-time play with the helper, which turns (§8.17); the starting tree of `rtloop`. |
+| `realtime-6` | 6 | `realtime-5` plus the one rule `rtloop` committed with Codex as the writer and Kev deciding (§15): with at least two enemies listed and 5 or more fruitless firing decisions, focus on the widest enemy and fire. |
 | `goals-11` | 11 | `steady-11` with a follow-up for real time (§8.17): every rule that aims at an enemy says what to do once the enemy is down, walk on toward the goal, firing (`"after": "F001"`); paused play ignores it. |
 
 `python -m system1_doom.ruletree show --tree general-11`:
@@ -2933,6 +2934,32 @@ game held, a slow teacher plays Laya's real time; but on these questions
 the program, not the answers, limits the score, so fine-tuning Laya on
 Kev's real-time answers would change little until the rules change. The
 5,153 questions Kev answered were kept with their texts (`--keep-text`).
+
+*Rules for Laya's speed, Kev's answers, and Laya trained on them*
+(2026-10-28). 1. `rtloop` from `realtime-5`, Codex writing, Kev deciding
+(`--ahead --budget 60`, four at a time) at a lag of 7 with the fair
+helper, training seeds 600–619: the first pass cleared 15 of 20; Codex's
+first proposal for seed 603 (at least two enemies listed and 5 or more
+fruitless firing decisions: focus on the widest enemy, aim and fire) was
+seen at its frame and gated 20 of 20, and the next pass cleared 20 of 20,
+which ended the loop (`realtime-6`, its `build.jsonl` shipped). 2. Kev
+played `realtime-6` the same way, keeping every state: 70 of 100 on seeds
+500–599, whose questions `teach.py` wrote as 7,644 for training (seeds
+500–589; 185 of them the new focus question) and 754 to check (590–599).
+3. `laya-train --base checkpoints/ruletree-kev-v1 --loss soft-ce
+--shuffle-options --max-len 2048 --micro-batch 16 --grad-accum 4 --epochs
+2` (7,244 questions, 400 held for calibration): on the 754 it picked as
+Kev did 99.7% of the time, against 98.7% before, so the Laya trained on
+`general-11`'s questions already answered the new one almost as Kev did.
+It is served as `ruletree-rt-v1` by a second `laya-serve` on port 8001.
+4. On the 41 seeds at a lag of 7 with `realtime-6`: Kev 28, the new Laya
+29 (the same outcome as Kev on 38 seeds), the Laya trained on `general-11`
+31; Kev had cleared 31 with `goals-11`, so the rule that took the
+training seeds from 15 to 20 did not help on others. On the wall clock
+(81 seeds, one at a time) the new Laya with `realtime-6` cleared 50 at a
+median 119 ms a decision (5 tics; `realtime-6` asks no aiming questions),
+against 44 for `general-11` with the fair helper (Fisher's exact p ≈
+0.43). A gate of 20 seeds let through a rule that helped only on them.
 
 ## 16. Testing
 
