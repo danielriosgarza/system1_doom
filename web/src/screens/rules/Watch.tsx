@@ -17,9 +17,12 @@ import {
   skillOf,
 } from '../../data/rules'
 import type { RuleTreeDecision, WalkStep } from '../../schema/bundle'
-import { openPanel, openQuestion, openRecording, openRule, useApp } from '../../store'
+import { entriesOf, openPanel, openQuestion, openRecording, openRule, useApp } from '../../store'
+import { useTreeWords } from './useTreeWords'
 
-/** The rule tree's landing: the recording plays at the agent's own pace, beside the questions Jev answered. */
+const RULE_QUESTION = RULES_WATCH.ruleQuestion
+
+/** A rule tree's landing: the recording plays at the agent's own pace, beside the questions answered (Jev's, or Laya's). */
 export function RulesWatch({
   bundle,
   decision,
@@ -29,6 +32,7 @@ export function RulesWatch({
   decision: RuleTreeDecision
   index: number
 }) {
+  const { watch: W } = useTreeWords()
   const top = useRef<HTMLElement | null>(null)
   // A recording opened from a card lower down plays at the top of the page.
   const name = bundle.name
@@ -45,8 +49,8 @@ export function RulesWatch({
   return (
     <main className="watch" aria-label="Watch the game" ref={top}>
       <header className="watch-head">
-        <h2>{RULES_WATCH.title}</h2>
-        <p>{RULES_WATCH.subtitle}</p>
+        <h2>{W.title}</h2>
+        <p>{W.subtitle}</p>
       </header>
       <div className="watch-grid">
         <section className="watch-left" aria-label="The game">
@@ -56,7 +60,7 @@ export function RulesWatch({
             src={rulesFileUrl(bundle, decision.frame)}
             end={end}
             endText={rulesEndLine(bundle.meta)}
-            alt={RULES_WATCH.frameAlt(index, count, decision.health_before, decision.action_words)}
+            alt={W.frameAlt(index, count, decision.health_before, decision.action_words)}
             width={bundle.meta.frames.width ?? 320}
             height={bundle.meta.frames.height ?? 240}
           />
@@ -69,9 +73,9 @@ export function RulesWatch({
             tick={decision.decision}
           />
           <p className="watch-honesty">
-            {RULES_WATCH.honesty(bundle.meta)}{' '}
+            {W.honesty(bundle.meta)}{' '}
             <button type="button" className="link-button" onClick={() => openPanel('reference', 'rt-provenance')}>
-              {RULES_WATCH.honestyLink}
+              {W.honestyLink}
             </button>
           </p>
         </section>
@@ -87,7 +91,7 @@ export function RulesWatch({
 /** The question a rule step asked, with where in the tree it was asked. */
 function ruleQuestion(step: WalkStep, skills: string[]): string {
   if (skills.includes(step.node)) return `In the ${step.node} skill: which of these is true right now?`
-  return RULES_WATCH.ruleQuestion(step.node)
+  return RULE_QUESTION(step.node)
 }
 
 /** Each step's number among the questions of the walk, counting from 1; 0 for a skill step. */
@@ -100,13 +104,14 @@ function questionNumbers(steps: WalkStep[]): number[] {
 
 /** Watch's strip: one row per question of the walk, then the action played. */
 export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision: RuleTreeDecision }) {
+  const { watch: W } = useTreeWords()
   const skills = useMemo(() => skillIds(bundle.tree), [bundle])
   const numbers = questionNumbers(decision.steps)
   return (
     <section className="strip walk-strip" data-testid="walk-strip" aria-labelledby="walk-title">
       <header className="strip-head">
-        <h3 id="walk-title">{RULES_WATCH.stripTitle}</h3>
-        <p>{RULES_WATCH.stripNote}</p>
+        <h3 id="walk-title">{W.stripTitle}</h3>
+        <p>{W.stripNote}</p>
       </header>
       <ol className="strip-rows walk-rows">
         {decision.steps.map((step, i) => {
@@ -116,7 +121,7 @@ export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision:
                 <span className="walk-num" aria-hidden>
                   ↳
                 </span>
-                <span>{RULES_WATCH.skill(step.skill ?? '', step.node)}</span>
+                <span>{W.skill(step.skill ?? '', step.node)}</span>
               </li>
             )
           }
@@ -132,7 +137,7 @@ export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision:
                 data-kind={step.kind}
                 data-node={step.node}
                 data-pick={r.option ?? ''}
-                title={RULES_WATCH.rowTitle}
+                title={W.rowTitle}
                 onClick={() => openQuestion(i)}
               >
                 <span className="walk-num">{asked}</span>
@@ -142,20 +147,20 @@ export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision:
                 </span>
                 <span className="walk-a">
                   {r.miss ? (
-                    <span className="walk-missed">{RULES_WATCH.missed}</span>
+                    <span className="walk-missed">{W.missed}</span>
                   ) : (
                     <>
                       {step.kind === 'rule' && r.option && r.option !== NONE && (
                         <span className="rule-id mono">{r.option}</span>
                       )}{' '}
-                      {r.text ?? RULES_WATCH.noItem}
-                      {state === 'only' && <span className="walk-only">{RULES_WATCH.only}</span>}
+                      {r.text ?? W.noItem}
+                      {state === 'only' && <span className="walk-only">{W.only}</span>}
                     </>
                   )}
                 </span>
                 <Meter
                   value={r.asked ? r.p : null}
-                  label={`Jev’s probability for question ${asked}`}
+                  label={`${W.decider}’s probability for question ${asked}`}
                   className="walk-meter"
                 />
                 <span className="walk-p">{r.miss || !r.asked ? '' : pct(r.p)}</span>
@@ -165,10 +170,10 @@ export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision:
         })}
         <li className="walk-act" data-testid="walk-act" data-node={decision.node}>
           <span className="dot act" aria-hidden />
-          <span className="strip-name">{RULES_WATCH.act}</span>
+          <span className="strip-name">{W.act}</span>
           <span className="walk-act-body">
             <strong data-testid="walk-action">{decision.action_words}</strong>
-            <span className="faint"> · {RULES_WATCH.actGloss}</span>
+            <span className="faint"> · {W.actGloss}</span>
             <br />
             <button type="button" className="link-button walk-source" onClick={() => openRule(decision.node)}>
               {actSource(decision.node, skillOf(decision), decision.missed)}
@@ -177,7 +182,7 @@ export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision:
         </li>
       </ol>
       <p className="config-line walk-cost" data-testid="walk-cost">
-        {RULES_WATCH.calls(decision.calls, decision.latency_ms, decision.cost)}
+        {W.calls(decision.calls, decision.latency_ms, decision.cost)}
       </p>
     </section>
   )
@@ -185,7 +190,8 @@ export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision:
 
 /** The rule tree's recordings, the featured one first; a card plays its recording from the start. */
 function RulesRecordingCards() {
-  const entries = useApp((s) => s.index?.rules ?? [])
+  const { watch: W } = useTreeWords()
+  const entries = useApp((s) => entriesOf(s.solution, s.index))
   const open = useApp((s) => s.rules?.name)
   if (entries.length === 0) return null
   // In seed order, the default tree's first.
@@ -198,8 +204,8 @@ function RulesRecordingCards() {
   return (
     <section className="recordings" aria-labelledby="rules-recordings-title">
       <header className="recordings-head">
-        <h3 id="rules-recordings-title">{RULES_WATCH.cardsTitle}</h3>
-        <p>{RULES_WATCH.cardsNote}</p>
+        <h3 id="rules-recordings-title">{W.cardsTitle}</h3>
+        <p>{W.cardsNote}</p>
       </header>
       <ul className="recording-cards">
         {ordered.map((entry) => {
@@ -214,7 +220,7 @@ function RulesRecordingCards() {
               <button type="button" className="recording-main" onClick={() => void openRecording(entry.name)}>
                 {isOpen && <span className="recording-now">{WATCH.nowShowing}</span>}
                 <span className="recording-name">{rulesRecordingName(entry)}</span>
-                <span className="recording-gloss">decided by Jev</span>
+                <span className="recording-gloss">{W.decidedBy}</span>
                 <span className="recording-result">{rulesResultWords(entry)}</span>
               </button>
               {isOpen && (

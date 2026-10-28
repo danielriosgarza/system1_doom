@@ -308,9 +308,9 @@ export interface BundleIndexEntry {
    */
   configuration_end?: number
   /**
-   * The decision model every decision was made by: d1-ultra, or jev
+   * The decision model every decision was made by: d1-ultra or jev; a rule tree's also laya or kev, models on the machine that played
    */
-  decider?: 'd1-ultra' | 'jev'
+  decider?: 'd1-ultra' | 'jev' | 'laya' | 'kev'
   /**
    * The senses chose the motor's targets (the enemy aimed at, the pickup walked to); False in bundles recorded before they did, when the motor picked its own
    */
@@ -1620,7 +1620,14 @@ export interface RuleTreeEpisodeMeta {
   title: string
   scenario: string
   seed: number
-  decider?: 'jev'
+  /**
+   * Who answered every question: Jev, or a model on this machine (Laya, Kev)
+   */
+  decider?: 'jev' | 'laya' | 'kev'
+  /**
+   * The model asked, as the requests named it (a Laya checkpoint, kev-latest); none in recordings made before it was kept
+   */
+  model?: string | null
   /**
    * Answers per model, as the responses named it
    */

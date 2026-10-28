@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { WalkStep } from '../schema/bundle'
 import type { Fetcher } from './loader'
-import { agreementWithJev, parseModels, questionsAt } from './models'
+import { agreementWithPlayed, parseModels, questionsAt } from './models'
 import { loadRulesEpisode, readStep } from './rules'
 
 // The shipped recordings' models.json, written by python -m system1_doom.ruletree.site_models.
@@ -17,11 +17,11 @@ const fetcher: Fetcher = async (url) => {
 }
 
 describe('the local models’ answers', () => {
-  it('are read with a recording, one per question Jev answered, in the order of each walk', async () => {
-    const bundle = await loadRulesEpisode('rules-corridor-9', 'episodes', fetcher)
+  it('are read with a recording, one per question Laya answered, in the order of each walk', async () => {
+    const bundle = await loadRulesEpisode('local-corridor-9', 'episodes', fetcher)
     const models = bundle.models
     expect(models?.models).toContain('kev-27b')
-    // Every question Jev was asked (a step with an answer) has an entry, at its own step, of the same kind and node.
+    // Every question Laya was asked (a step with an answer) has an entry, at its own step, of the same kind and node.
     const asked = bundle.decisions.flatMap((d) =>
       d.steps.flatMap((s, i) => (s.kind !== 'skill' && s.answer ? [{ decision: d.decision, step: i, s }] : [])),
     )
@@ -38,9 +38,9 @@ describe('the local models’ answers', () => {
     }
   })
 
-  it('count how often each model picked as Jev did', async () => {
-    const bundle = await loadRulesEpisode('rules-corridor-9', 'episodes', fetcher)
-    const tally = agreementWithJev(bundle.models!, (q) => {
+  it('count how often each model picked as the model that played did', async () => {
+    const bundle = await loadRulesEpisode('local-corridor-9', 'episodes', fetcher)
+    const tally = agreementWithPlayed(bundle.models!, (q) => {
       const step = bundle.decisions.find((d) => d.decision === q.decision)?.steps[q.step] as WalkStep | undefined
       return step ? (readStep(step).option ?? null) : null
     })

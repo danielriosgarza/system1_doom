@@ -10,12 +10,17 @@ import { Menu } from './screens/Menu'
 import { Reference } from './screens/Reference'
 import { SlowSystem } from './screens/SlowSystem'
 import { Watch } from './screens/Watch'
+import { LocalScreens } from './screens/local/LocalScreens'
 import { RulesScreens } from './screens/rules/RulesScreens'
+import { isLocalBundle } from './data/rules'
 import {
   decisionCount,
   followLive,
   getState,
   onHashChange,
+  SOLUTIONS,
+  entriesOf,
+  playsTree,
   screensOf,
   setScreen,
   setState,
@@ -44,7 +49,9 @@ export default function App() {
   const screen = useApp((s) => s.screen)
   const solution = useApp((s) => s.solution)
   const rules = useApp((s) => s.rules)
-  const both = useApp((s) => (s.index?.rules?.length ?? 0) > 0 && (s.index?.episodes.length ?? 0) > 0)
+  // A tree recording shows only on its own solution's screens: Jev's on the rule tree's, Laya's on the local models'.
+  const treeShown = !!rules && (solution === 'local') === isLocalBundle(rules)
+  const both = useApp((s) => SOLUTIONS.filter((x) => entriesOf(x.id, s.index).length > 0).length > 1)
   // The playback timer runs here, so a recording plays on every screen.
   usePlayback()
 
@@ -113,9 +120,12 @@ export default function App() {
           {error}
         </p>
       )}
-      {solution === 'rules' && !error && loading && !rules && <p className="status">Loading the episode…</p>}
-      {solution === 'rules' && rules && decision && (
+      {playsTree(solution) && !error && loading && !treeShown && <p className="status">Loading the episode…</p>}
+      {solution === 'rules' && treeShown && rules && decision && (
         <RulesScreens bundle={rules} decision={decision} index={tickIndex} screen={screen} />
+      )}
+      {solution === 'local' && treeShown && rules && decision && (
+        <LocalScreens bundle={rules} decision={decision} index={tickIndex} screen={screen} />
       )}
       {solution === 'senses' && !error && loading && !bundle && <p className="status">Loading the episode…</p>}
       {solution === 'senses' && !error && bundle && !tick && <p className="status">{LIVE_COPY.waiting}</p>}

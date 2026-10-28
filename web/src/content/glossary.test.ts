@@ -96,6 +96,15 @@ describe('the glossary', () => {
     }
   })
 
+  it('gives the local models the rule tree’s terms in Laya’s words, without Jev, and Laya and Kev of their own', () => {
+    const local = glossaryOf('local')
+    const ids = new Set(local.map((e) => e.id))
+    for (const id of ['laya', 'kev', 'rule', 'walk', 'focus', 'condition']) expect(ids.has(id), id).toBe(true)
+    expect(ids.has('jev')).toBe(false)
+    for (const e of local) expect(`${e.meaning} ${e.see.map((l) => l.label).join(' ')}`, e.id).not.toMatch(/\bJev\b/)
+    expect(glossaryOf('rules').some((e) => e.id === 'laya' || e.id === 'kev')).toBe(false)
+  })
+
   it('gives a term both solutions use its rule-tree meaning, and a rule-tree term no second one', () => {
     for (const entry of GLOSSARY) {
       const solutions = entry.solutions ?? ['senses']
@@ -104,7 +113,7 @@ describe('the glossary', () => {
   })
 
   const variants = GLOSSARY.flatMap((entry) =>
-    (['senses', 'rules'] as Solution[])
+    (['senses', 'rules', 'local'] as Solution[])
       .filter((s) => usedBy(entry, s))
       .map((s) => ({ solution: s, ...shown(entry, s) })),
   )

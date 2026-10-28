@@ -2,7 +2,7 @@
 // exactly the terms of the documentation's glossary (docs/DOCUMENTATION.md, section 18), and a test keeps the
 // two in step. Each entry belongs to one solution's screens or to both; a term both use in different senses has
 // its rule-tree meaning beside the senses and central's.
-import type { Screen, Solution } from '../store'
+import { LOCAL_SCREENS, type Screen, type Solution } from '../store'
 import type { PanelId } from './explainers'
 
 /** Where to see a term: a screen, and the panel on it to flash. */
@@ -25,6 +25,8 @@ export interface GlossaryEntry {
   solutions?: Solution[]
   /** What the term means on the rule tree's screens, where that differs. */
   rules?: Pick<GlossaryEntry, 'meaning' | 'see' | 'code'>
+  /** What the term means on the local models' screens, where Laya in Jev's place is not enough. */
+  local?: Pick<GlossaryEntry, 'meaning' | 'see' | 'code'>
 }
 
 /** An entry as one solution's screens show it. */
@@ -37,12 +39,37 @@ export interface ShownEntry {
   code: string
 }
 
-/** Whether a solution's screens use an entry. */
-export const usedBy = (entry: GlossaryEntry, solution: Solution): boolean =>
-  (entry.solutions ?? ['senses']).includes(solution)
+/**
+ * Whether a solution's screens use an entry. The local models' screens use the rule tree's terms, Jev's apart, and
+ * their own.
+ */
+export function usedBy(entry: GlossaryEntry, solution: Solution): boolean {
+  const solutions = entry.solutions ?? ['senses']
+  if (solution === 'local') return solutions.includes('local') || (solutions.includes('rules') && entry.id !== 'jev')
+  return solutions.includes(solution)
+}
+
+/** A rule-tree text in the local models' words: Laya answers where Jev did. */
+const asLocal = (text: string): string => text.replaceAll('Jev’s', 'Laya’s').replaceAll('Jev', 'Laya')
+
+const LOCAL_SCREEN_IDS = new Set<Screen>(LOCAL_SCREENS.map((s) => s.id))
 
 /** An entry in the words of one solution. */
 export function shown(entry: GlossaryEntry, solution: Solution): ShownEntry {
+  if (solution === 'local') {
+    const own = entry.local ?? entry.rules ?? entry
+    const words = entry.local ? (text: string) => text : asLocal
+    // A link to a screen only the rule tree has (How the rules were written) points at The rule tree instead.
+    const see = own.see.filter((l) => LOCAL_SCREEN_IDS.has(l.screen)).map((l) => ({ ...l, label: words(l.label) }))
+    return {
+      id: entry.id,
+      term: entry.term,
+      aliases: entry.aliases,
+      meaning: words(own.meaning),
+      see: see.length > 0 ? see : [{ screen: 'tree', panel: 'rt-outline', label: 'the rule tree' }],
+      code: own.code,
+    }
+  }
   const own = solution === 'rules' && entry.rules ? entry.rules : entry
   return { id: entry.id, term: entry.term, aliases: entry.aliases, meaning: own.meaning, see: own.see, code: own.code }
 }
@@ -76,6 +103,32 @@ export const GLOSSARY: GlossaryEntry[] = [
       see: [{ screen: 'questions', panel: 'rt-answer', label: 'its answers at this decision' }],
       code: 'ruletree/walk.py · Jev',
     },
+  },
+  {
+    id: 'laya',
+    term: 'Laya',
+    aliases: [],
+    meaning:
+      'A decision model of 421 million parameters with open weights, from Convai Innovations, run on the computer that plays. It answers the same multiple-choice questions as the rule tree’s other decision models, with a probability for each option, from the state as text alone. The Laya on these screens was trained on Kev-27B’s answers to this tree’s questions and answers one in about 50 ms.',
+    see: [
+      { screen: 'trained', panel: 'lm-workflow', label: 'how it was trained' },
+      { screen: 'questions', panel: 'rt-answer', label: 'its answers at this decision' },
+    ],
+    code: 'd1_client.py · Decider',
+    solutions: ['local'],
+  },
+  {
+    id: 'kev',
+    term: 'Kev',
+    aliases: ['Kev-27B'],
+    meaning:
+      'A decision model with open weights, from Jared Palmer; Kev-27B is its largest, 27 billion parameters, a fine-tune of Qwen3.8-27B. It answers this tree’s questions well with no training on them, at about half a second a question on this computer once tuned for its GPU. Its answers in 100 games were Laya’s training examples.',
+    see: [
+      { screen: 'trained', panel: 'lm-facts', label: 'the training, in numbers' },
+      { screen: 'results', panel: 'lm-decision', label: 'its answers at this decision' },
+    ],
+    code: 'd1_client.py · Decider',
+    solutions: ['local'],
   },
   {
     id: 'system-1',
@@ -420,6 +473,12 @@ export const GLOSSARY: GlossaryEntry[] = [
     see: [{ screen: 'tree', panel: 'rt-outline', label: 'the whole tree' }],
     code: 'ruletree/tree.py · RuleTree',
     solutions: ['rules'],
+    local: {
+      meaning:
+        'A tree of rules. At every decision the program walks it, asking Laya at each level which rule is true. A tree is a file: its rules, the questions that pick a focus, its skills, and for each rule the soft loop added, the decision it was written for. The tree here is general-11, the same as on the Rule tree tab.',
+      see: [{ screen: 'tree', panel: 'rt-outline', label: 'the whole tree' }],
+      code: 'ruletree/tree.py · RuleTree',
+    },
   },
   {
     id: 'rule',

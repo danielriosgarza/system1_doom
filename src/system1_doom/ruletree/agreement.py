@@ -5,9 +5,10 @@
     python -m system1_doom.ruletree.agreement OUT.json --decider kev
 
 A recording keeps every question of every walk as it was sent: the state text, then the `[focus]` line once a focus
-was picked, the question and its options, and Jev's answer. Each question goes to the decider named with the same
-text and options (the decider's own request fields, such as Laya's window, are added as in play), and its pick is set
-beside Jev's.
+was picked, the question and its options, and the answer of the model that played it (Jev for the rule tree's
+recordings, Laya for the local models'). Each question goes to the decider named with the same text and options (the
+decider's own request fields, such as Laya's window, are added as in play), and its pick is set beside the one played.
+The fields named `jev` (`jev`, `agree_with_jev`, `jev_right`) hold that played answer, whoever played it.
 
 Some questions have an answer the state text settles (`settled`), so both models are scored against it rather than
 against each other: at the root, whether the threats list names an enemy; in the aim skill, which band the focus
@@ -134,9 +135,9 @@ def summary_lines(result: Dict[str, Any]) -> List[str]:
     lines = [f"{result['decider']} ({result['model']}, {result['request'] or 'no request fields'}), "
              f"median {result['median_latency_ms']} ms a question"]
     for name, s in [*result["by_question"].items(), ("all", result["all"])]:
-        line = f"{name:12s} {s['questions']:4d} asked, {s['agree_with_jev']:4d} as Jev"
+        line = f"{name:12s} {s['questions']:4d} asked, {s['agree_with_jev']:4d} as played"
         if s["settled"]:
-            line += (f"; settled by the text {s['settled']:4d}: Jev right {s['jev_right'] / s['settled']:4.0%}, "
+            line += (f"; settled by the text {s['settled']:4d}: played right {s['jev_right'] / s['settled']:4.0%}, "
                      f"{result['decider']} right {s['right'] / s['settled']:4.0%}, chance {s['chance']:4.0%}")
         lines.append(line)
     return lines

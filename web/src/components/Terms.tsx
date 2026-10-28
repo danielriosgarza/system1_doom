@@ -27,6 +27,7 @@ function wordsOf(solution: Solution): { owner: Map<string, string>; pattern: Reg
 const WORDS: Record<Solution, { owner: Map<string, string>; pattern: RegExp }> = {
   senses: wordsOf('senses'),
   rules: wordsOf('rules'),
+  local: wordsOf('local'),
 }
 
 /**

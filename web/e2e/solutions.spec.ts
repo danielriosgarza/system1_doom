@@ -1,8 +1,8 @@
 import { type Page, expect, test } from '@playwright/test'
 import { RECORDINGS } from '../playwright.config'
 
-// The side tab between the two solutions, on the site as GitHub Pages serves it: the shipped recordings include both
-// the senses and central's and the rule tree's.
+// The side tab between the three solutions, on the site as GitHub Pages serves it: the shipped recordings include
+// the senses and central's, the rule tree's played by Jev, and the local models' (the rule tree played by Laya).
 test.use({ baseURL: RECORDINGS })
 
 function collectErrors(page: Page): string[] {
@@ -16,15 +16,21 @@ interface Entry {
   name: string
   seed: number
   solution?: string
+  decider?: string
 }
 
-async function entries(page: Page): Promise<{ senses: Entry[]; rules: Entry[] }> {
+async function entries(page: Page): Promise<{ senses: Entry[]; rules: Entry[]; local: Entry[] }> {
   const index = (await (await page.request.get(`${RECORDINGS}episodes/index.json`)).json()) as { episodes: Entry[] }
-  const rules = index.episodes.filter((e) => e.solution === 'rule-tree')
-  return { senses: index.episodes.filter((e) => !rules.includes(e)), rules }
+  const tree = index.episodes.filter((e) => e.solution === 'rule-tree')
+  const local = tree.filter((e) => e.decider === 'laya' || e.decider === 'kev')
+  return {
+    senses: index.episodes.filter((e) => !tree.includes(e)),
+    rules: tree.filter((e) => !local.includes(e)),
+    local,
+  }
 }
 
-const tab = (page: Page, solution: 'senses' | 'rules') =>
+const tab = (page: Page, solution: 'senses' | 'rules' | 'local') =>
   page.getByTestId('solution-tabs').locator(`button[data-solution="${solution}"]`)
 
 test('the side tab switches solution at the same screen position, opening the recording of the same seed', async ({
@@ -55,8 +61,29 @@ test('the side tab switches solution at the same screen position, opening the re
   expect(errors).toEqual([])
 })
 
+test('the side tab has three tabs, and Local models opens Laya’s recording of the same seed at the same position', async ({
+  page,
+}) => {
+  const errors = collectErrors(page)
+  await page.goto('./#rules/rules-corridor-10/0/written')
+  await expect(page.getByTestId('solution-tabs').locator('button')).toHaveText([
+    'Senses and central',
+    'Rule tree',
+    'Local models',
+  ])
+  // The third screen of the rule tree is How the rules were written; the local models' is How Laya was trained.
+  await tab(page, 'local').click()
+  await expect(page).toHaveURL(/#local\/local-corridor-10\/0\/trained$/)
+  await expect(tab(page, 'local')).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTestId('workflow')).toBeVisible()
+  await expect(page.locator('.topbar .brand')).toContainText('Laya')
+  await tab(page, 'rules').click()
+  await expect(page).toHaveURL(/#rules\/rules-corridor-10\/0\/written$/)
+  expect(errors).toEqual([])
+})
+
 test('the picker lists only the recordings of the solution shown', async ({ page }) => {
-  const { senses, rules } = await entries(page)
+  const { senses, rules, local } = await entries(page)
   await page.goto('./#corridor-9/3/instances')
   const options = page.locator('.topbar select option')
   await expect(options).toHaveCount(senses.length)
@@ -65,6 +92,12 @@ test('the picker lists only the recordings of the solution shown', async ({ page
   await expect(options).toHaveCount(rules.length)
   expect(await options.evaluateAll((els) => els.map((el) => (el as HTMLOptionElement).value).sort())).toEqual(
     rules.map((e) => e.name).sort(),
+  )
+  await tab(page, 'local').click()
+  await expect(page).toHaveURL(/#local\/local-corridor-9\/0\/questions$/)
+  await expect(options).toHaveCount(local.length)
+  expect(await options.evaluateAll((els) => els.map((el) => (el as HTMLOptionElement).value).sort())).toEqual(
+    local.map((e) => e.name).sort(),
   )
 })
 
@@ -97,10 +130,10 @@ test('the choice of solution is remembered, and a link to either solution still 
   await expect(page.getByTestId('tick-counter')).toContainText('Decision 8 /')
 })
 
-test('at 1280 the rule tree’s top bar is one row with all seven screens, beside the side tab', async ({ page }) => {
+test('at 1280 the rule tree’s top bar is one row with all six screens, beside the side tab', async ({ page }) => {
   await page.goto('./#rules/rules-corridor-9/0/reference')
   const tabs = page.locator('.topbar .screens button, .topbar .screens a')
-  await expect(tabs).toHaveCount(7)
+  await expect(tabs).toHaveCount(6)
   const box = await page.locator('.topbar').boundingBox()
   expect(box?.height ?? 999).toBeLessThan(70)
   const side = await page.getByTestId('solution-tabs').boundingBox()

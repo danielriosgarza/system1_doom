@@ -1,17 +1,19 @@
 import { SOLUTION_TITLES } from '../content/rules/words'
-import { SOLUTIONS, switchSolution, useApp } from '../store'
+import { SOLUTIONS, entriesOf, switchSolution, useApp } from '../store'
 
 /**
- * The side tab: which of the two solutions the screens show. A vertical bar on the left edge; on a phone, two
- * buttons above the top bar. It shows only when both solutions have recordings here.
+ * The side tab: which solution the screens show (the senses and central, the rule tree, the local models). A vertical
+ * bar on the left edge; on a phone, a row of buttons above the top bar. It shows only when more than one solution has
+ * recordings here, and lists those.
  */
 export function SolutionTabs() {
   const solution = useApp((s) => s.solution)
-  const both = useApp((s) => (s.index?.rules?.length ?? 0) > 0 && (s.index?.episodes.length ?? 0) > 0)
-  if (!both) return null
+  const index = useApp((s) => s.index)
+  const shown = SOLUTIONS.filter((s) => entriesOf(s.id, index).length > 0)
+  if (shown.length < 2) return null
   return (
     <nav className="solution-tabs" aria-label="Solution" data-testid="solution-tabs">
-      {SOLUTIONS.map((s) => (
+      {shown.map((s) => (
         <button
           key={s.id}
           type="button"

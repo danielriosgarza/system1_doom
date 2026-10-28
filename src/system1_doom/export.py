@@ -37,7 +37,8 @@ An episode that ended with `connection_lost` (three central misses in a row) is 
 inspected, but it is not shippable: export exits 1, `--check` reports it and `--index` leaves it out.
 
 `--solution rule-tree` records the other way to play instead: a rule tree (§8.17 of the documentation) walked by
-Jev's answers, in Deadly Corridor. Its bundle has its own files (`ruletree/bundle.py`), and its `episode.json`
+Jev's answers, in Deadly Corridor, or with `--tree-decider laya` or `kev` by a model on this machine (`--tree-model`
+names the checkpoint, such as ruletree-kev-v1). Its bundle has its own files (`ruletree/bundle.py`), and its `episode.json`
 says `"solution": "rule-tree"`; `--check` and `--index` read both kinds, and an index line without `solution` is
 senses and central.
 """
@@ -71,7 +72,7 @@ from system1_doom.controller import (
     FinishedReason,
     no_key_message,
 )
-from system1_doom.d1_client import D1UltraClient, DeciderName, InstanceCounters, TransportFn, load_api_key
+from system1_doom.d1_client import D1UltraClient, DeciderName, InstanceCounters, TransportFn, decider_of, load_api_key
 from system1_doom.features import encode_action
 from system1_doom.history import HISTORY_FILE, TickRecord
 from system1_doom.history_test import HistoryTestResult
@@ -319,7 +320,11 @@ class BundleIndexEntry(BaseModel):
     kills: float = 0.0
     configuration_start: int = Field(default=1, description="The configuration version the episode started from")
     configuration_end: int = Field(default=1, description="The configuration version it ended at")
-    decider: DeciderName = Field(default=DECIDER, description="The decision model every decision was made by: d1-ultra, or jev")
+    decider: Literal["d1-ultra", "jev", "laya", "kev"] = Field(
+        default=DECIDER,
+        description="The decision model every decision was made by: d1-ultra or jev; a rule tree's also laya or kev, models "
+                    "on the machine that played",
+    )
     senses_choose_targets: bool = Field(
         default=False,
         description="The senses chose the motor's targets (the enemy aimed at, the pickup walked to); False in bundles "
@@ -927,6 +932,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Record the senses and central (default) or a rule tree; a rule tree plays deadly_corridor.cfg with Jev",
     )
     parser.add_argument("--tree", default=DEFAULT_TREE, help=f"With --solution rule-tree: a shipped tree or a tree folder (default {DEFAULT_TREE})")
+    parser.add_argument("--tree-decider", choices=("jev", "laya", "kev"), default="jev",
+                        help="With --solution rule-tree: who answers every question, Jev (the default) or a model on this machine")
+    parser.add_argument("--tree-model", default=None, help="With --solution rule-tree: the decider's model, when it is not its default")
     parser.add_argument("--check", metavar="BUNDLE", default=None, help="Validate a bundle and exit")
     parser.add_argument("--index", metavar="DIR", default=None, help="Write DIR/index.json listing its bundles and exit")
     parser.add_argument("--schema", metavar="OUT.json", default=None, help="Write the bundle JSON Schema and exit")
@@ -934,14 +942,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def record_rule_tree(args: argparse.Namespace, transport: Optional[TransportFn] = None) -> int:
-    """`--solution rule-tree`: record seeds `--seed` onwards with the tree, every decision made by Jev's answers."""
+    """`--solution rule-tree`: record seeds `--seed` onwards with the tree, every decision made by the answers of
+    `--tree-decider` (Jev unless named)."""
     if Path(args.scenario).name != SCENARIO_RULE_TREE:
         print(f"The rule tree plays {SCENARIO_RULE_TREE} only, not {args.scenario}.", file=sys.stderr)
         return 2
-    api_key = load_api_key("jev")
-    if not api_key:
+    decider = decider_of(args.tree_decider)
+    api_key = load_api_key(decider)
+    if not api_key and decider.key_required:
         if transport is None:
-            print(no_key_message("jev"), file=sys.stderr)
+            print(no_key_message(decider.name), file=sys.stderr)
             return 2
         api_key = "test-transport"
     try:
@@ -950,7 +960,7 @@ def record_rule_tree(args: argparse.Namespace, transport: Optional[TransportFn] 
         print(exc, file=sys.stderr)
         return 2
     budget = args.call_budget if args.call_budget is not None else RULE_TREE_BUDGET
-    client = D1UltraClient(api_key=api_key, decider="jev", transport=transport, default_timeout=budget)
+    client = D1UltraClient(api_key=api_key or "", decider=decider, model=args.tree_model, transport=transport, default_timeout=budget)
     try:
         for i in range(args.episodes):
             seed = args.seed + i

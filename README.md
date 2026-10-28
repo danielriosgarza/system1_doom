@@ -151,14 +151,18 @@ are made are in
 [`docs/DOCUMENTATION.md` §8.15](docs/DOCUMENTATION.md#815-episode-bundles--the-web-explainer--exportpy-servepy-web),
 and the recordings' numbers in §15.
 
-A side tab on the left switches to the rule tree, which has seven screens
+A side tab on the left switches to the rule tree, which has six screens
 of its own: Watch, with the questions of each walk beside the game; The
 questions, with the text Jev was sent for each question exactly as sent
 and its probability for every option; How the rules were written, the
 soft loop's record step by step; Results; the whole tree, with where each
-rule came from; Reference; and Local models, how Laya was trained on
-Kev's answers and what each local model answered at each decision. It ships five rule-tree recordings, all
+rule came from; and Reference. It ships five rule-tree recordings, all
 cleared: `general-11` on seeds 9 to 12, and `codex-11` on seed 9.
+
+A third tab, Local models, shows the same tree played by Laya on the
+computer that plays, trained on Kev-27B's answers, with no question sent
+to Jev: four recordings (seeds 9 to 12, all cleared), and screens on how
+Laya was trained and how it compares with its teacher.
 
 To watch it decide live, `python -m system1_doom.serve` plays on your
 machine and the same app follows each decision as it is made, and each of

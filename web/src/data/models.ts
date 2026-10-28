@@ -1,4 +1,4 @@
-// The Local models screen's per-question record: for each question Jev answered in a rule-tree recording, what each
+// The local models' per-question record: for each question asked in a rule-tree recording, what each
 // open-weight model answered when asked the same question with the same text (`models.json`, written by
 // `python -m system1_doom.ruletree.site_models`). Nothing here decides anything.
 import { BundleError, parseJson } from './loader'
@@ -42,22 +42,22 @@ export function questionsAt(models: ModelAnswers, decision: number): ModelQuesti
   return models.answers.filter((a) => a.decision === decision).sort((a, b) => a.step - b.step)
 }
 
-/** How often each model picked what Jev picked, over every question of the recording. */
-export function agreementWithJev(
+/** How often each model picked what the model that played picked, over every question of the recording. */
+export function agreementWithPlayed(
   models: ModelAnswers,
-  jevPick: (q: ModelQuestion) => string | null,
+  playedPick: (q: ModelQuestion) => string | null,
 ): Record<string, { same: number; of: number }> {
   const out: Record<string, { same: number; of: number }> = {}
   for (const m of models.models) out[m] = { same: 0, of: 0 }
   for (const q of models.answers) {
-    const jev = jevPick(q)
-    if (jev === null) continue
+    const played = playedPick(q)
+    if (played === null) continue
     for (const m of models.models) {
       const pick = q.picks[m]
       const tally = out[m]
       if (!pick || !tally) continue
       tally.of += 1
-      if (pick[0] === jev) tally.same += 1
+      if (pick[0] === played) tally.same += 1
     }
   }
   return out

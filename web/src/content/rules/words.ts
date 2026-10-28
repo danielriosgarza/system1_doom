@@ -11,6 +11,8 @@ export const SOLUTION_TITLES: Record<Solution, string> = {
     'At each decision, five calls to a decision model, the senses, each answer questions about one part of the game, and a sixth call, the central, chooses the action from their answers.',
   rules:
     'At each decision, Jev, TypeSafe’s decision model, answers a few multiple-choice questions that lead through a tree of rules to an action.',
+  local:
+    'At each decision, Laya, a small model running on the computer that plays and trained on the answers of Kev-27B, answers the questions of a tree of rules that lead to an action. No question goes to Jev.',
 }
 
 /** Who wrote a tree's rules, as the tree names them. */
@@ -84,6 +86,8 @@ export const RULES_WATCH = {
     'Each recording is one game of the deadly corridor, played with one tree on one seed. Click a recording to play it from the start.',
   frameAlt: (index: number, count: number, health: number, action: string) =>
     `The game at decision ${index + 1} of ${count}, health ${Math.round(health)}. Jev’s answers led to: ${action}.`,
+  decider: 'Jev',
+  decidedBy: 'decided by Jev',
 }
 
 /**

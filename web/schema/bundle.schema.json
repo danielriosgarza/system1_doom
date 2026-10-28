@@ -643,10 +643,12 @@
         },
         "decider": {
           "default": "d1-ultra",
-          "description": "The decision model every decision was made by: d1-ultra, or jev",
+          "description": "The decision model every decision was made by: d1-ultra or jev; a rule tree's also laya or kev, models on the machine that played",
           "enum": [
             "d1-ultra",
-            "jev"
+            "jev",
+            "laya",
+            "kev"
           ],
           "title": "Decider",
           "type": "string"
@@ -3910,10 +3912,28 @@
           "type": "integer"
         },
         "decider": {
-          "const": "jev",
           "default": "jev",
+          "description": "Who answered every question: Jev, or a model on this machine (Laya, Kev)",
+          "enum": [
+            "jev",
+            "laya",
+            "kev"
+          ],
           "title": "Decider",
           "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The model asked, as the requests named it (a Laya checkpoint, kev-latest); none in recordings made before it was kept",
+          "title": "Model"
         },
         "models": {
           "additionalProperties": {

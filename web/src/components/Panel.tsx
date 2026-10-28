@@ -1,5 +1,6 @@
 import { type ReactNode, useId, useState } from 'react'
-import { EXPLAINERS, type PanelId } from '../content/explainers'
+import type { PanelId } from '../content/explainers'
+import { explainerOf } from './explainerOf'
 import { useApp } from '../store'
 import { linkTerms } from './Terms'
 
@@ -18,7 +19,8 @@ export function Panel({
   aside?: ReactNode
   testId?: string
 }) {
-  const explainer = EXPLAINERS[id]
+  const solution = useApp((s) => s.solution)
+  const explainer = explainerOf(id, solution)
   const [open, setOpen] = useState(false)
   const focused = useApp((s) => s.focusPanel === id)
   const headingId = useId()
@@ -55,8 +57,8 @@ export function Panel({
 
 /** The explanation behind a panel's "?": its paragraphs, its formula where it has one, and the code. */
 export function ExplainerBody({ id, bodyId }: { id: PanelId; bodyId?: string }) {
-  const explainer: (typeof EXPLAINERS)[PanelId] & { formula?: string; code?: string } = EXPLAINERS[id]
   const solution = useApp((s) => s.solution)
+  const explainer = explainerOf(id, solution)
   const seen = new Set<string>()
   return (
     <div className="explainer" id={bodyId}>

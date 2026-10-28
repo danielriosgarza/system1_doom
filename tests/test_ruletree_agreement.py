@@ -92,7 +92,7 @@ def test_compare_scores_both_models_against_the_text(tmp_path):
         code = main([str(tmp_path / "out.json"), "--episodes", str(ep)],
                     client=D1UltraClient(api_key="", decider="laya", transport=fake, max_workers=1))
     assert code == 0 and json.loads((tmp_path / "out.json").read_text())["all"]["right"] == 1
-    assert out.getvalue().splitlines()[-1].startswith("all             5 asked,    1 as Jev")
+    assert out.getvalue().splitlines()[-1].startswith("all             5 asked,    1 as played")
 
 
 def test_the_site_gets_each_models_answer_by_decision_and_step(tmp_path):

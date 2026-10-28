@@ -66,9 +66,8 @@ export async function loadRulesEpisode(
     fetchText(`${base}/decisions.jsonl`, fetcher),
     fetchText(`${base}/tree.json`, fetcher),
     fetchText(`${base}/build.jsonl`, fetcher, true),
-    fetchText(`${base}/models.json`, fetcher, true),
   ])
-  const [metaText = '', decisionsText = '', treeText = '', buildText = '', modelsText = ''] = settled.map((r) => {
+  const [metaText = '', decisionsText = '', treeText = '', buildText = ''] = settled.map((r) => {
     if (r.status === 'rejected') throw r.reason
     return r.value
   })
@@ -83,6 +82,9 @@ export async function loadRulesEpisode(
     )
   }
   decisions.sort((a, b) => a.decision - b.decision)
+  // Only a local model's recording has the other models' answers to its questions.
+  const local = meta.decider === 'laya' || meta.decider === 'kev'
+  const modelsText = local ? await fetchText(`${base}/models.json`, fetcher, true) : ''
   return {
     name,
     base,
@@ -93,6 +95,10 @@ export async function loadRulesEpisode(
     models: parseModels(modelsText, `${name}/models.json`),
   }
 }
+
+/** Whether a rule-tree recording was played by a model on the machine (Laya, Kev), not Jev. */
+export const isLocalBundle = (bundle: Pick<RulesBundle, 'meta'>): boolean =>
+  bundle.meta.decider === 'laya' || bundle.meta.decider === 'kev'
 
 /** URL of a file the bundle names by its path inside the bundle: a frame, or a cornerstone's screen. */
 export const rulesFileUrl = (bundle: Pick<RulesBundle, 'base'>, path: string): string => `${bundle.base}/${path}`

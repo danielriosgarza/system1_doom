@@ -5,10 +5,12 @@ import { recordingName, resultWords, scenarioWords } from '../content/watch'
 import { type PickerEntry, mergedEpisodes } from '../data/live'
 import type { BundleIndexEntry } from '../schema/bundle'
 import {
+  entriesOf,
   followLive,
   openEpisode,
   openRecording,
   openRulesEpisode,
+  playsTree,
   screensOf,
   setScreen,
   setState,
@@ -83,7 +85,7 @@ export function TopBar() {
   const recordings = items.filter((e) => e.live === null)
   // On Watch a recording picked here plays from the start, as a card does; elsewhere it opens at its first decision.
   const pick = (name: string) => {
-    if (solution === 'rules') {
+    if (playsTree(solution)) {
       if (screen === 'watch') void openRecording(name)
       else void openRulesEpisode(name)
     } else if (name === live?.current) followLive()
@@ -94,7 +96,12 @@ export function TopBar() {
     <header className={`topbar ${bundle && liveOpen === bundle.name ? 'is-live' : ''}`}>
       <div className="brand">
         <h1>System 1 Doom</h1>
-        <span>every decision made by {deciderName(solution === 'rules' ? 'jev' : bundle?.meta.decider)}</span>
+        <span>
+          every decision made by{' '}
+          {solution === 'local'
+            ? 'Laya, on this computer'
+            : deciderName(solution === 'rules' ? 'jev' : bundle?.meta.decider)}
+        </span>
       </div>
       <nav className="screens" aria-label="Screens">
         {screensOf(solution).map((s) => (
@@ -111,12 +118,12 @@ export function TopBar() {
       {solution === 'senses' && <LiveBadge />}
       <label className="control">
         <select
-          value={(solution === 'rules' ? rules?.name : bundle?.name) ?? ''}
+          value={(playsTree(solution) ? rules?.name : bundle?.name) ?? ''}
           onChange={(e) => pick(e.target.value)}
           aria-label="Episode"
         >
-          {solution === 'rules' ? (
-            (index?.rules ?? []).map((e) => (
+          {playsTree(solution) ? (
+            entriesOf(solution, index).map((e) => (
               <option key={e.name} value={e.name} title={e.title}>
                 {rulesRecordingLabel(e)}
               </option>

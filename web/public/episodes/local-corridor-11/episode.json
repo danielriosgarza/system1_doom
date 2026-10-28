@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "solution": "rule-tree",
+  "name": "local-corridor-11",
+  "title": "deadly corridor, rule tree general-11, seed 11, played by Laya trained on Kev",
+  "scenario": "deadly_corridor.cfg",
+  "seed": 11,
+  "decider": "laya",
+  "model": "ruletree-kev-v1",
+  "models": {
+    "laya-rl-agent": 165
+  },
+  "tree": "general-11",
+  "tree_writer": "claude",
+  "rules": 11,
+  "decision_tics": 8,
+  "call_budget_sec": 10.0,
+  "result": {
+    "outcome": "cleared",
+    "cleared": true,
+    "died": false,
+    "decisions": 47,
+    "health": 100.0,
+    "kills": 6.0,
+    "reward": 2280.4,
+    "max_x": 1280,
+    "stalled_at": null
+  },
+  "calls": 165,
+  "cost": 0.0,
+  "misses": 0,
+  "decision_count": 47,
+  "seconds": 9.6,
+  "frames": {
+    "dir": "frames",
+    "pattern": "{decision:05d}.jpg",
+    "width": 320,
+    "height": 240,
+    "end_frame": "frames/end.jpg"
+  },
+  "files": [
+    "decisions.jsonl",
+    "tree.json",
+    "build.jsonl"
+  ],
+  "package_version": "unknown",
+  "recorded_at": "2026-10-28T04:24:07.726652+00:00"
+}

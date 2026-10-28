@@ -1,6 +1,7 @@
 // What each panel explains when its "?" is opened: one sentence always shown, a few paragraphs, the code it
 // reads, and a formula only where one applies (the n-step return and the history test's metrics). The rule tree's
 // panels are in `rules/explainers.ts`.
+import { LOCAL_PANELS } from './local/explainers'
 import { RULE_EXPLAINERS } from './rules/explainers'
 
 export interface Explainer {
@@ -248,6 +249,7 @@ export const EXPLAINERS = {
     paragraphs: ['The shortcuts do nothing while you type in a text field.'],
   },
   ...RULE_EXPLAINERS,
+  ...LOCAL_PANELS,
 } satisfies Record<string, Explainer>
 
 export type PanelId = keyof typeof EXPLAINERS

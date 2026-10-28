@@ -1,7 +1,6 @@
 import { type KeyboardEvent, useId } from 'react'
 import { EvidenceText } from '../../components/Evidence'
 import { Panel } from '../../components/Panel'
-import { QUESTIONS, RULES_WATCH } from '../../content/rules/words'
 import { pct } from '../../data/readings'
 import {
   type RulesBundle,
@@ -16,8 +15,9 @@ import {
 } from '../../data/rules'
 import type { RuleTreeDecision, WalkStep } from '../../schema/bundle'
 import { setState, useApp } from '../../store'
+import { useTreeWords } from './useTreeWords'
 
-/** One decision opened: every question Jev was asked, the text it was sent exactly as sent, and its answers. */
+/** One decision opened: every question asked (of Jev, or Laya), the text it was sent exactly as sent, and its answers. */
 export function Questions({
   bundle,
   decision,
@@ -27,6 +27,7 @@ export function Questions({
   decision: RuleTreeDecision
   index: number
 }) {
+  const { watch: W, questions: Q } = useTreeWords()
   const selected = useApp((s) => s.question)
   const tabsId = useId()
   const asked = questionIndexes(decision)
@@ -46,10 +47,10 @@ export function Questions({
   return (
     <main className="screen questions" aria-label="The questions">
       <header className="screen-head">
-        <h2>{QUESTIONS.title(index + 1)}</h2>
-        <p>{QUESTIONS.intro}</p>
+        <h2>{Q.title(index + 1)}</h2>
+        <p>{Q.intro}</p>
       </header>
-      <div className="instance-tabs" role="tablist" aria-label={QUESTIONS.tabs}>
+      <div className="instance-tabs" role="tablist" aria-label={Q.tabs}>
         {asked.map((i, k) => {
           const s = decision.steps[i] as WalkStep
           const r = readStep(s)
@@ -68,10 +69,10 @@ export function Questions({
               onClick={() => setState({ question: i })}
               onKeyDown={onKey}
             >
-              {QUESTIONS.tab(k + 1)}
+              {Q.tab(k + 1)}
               <span className="tab-state">
-                {s.kind === 'focus' ? QUESTIONS.focusTab : `at ${s.node}`}
-                {r.miss ? ` · ${RULES_WATCH.missed}` : r.option && s.kind === 'rule' ? ` → ${r.option}` : ''}
+                {s.kind === 'focus' ? Q.focusTab : `at ${s.node}`}
+                {r.miss ? ` · ${W.missed}` : r.option && s.kind === 'rule' ? ` → ${r.option}` : ''}
               </span>
             </button>
           )
@@ -89,14 +90,14 @@ export function Questions({
           <Panel id="rt-sent">
             <figure className="instance-frame">
               <div className="frame">
-                <img src={rulesFileUrl(bundle, decision.frame)} alt={`${QUESTIONS.frame}: ${decision.frame}`} />
+                <img src={rulesFileUrl(bundle, decision.frame)} alt={`${Q.frame}: ${decision.frame}`} />
               </div>
-              <figcaption className="faint small">{QUESTIONS.frame}</figcaption>
+              <figcaption className="faint small">{Q.frame}</figcaption>
             </figure>
-            <p className="chips-label">{QUESTIONS.text}</p>
+            <p className="chips-label">{Q.text}</p>
             <EvidenceText text={text} name={`step-${at}`} testId="state-text" highlight="focus" />
             <p className="faint small">
-              {text.includes('\n[focus]\n') ? QUESTIONS.focusNote : step.kind === 'focus' ? QUESTIONS.noFocusNote : ''}
+              {text.includes('\n[focus]\n') ? Q.focusNote : step.kind === 'focus' ? Q.noFocusNote : ''}
             </p>
           </Panel>
           <Panel id="rt-answer">
@@ -108,8 +109,9 @@ export function Questions({
   )
 }
 
-/** One question: its words, every option with Jev's probability, and where the answer led. */
+/** One question: its words, every option with the answering model's probability, and where the answer led. */
 function Answer({ bundle, step }: { bundle: RulesBundle; step: WalkStep }) {
+  const { questions: Q } = useTreeWords()
   const r = readStep(step)
   const bars = optionBars(step)
   const skills = skillIds(bundle.tree)
@@ -123,7 +125,7 @@ function Answer({ bundle, step }: { bundle: RulesBundle; step: WalkStep }) {
     <div className="answers" data-testid="question-answers">
       <div className="answer-block">
         <h3>
-          {QUESTIONS.question} <span className="answer-value">asked at {where}</span>
+          {Q.question} <span className="answer-value">asked at {where}</span>
         </h3>
         <p className="question-text" data-testid="question-text">
           {step.question}
@@ -132,15 +134,15 @@ function Answer({ bundle, step }: { bundle: RulesBundle; step: WalkStep }) {
       {r.miss && (
         <div className="miss-box" data-testid="miss-box">
           <p>
-            <strong>{QUESTIONS.miss}:</strong> {r.miss}
-            {step.answer?.error ? ` (${step.answer.error})` : ''}. {QUESTIONS.missNote}
+            <strong>{Q.miss}:</strong> {r.miss}
+            {step.answer?.error ? ` (${step.answer.error})` : ''}. {Q.missNote}
           </p>
         </div>
       )}
       <div className="answer-block">
-        <h3>{QUESTIONS.options}</h3>
-        {!r.asked && <p className="small">{bars.length === 0 ? QUESTIONS.noneListed : QUESTIONS.onlyOne}</p>}
-        <ul className="bar-list option-bars" aria-label={QUESTIONS.options}>
+        <h3>{Q.options}</h3>
+        {!r.asked && <p className="small">{bars.length === 0 ? Q.noneListed : Q.onlyOne}</p>}
+        <ul className="bar-list option-bars" aria-label={Q.options}>
           {bars.map((b) => (
             <li key={b.option} className={`bar-row ${b.picked ? 'top' : ''}`} data-option={b.option}>
               <span className="bar-label">
@@ -150,20 +152,20 @@ function Answer({ bundle, step }: { bundle: RulesBundle; step: WalkStep }) {
                 <span className="bar-fill" style={{ width: `${Math.max(0, Math.min(1, b.p)) * 100}%` }} />
               </span>
               <span className="bar-value">{r.asked ? pct(b.p, b.p < 0.1 && b.p > 0 ? 1 : 0) : '–'}</span>
-              <span className="bar-note">{b.picked ? QUESTIONS.picked : ''}</span>
+              <span className="bar-note">{b.picked ? Q.picked : ''}</span>
             </li>
           ))}
         </ul>
       </div>
       <div className="answer-block">
-        <h3>{QUESTIONS.leadsTo}</h3>
+        <h3>{Q.leadsTo}</h3>
         <p className="small" data-testid="leads-to">
           {leadsTo(bundle, step)}
         </p>
       </div>
-      {r.cached && <p className="faint small">{QUESTIONS.cached}</p>}
+      {r.cached && <p className="faint small">{Q.cached}</p>}
       {step.answer && !r.cached && (
-        <p className="faint small">{QUESTIONS.timing(step.answer.latency_ms ?? 0, step.answer.cost ?? 0)}</p>
+        <p className="faint small">{Q.timing(step.answer.latency_ms ?? 0, step.answer.cost ?? 0)}</p>
       )}
     </div>
   )

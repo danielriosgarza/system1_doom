@@ -141,43 +141,4 @@ export const RULE_EXPLAINERS = {
     ],
     code: 'ruletree/bundle.py · record_episode; ruletree/bundle.py · check_recording',
   },
-  'rt-workflow': {
-    title: 'How the trained Laya was made',
-    sentence: 'The steps from Kev’s answers to a small model that answers the tree’s questions on its own.',
-    paragraphs: [
-      'A decision model answers a multiple-choice question with a probability for each option. Jev, Kev and Laya all answer the same request: the state as text, the question and its options. So the tree can be walked with any of them by changing the address its questions are sent to.',
-      'Kev-27B answers these questions as well as Jev without any training on them, but it is large: each question takes about half a second on this computer. Laya is small and fast, about 50 ms a question, but out of the box it answered close to chance. Training Laya on Kev’s answers gives a model that is fast and answers as Kev does.',
-      'The training examples come from games that Kev played, on seeds kept apart from everything else. Laya is trained to give the same probabilities as Kev, not only the same pick, so it also learns how sure Kev was. The questions of the recordings on this site, and the benchmark seeds, were never used for training.',
-    ],
-    code: 'ruletree/teach.py · build; laya-train, from the laya package',
-  },
-  'rt-models': {
-    title: 'How each model did',
-    sentence: 'The same questions and the same 81 games, answered by each model.',
-    paragraphs: [
-      'Right, of 561: for these questions the state text alone settles the answer, so each answer can be marked right or wrong. For example, whether the threats list names an enemy, or which angle band the target is in. The other questions, such as which enemy is the biggest danger, are judgements and are only compared.',
-      'Same answer as Jev, of 709: how often the model picked the option Jev picked, over every question Jev answered in the five recordings.',
-      'Games cleared, of 81: the tree played the benchmark seeds with the model making every decision. Jev’s results move from one run to the next, so its two runs are both shown; a difference of two or three games is within chance.',
-    ],
-    code: 'ruletree/agreement.py · compare; ruletree/__main__.py · main',
-  },
-  'rt-decision-models': {
-    title: 'This decision, by each model',
-    sentence:
-      'Each question asked at this decision, with the option Jev picked in play and the option each local model picked when asked the same question.',
-    paragraphs: [
-      'The local models were asked afterwards, with the text and options Jev was sent, so the walk shown on the other screens is Jev’s. A different pick here would have led the walk elsewhere, and the questions after it would then have been different.',
-      'The percentage is the probability the model gave the option it picked.',
-    ],
-    code: 'ruletree/site_models.py · site_answers',
-  },
-  'rt-thor': {
-    title: 'Serving Kev on this computer',
-    sentence: 'How long Kev-27B takes per question on the Jetson Thor, as installed and as tuned.',
-    paragraphs: [
-      'The Jetson Thor’s GPU is of NVIDIA’s Blackwell generation. It multiplies 16-bit numbers at about 92 trillion operations a second, 8-bit numbers at about 190, and 4-bit numbers faster still. Kev as installed used 16-bit numbers and none of its own fused kernels, because they asked for an older version of a library.',
-      'Tuned, Kev runs its fused kernels and stores its weights in 8-bit, and in 4-bit in its largest layers. A question about a state already read only needs the question’s own words, so it costs less than a question about a new state. On the questions of these recordings the tuned Kev gave the same answer as installed 706 times in 709.',
-    ],
-    code: 'tools/kev_thor/serve_thor.py',
-  },
 } satisfies Record<string, Explainer>

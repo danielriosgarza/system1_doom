@@ -23,17 +23,25 @@ import type { BundleIndexEntry } from './schema/bundle'
 
 export type Theme = 'dark' | 'light'
 
-/** The two ways this package plays: the senses and central, and the rule tree. */
-export type Solution = 'senses' | 'rules'
+/**
+ * The three ways this package plays: the senses and central, the rule tree walked by Jev, and the same rule tree
+ * walked by a model on the machine that plays (Laya, trained on Kev's answers).
+ */
+export type Solution = 'senses' | 'rules' | 'local'
 export type SensesScreen = 'watch' | 'instances' | 'slow' | 'learning' | 'menu' | 'reference'
-export type RulesScreen = 'watch' | 'questions' | 'written' | 'results' | 'tree' | 'reference' | 'models'
-export type Screen = SensesScreen | RulesScreen
+export type RulesScreen = 'watch' | 'questions' | 'written' | 'results' | 'tree' | 'reference'
+export type LocalScreen = 'watch' | 'questions' | 'trained' | 'results' | 'tree' | 'reference'
+export type Screen = SensesScreen | RulesScreen | LocalScreen
 
-/** The side tab's two tabs, in its order. */
+/** The side tab's tabs, in its order. */
 export const SOLUTIONS: Array<{ id: Solution; label: string }> = [
   { id: 'senses', label: 'Senses and central' },
   { id: 'rules', label: 'Rule tree' },
+  { id: 'local', label: 'Local models' },
 ]
+
+/** Whether a solution plays a rule tree: its recordings are rule-tree recordings (`data/rules.ts`). */
+export const playsTree = (solution: Solution): boolean => solution !== 'senses'
 
 /** The senses and central's screens, in the order the tabs and the keys 1 to 6 list them; the ids are the URL's. */
 export const SCREENS: Array<{ id: SensesScreen; label: string }> = [
@@ -45,10 +53,7 @@ export const SCREENS: Array<{ id: SensesScreen; label: string }> = [
   { id: 'reference', label: 'Reference' },
 ]
 
-/**
- * The rule tree's screens, at the same positions: screen 2 of one solution is screen 2 of the other. The seventh,
- * Local models, has no counterpart; switching from it opens the other solution's Watch.
- */
+/** The rule tree's screens, at the same positions: screen 2 of one solution is screen 2 of the others. */
 export const RULE_SCREENS: Array<{ id: RulesScreen; label: string }> = [
   { id: 'watch', label: 'Watch' },
   { id: 'questions', label: 'The questions' },
@@ -56,11 +61,24 @@ export const RULE_SCREENS: Array<{ id: RulesScreen; label: string }> = [
   { id: 'results', label: 'Results' },
   { id: 'tree', label: 'The rule tree' },
   { id: 'reference', label: 'Reference' },
-  { id: 'models', label: 'Local models' },
+]
+
+/** The local models' screens, at the same positions; the third tells how Laya learned instead of how rules were written. */
+export const LOCAL_SCREENS: Array<{ id: LocalScreen; label: string }> = [
+  { id: 'watch', label: 'Watch' },
+  { id: 'questions', label: 'The questions' },
+  { id: 'trained', label: 'How Laya was trained' },
+  { id: 'results', label: 'Results' },
+  { id: 'tree', label: 'The rule tree' },
+  { id: 'reference', label: 'Reference' },
 ]
 
 export const screensOf = (solution: Solution): Array<{ id: Screen; label: string }> =>
-  solution === 'rules' ? RULE_SCREENS : SCREENS
+  solution === 'rules' ? RULE_SCREENS : solution === 'local' ? LOCAL_SCREENS : SCREENS
+
+/** The recordings of a solution in the index. */
+export const entriesOf = (solution: Solution, index: EpisodeIndex | null | undefined): BundleIndexEntry[] =>
+  (solution === 'rules' ? index?.rules : solution === 'local' ? index?.local : index?.episodes) ?? []
 
 const hasScreen = (solution: Solution, screen: string | undefined): screen is Screen =>
   screensOf(solution).some((s) => s.id === screen)
@@ -147,7 +165,7 @@ let themePicked = saved.theme === 'light' || saved.theme === 'dark'
 
 let state: AppState = {
   index: null,
-  solution: saved.solution === 'rules' ? 'rules' : 'senses',
+  solution: saved.solution === 'rules' || saved.solution === 'local' ? saved.solution : 'senses',
   bundle: null,
   rules: null,
   loading: true,
@@ -201,24 +219,25 @@ export function useApp<T>(selector: (s: AppState) => T): T {
 
 /** How many decisions the open recording of the solution showing has. */
 export function decisionCount(s: AppState = state): number {
-  return s.solution === 'rules' ? (s.rules?.decisions.length ?? 0) : (s.bundle?.ticks.length ?? 0)
+  return playsTree(s.solution) ? (s.rules?.decisions.length ?? 0) : (s.bundle?.ticks.length ?? 0)
 }
 
 /** The name of the open recording of the solution showing. */
 export function openName(s: AppState = state): string | null {
-  return (s.solution === 'rules' ? s.rules?.name : s.bundle?.name) ?? null
+  return (playsTree(s.solution) ? s.rules?.name : s.bundle?.name) ?? null
 }
 
 // ---------------------------------------------------------------------------------------------
 // The URL hash: `#<episode name>/<tick>/<screen>`; without a screen it means The instances, so a link to a
 // decision opens that decision. `#live/<screen>` follows the live episode, whichever it is; plain `#live`
-// lands on Watch. The rule tree's are `#rules/<episode name>/<decision>/<screen>`; without a screen it means The
-// questions. While a recording plays, the hash keeps the tick it started from and is written when playback
+// lands on Watch. The rule tree's are `#rules/<episode name>/<decision>/<screen>`, the local models'
+// `#local/<episode name>/<decision>/<screen>`; without a screen they mean The questions. While a recording plays, the hash keeps the tick it started from and is written when playback
 // stops: browsers limit how often a page may rewrite its address, and real time is more than four decisions a
 // second.
 
 const LIVE_HASH = 'live'
 const RULES_HASH = 'rules'
+const LOCAL_HASH = 'local'
 
 /** The viewer asked the system for less motion: nothing plays on its own, and nothing fades. */
 export function prefersReducedMotion(): boolean {
@@ -239,10 +258,10 @@ interface Wanted {
 
 function readHash(): Wanted {
   const parts = decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/')
-  const rules = parts[0] === RULES_HASH
-  const [episode, tick, screen] = rules ? parts.slice(1) : parts[0] === LIVE_HASH ? [LIVE_HASH, '', parts[1]] : parts
+  const tree: Solution | null = parts[0] === RULES_HASH ? 'rules' : parts[0] === LOCAL_HASH ? 'local' : null
+  const [episode, tick, screen] = tree ? parts.slice(1) : parts[0] === LIVE_HASH ? [LIVE_HASH, '', parts[1]] : parts
   const parsed = tick === undefined || tick === '' ? NaN : Number(tick)
-  const solution: Solution | null = rules ? 'rules' : episode ? 'senses' : null
+  const solution: Solution | null = tree ?? (episode ? 'senses' : null)
   return {
     solution,
     episode: episode || null,
@@ -255,9 +274,10 @@ function readHash(): Wanted {
 function writeHash(push = false): void {
   const { bundle, rules, solution, tickIndex, screen, following, live } = state
   let hash: string
-  if (solution === 'rules') {
+  if (playsTree(solution)) {
     if (!rules) return
-    hash = `#${RULES_HASH}/${encodeURIComponent(rules.name)}/${rules.decisions[tickIndex]?.decision ?? 0}/${screen}`
+    const head = solution === 'local' ? LOCAL_HASH : RULES_HASH
+    hash = `#${head}/${encodeURIComponent(rules.name)}/${rules.decisions[tickIndex]?.decision ?? 0}/${screen}`
   } else {
     if (!bundle) return
     const tick = bundle.ticks[tickIndex]?.tick ?? 0
@@ -299,8 +319,8 @@ export function step(delta: number): void {
  */
 export function setScreen(screen: Screen): void {
   if (!hasScreen(state.solution, screen)) {
-    const other: Solution = state.solution === 'rules' ? 'senses' : 'rules'
-    if (hasScreen(other, screen)) void switchSolution(other, screen)
+    const other = SOLUTIONS.map((s) => s.id).find((s) => s !== state.solution && hasScreen(s, screen))
+    if (other) void switchSolution(other, screen)
     return
   }
   if (screen === state.screen) return
@@ -352,7 +372,7 @@ export function openRound(entry: number): void {
 
 /** The recording a solution opens when nothing names one. */
 function defaultOf(solution: Solution, entries: BundleIndexEntry[]): string | null {
-  return solution === 'rules' ? defaultRulesEpisode(entries) : defaultEpisode({ episodes: entries })
+  return playsTree(solution) ? defaultRulesEpisode(entries) : defaultEpisode({ episodes: entries })
 }
 
 /**
@@ -376,12 +396,12 @@ function recordingFor(
 function seedShowing(): number | undefined {
   const { solution, index } = state
   if (state.loading && openingName?.solution === solution) {
-    const entries = (solution === 'rules' ? index?.rules : index?.episodes) ?? []
+    const entries = entriesOf(solution, index)
     const name = openingName.name
     const entry = entries.find((e) => e.name === name)
     if (entry) return entry.seed
   }
-  return solution === 'rules' ? state.rules?.meta.seed : state.bundle?.meta.seed
+  return playsTree(solution) ? state.rules?.meta.seed : state.bundle?.meta.seed
 }
 
 /**
@@ -412,8 +432,8 @@ export async function switchSolution(to: Solution, screen?: Screen): Promise<voi
     ...INTERACTED,
   })
   window.scrollTo({ top: 0 })
-  const entries = (to === 'rules' ? state.index?.rules : state.index?.episodes) ?? []
-  const loaded = to === 'rules' ? (state.rules?.name ?? null) : (state.bundle?.name ?? null)
+  const entries = entriesOf(to, state.index)
+  const loaded = playsTree(to) ? (state.rules?.name ?? null) : (state.bundle?.name ?? null)
   const name = recordingFor(to, entries, seed, loaded)
   if (!name) {
     setState({ error: 'episodes/index.json lists no recording of this solution.' })
@@ -423,7 +443,7 @@ export async function switchSolution(to: Solution, screen?: Screen): Promise<voi
     writeHash(true)
     return
   }
-  if (to === 'rules') await openRulesEpisode(name, null, true)
+  if (playsTree(to)) await openRulesEpisode(name, null, true)
   else await openEpisode(name, null, false, true)
 }
 
@@ -524,7 +544,7 @@ export async function openRecording(name: string): Promise<void> {
     return
   }
   setState({ ...INTERACTED, ended: false })
-  if (state.solution === 'rules') await openRulesEpisode(name, null)
+  if (playsTree(state.solution)) await openRulesEpisode(name, null)
   else await openEpisode(name, null)
   if (openName() === name && !state.error) setState({ playWhenReady: play })
 }
@@ -534,10 +554,13 @@ let opening = 0
 /** The recording the latest of those calls opens, and its solution. */
 let openingName: { solution: Solution; name: string } | null = null
 
-/** Open a rule-tree recording at a decision, or at the first; `push` adds a history entry for it. */
+/**
+ * Open a rule-tree recording at a decision, or at the first; `push` adds a history entry for it. It opens for the
+ * rule-tree solution showing (the rule tree's, or the local models').
+ */
 export async function openRulesEpisode(name: string, decision: number | null = null, push = false): Promise<void> {
   const mine = ++opening
-  openingName = { solution: 'rules', name }
+  openingName = { solution: playsTree(state.solution) ? state.solution : 'rules', name }
   setState({ loading: true, error: null, playing: false, following: false, ended: false, ...INTERACTED })
   try {
     const rules = await loadRulesEpisode(name)
@@ -598,7 +621,7 @@ export function followLive(): void {
   const { live, bundle } = state
   if (!live?.running && !live?.current) return
   // Live play is the senses and central's.
-  if (state.solution === 'rules') setState({ solution: 'senses', screen: 'watch', tickIndex: 0 })
+  if (playsTree(state.solution)) setState({ solution: 'senses', screen: 'watch', tickIndex: 0 })
   setState({ ...INTERACTED, ended: false })
   if (!live.current) {
     setState({ following: true, playing: false })
@@ -698,8 +721,8 @@ export async function start(): Promise<void> {
     const wantsLive = !!state.live?.running && (!wanted.episode || wanted.episode === LIVE_HASH)
     // A link names its solution; a visit without one opens the solution chosen last, if it has recordings here.
     const solution = wanted.solution ?? (wantsLive ? 'senses' : state.solution)
-    if (solution === 'rules' && (index.rules ?? []).length > 0) {
-      await startRules(index.rules ?? [], wanted)
+    if (playsTree(solution) && entriesOf(solution, index).length > 0) {
+      await startRules(solution, entriesOf(solution, index), wanted)
       return
     }
     // A fresh visit lands on Watch; a link to a decision without a screen opens The instances.
@@ -732,9 +755,9 @@ export async function start(): Promise<void> {
 }
 
 /** The first visit's rule-tree half of `start`: the linked recording, or the newest cleared one, as for the senses. */
-async function startRules(entries: BundleIndexEntry[], wanted: Wanted): Promise<void> {
+async function startRules(solution: Solution, entries: BundleIndexEntry[], wanted: Wanted): Promise<void> {
   const screen = wanted.screen ?? (wanted.episode ? 'questions' : 'watch')
-  setState({ solution: 'rules', screen })
+  setState({ solution, screen })
   const names = entries.map((e) => e.name)
   const name =
     wanted.episode && names.includes(wanted.episode)
@@ -756,9 +779,9 @@ function showScreen(solution: Solution, screen: Screen): void {
 export function onHashChange(): void {
   const wanted = readHash()
   if (!wanted.episode) return
-  if (wanted.solution === 'rules') {
+  if (wanted.solution === 'rules' || wanted.solution === 'local') {
     const before = state.solution
-    showScreen('rules', wanted.screen ?? 'questions')
+    showScreen(wanted.solution, wanted.screen ?? 'questions')
     const { rules } = state
     if (!rules || rules.name !== wanted.episode) {
       void openRulesEpisode(wanted.episode, wanted.tick)
@@ -766,7 +789,7 @@ export function onHashChange(): void {
     }
     const found = wanted.tick === null ? -1 : rules.decisions.findIndex((d) => d.decision === wanted.tick)
     if (found >= 0 && found !== state.tickIndex) setState({ tickIndex: found, ended: false })
-    else if (found < 0 && before !== 'rules') setState({ tickIndex: 0, ended: false })
+    else if (found < 0 && before !== wanted.solution) setState({ tickIndex: 0, ended: false })
     return
   }
   if (wanted.episode === LIVE_HASH) {

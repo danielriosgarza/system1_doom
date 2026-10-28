@@ -1,7 +1,7 @@
 import { type Page, expect, test } from '@playwright/test'
 import { RECORDINGS } from '../playwright.config'
 
-// The rule tree's seven screens, read against the shipped recordings' own files: what a screen shows must be what
+// The rule tree's six screens, read against the shipped recordings' own files: what a screen shows must be what
 // decisions.jsonl says, character for character where it shows text Jev was sent.
 test.use({ baseURL: RECORDINGS })
 
@@ -17,7 +17,6 @@ interface Step {
   node: string
   question?: string | null
   answer?: { pick?: string | null; miss?: string | null } | null
-  options?: Record<string, string>
   pick?: string | null
   focus_line?: string | null
 }
@@ -35,9 +34,10 @@ const FOCUS_HEAD = '\n\n[focus]\n'
 
 async function rulesRecordings(page: Page): Promise<string[]> {
   const index = (await (await page.request.get(`${RECORDINGS}episodes/index.json`)).json()) as {
-    episodes: { name: string; solution?: string }[]
+    episodes: { name: string; solution?: string; decider?: string }[]
   }
-  return index.episodes.filter((e) => e.solution === 'rule-tree').map((e) => e.name)
+  // The rule tree's tab shows the recordings Jev played; Laya's are the local models' (local.spec.ts).
+  return index.episodes.filter((e) => e.solution === 'rule-tree' && e.decider === 'jev').map((e) => e.name)
 }
 
 async function decisions(page: Page, name: string): Promise<Decision[]> {
@@ -210,7 +210,7 @@ test('every rule-tree screen of every shipped recording opens without an error, 
   const errors = collectErrors(page)
   await page.setViewportSize({ width: 390, height: 844 })
   for (const name of await rulesRecordings(page)) {
-    for (const screen of ['watch', 'questions', 'written', 'results', 'tree', 'reference', 'models']) {
+    for (const screen of ['watch', 'questions', 'written', 'results', 'tree', 'reference']) {
       await page.goto(`./#rules/${name}/12/${screen}`)
       await expect(page.locator('main')).toBeVisible()
       await expect(page.locator('.topbar select')).toHaveValue(name)
@@ -218,47 +218,5 @@ test('every rule-tree screen of every shipped recording opens without an error, 
       expect(overflow, `${name} ${screen}`).toBeLessThanOrEqual(0)
     }
   }
-  expect(errors).toEqual([])
-})
-
-interface ModelsFile {
-  models: string[]
-  answers: { decision: number; step: number; kind: string; node: string; picks: Record<string, [string, number]> }[]
-}
-
-test('Local models shows the training workflow, every model, and this decision’s questions as each model answered them', async ({
-  page,
-}) => {
-  const errors = collectErrors(page)
-  const name = 'rules-corridor-9'
-  const all = await decisions(page, name)
-  const models = (await (await page.request.get(`${RECORDINGS}episodes/${name}/models.json`)).json()) as ModelsFile
-  // A decision with a focus question, so a focus item's words are shown too.
-  const d = all.find((x) => x.steps.some((s) => s.kind === 'focus' && s.answer)) ?? all[0]!
-  await page.goto(`./#rules/${name}/${d.decision}/models`)
-  await expect(page.getByTestId('workflow').locator('li')).toHaveCount(4)
-  await expect(page.getByTestId('models-table').locator('tbody tr')).toHaveCount(5)
-  await expect(page.getByTestId('thor-table').locator('tbody tr')).toHaveCount(3)
-  const asked = models.answers.filter((a) => a.decision === d.decision).sort((a, b) => a.step - b.step)
-  const rows = page.getByTestId('decision-models').locator('tbody tr')
-  await expect(rows).toHaveCount(asked.length)
-  const words = (step: Step, option: string) => (step.kind === 'focus' ? (step.options?.[option] ?? option) : option)
-  for (const [k, a] of asked.entries()) {
-    const step = d.steps[a.step]!
-    const row = rows.nth(k)
-    await expect(row).toHaveAttribute('data-step', String(a.step))
-    const jev = step.answer?.pick ?? step.pick ?? ''
-    await expect(row.locator('td[data-model="jev"]')).toContainText(words(step, jev))
-    for (const m of models.models) {
-      const pick = a.picks[m]
-      if (!pick) continue
-      const cell = row.locator(`td[data-model="${m}"]`)
-      await expect(cell).toContainText(words(step, pick[0]))
-      await expect(cell).toHaveClass(pick[0] === jev ? '' : 'differs')
-    }
-  }
-  // Out of the rule tree's screens it has no counterpart: the other solution opens at Watch.
-  await page.getByTestId('solution-tabs').locator('button[data-solution="senses"]').click()
-  await expect(page).toHaveURL(/\/watch$/)
   expect(errors).toEqual([])
 })

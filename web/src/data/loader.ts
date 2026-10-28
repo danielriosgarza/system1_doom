@@ -19,6 +19,8 @@ export interface EpisodeIndex {
   episodes: BundleIndexEntry[]
   /** The rule tree's recordings, read by the rule-tree screens (`data/rules.ts`). */
   rules?: BundleIndexEntry[]
+  /** The same rule tree played by a model on the machine (Laya, Kev): the local models' recordings. */
+  local?: BundleIndexEntry[]
 }
 
 /** One line of `reflections.jsonl`: a System 2 cycle, a trial's verdict, or a note. */
@@ -113,9 +115,14 @@ export function checkSchemaVersion(version: number | undefined, file: string): v
 export const isSensesRecording = (entry: Pick<BundleIndexEntry, 'solution'>): boolean =>
   (entry.solution ?? 'senses-and-central') === 'senses-and-central'
 
+/** Whether a rule-tree recording was played by a model on the machine (Laya or Kev) rather than Jev. */
+export const isLocalRecording = (entry: Pick<BundleIndexEntry, 'solution' | 'decider'>): boolean =>
+  !isSensesRecording(entry) && (entry.decider === 'laya' || entry.decider === 'kev')
+
 /**
- * The index of the recordings, split by solution: `episodes` are the senses and central's, `rules` the rule tree's,
- * which have files of their own (`decisions.jsonl` instead of `ticks.jsonl`).
+ * The index of the recordings, split by solution: `episodes` are the senses and central's, `rules` the rule tree's
+ * played by Jev, `local` the rule tree's played by a model on the machine. The last two have files of their own
+ * (`decisions.jsonl` instead of `ticks.jsonl`).
  */
 export async function loadIndex(root = 'episodes', fetcher: Fetcher = defaultFetcher): Promise<EpisodeIndex> {
   const index = parseJson<EpisodeIndex>(await fetchText(`${root}/index.json`, fetcher), `${root}/index.json`)
@@ -123,7 +130,8 @@ export async function loadIndex(root = 'episodes', fetcher: Fetcher = defaultFet
   return {
     ...index,
     episodes: index.episodes.filter(isSensesRecording),
-    rules: index.episodes.filter((e) => !isSensesRecording(e)),
+    rules: index.episodes.filter((e) => !isSensesRecording(e) && !isLocalRecording(e)),
+    local: index.episodes.filter(isLocalRecording),
   }
 }
 

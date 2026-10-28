@@ -1,11 +1,12 @@
 """A rule-tree recording: one episode played by a tree, written as a folder the website reads.
 
-    episode.json      RuleTreeEpisodeMeta: the tree, the seed, how the episode ended, Jev's calls, cost and misses
-    decisions.jsonl   one RuleTreeDecision per decision: the state text Jev was sent, every step of the walk with
+    episode.json      RuleTreeEpisodeMeta: the tree, the seed, the decider (Jev, or a local model: Laya, Kev) and the
+                      model asked, how the episode ended, the decider's calls, cost and misses
+    decisions.jsonl   one RuleTreeDecision per decision: the state text the decider was sent, every step of the walk with
                       its question, options, probabilities and pick, the action played and what followed
     tree.json         the tree as played, with cornerstones/ (the screen each rule was written from)
     build.jsonl       the soft loop's record of how the tree was written, when the tree has one
-    frames/00042.jpg  the screen Jev was sent at decision 42 (320x240 JPEG, the bytes as sent)
+    frames/00042.jpg  the screen at decision 42 (320x240 JPEG; Jev is sent it, Laya and Kev read text only)
     frames/end.jpg    the screen after the last action
 
 The episode is played from the start to its end (cleared, died or timed out), with fresh answers. A stall does not
@@ -162,7 +163,13 @@ class RuleTreeEpisodeMeta(BaseModel):
     title: str
     scenario: str
     seed: int
-    decider: Literal["jev"] = "jev"
+    decider: Literal["jev", "laya", "kev"] = Field(
+        default="jev", description="Who answered every question: Jev, or a model on this machine (Laya, Kev)"
+    )
+    model: Optional[str] = Field(
+        default=None, description="The model asked, as the requests named it (a Laya checkpoint, kev-latest); none in "
+                                  "recordings made before it was kept"
+    )
     models: Dict[str, int] = Field(description="Answers per model, as the responses named it")
     tree: str
     tree_writer: str
@@ -253,7 +260,8 @@ def record_episode(
     budget: float = DEFAULT_BUDGET,
     game_factory: Callable[[], Game] = recording_game,
 ) -> RuleTreeEpisodeMeta:
-    """Play one seeded episode with the tree, every decision Jev's, and write it as a recording in `out`."""
+    """Play one seeded episode with the tree, every decision the client's decider's, and write it as a recording in
+    `out`."""
     out = Path(out)
     if out.exists() and any(out.iterdir()):
         raise FileExistsError(f"{out} is not empty; choose another --out or remove it first")
@@ -290,6 +298,8 @@ def record_episode(
         title=title or default_title(tree, seed),
         scenario=SCENARIO,
         seed=seed,
+        decider=client.decider.name,
+        model=client.model,
         models=client.models_answered(),
         tree=tree.name,
         tree_writer=tree.writer,

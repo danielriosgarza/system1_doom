@@ -125,6 +125,21 @@ SHIPPED = sorted(
 )
 
 
+def test_a_local_model_records_the_same_way_and_names_itself(tmp_path, monkeypatch):
+    """--tree-decider laya: the same recording, played by Laya on this machine with no key, and named so."""
+    monkeypatch.delenv("LAYA_API_KEY", raising=False)
+    monkeypatch.setattr("system1_doom.export.load_api_key", lambda decider: None)
+    out = tmp_path / "local-corridor-9"
+    fake = FakeD1(scripted(ANSWERS), decider="laya")
+    args = ["--solution", "rule-tree", "--seed", "9", "--out", str(out), "--tree-decider", "laya", "--tree-model", "ruletree-kev-v1"]
+    assert export.main(args, transport=fake) == 0
+    meta = RuleTreeEpisodeMeta.model_validate_json((out / "episode.json").read_text())
+    assert (meta.decider, meta.model, meta.models) == ("laya", "ruletree-kev-v1", {"laya-rl-agent": meta.calls})
+    assert meta.cost == 0 and meta.misses == 0 and check_recording(out) == []
+    assert all(p["model"] == "ruletree-kev-v1" and "assets" not in p for _, p in fake.calls)
+    assert export.rule_tree_index_entry(out.name, meta).decider == "laya"
+
+
 @pytest.mark.skipif(not SHIPPED, reason="no shipped rule-tree recordings")
 @pytest.mark.parametrize("shipped", SHIPPED, ids=[p.name for p in SHIPPED])
 def test_every_shipped_rule_tree_recording_is_valid_and_listed(shipped):
