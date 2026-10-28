@@ -61,7 +61,7 @@ export function rulesEndLine(meta: RuleTreeEpisodeMeta): string {
 export const RULES_WATCH = {
   title: 'Every action in this game comes from Jev’s answers to a few questions.',
   subtitle:
-    'Jev is TypeSafe’s decision model. At each decision the program asks it which rule of a tree of rules is true now, then which rule under that one, until Jev answers “none of these” or the rule has nothing under it. The game waits while Jev answers, then plays that rule’s action for 8 tics, about a quarter of a second.',
+    'Jev is an AI model made by TypeSafe, reached over the internet. It is sent a description of the game, written as text, with the screen and a short list of statements, and says which statement is true. The way to play is written as rules. Each rule pairs a situation with an action, such as “an enemy is in view” with “turn toward it and fire”, and some rules are exceptions to a more general one. At each decision the game pauses, and the program asks Jev which general rule applies, then which of that rule’s exceptions applies, and so on until none does. The action of the last rule that applied is played for about a quarter of a second, and the next decision begins.',
   stripTitle: 'The questions at this decision',
   stripNote:
     'One row per question, in the order Jev was asked, and then the action that was played. The bar is Jev’s probability for the answer it gave. A focus row picks the one item, such as the most dangerous enemy, that the rules after it speak about. Click a question to see exactly what Jev was sent.',
