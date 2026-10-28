@@ -7,7 +7,7 @@ import pytest
 
 from system1_doom.ruletree.codes import segments
 from system1_doom.ruletree.game import Game, play
-from system1_doom.ruletree.realtime import (TIC_RATE, Helper, Plan, filled, tracked, held_turning, outcome_of, per_tic, play_realtime, run_length,
+from system1_doom.ruletree.realtime import (TIC_RATE, Helper, Plan, drawn_lag, filled, tracked, held_turning, outcome_of, per_tic, play_realtime, run_length,
                                          shifted, summary, tracking, turned)
 from system1_doom.ruletree.walk import Jev
 from tests.fake_d1 import FakeD1
@@ -143,11 +143,10 @@ def test_tracking_turns_toward_the_focus_whatever_band_the_tree_read(game, track
 
 
 def test_a_lag_range_draws_each_decisions_lag_and_a_replay_draws_the_same(game):
-    runs = [play_realtime(game, _always("B001"), _jev(), 9, lag=(7, 52), stop_on_event=False, max_tics=8 * 30)
-            for _ in range(2)]
-    lags = [d["lag"] for d in runs[0]["decisions"]]
-    assert len(lags) >= 2 and all(7 <= x <= 52 for x in lags) and len(set(lags)) > 1
-    assert lags == [d["lag"] for d in runs[1]["decisions"]]
+    draws = [drawn_lag(7, 52, 9, i) for i in range(200)]
+    assert all(7 <= x <= 52 for x in draws) and {7, 52} <= set(draws) and draws == [drawn_lag(7, 52, 9, i) for i in range(200)]
+    live = play_realtime(game, _always("B001"), _jev(), 9, lag=(7, 52), stop_on_event=False, max_tics=8 * 30)
+    assert [d["lag"] for d in live["decisions"]] == draws[: len(live["decisions"])]
     with pytest.raises(ValueError):
         play_realtime(game, _always("F001"), _jev(), 9, lag=(9, 7))
 

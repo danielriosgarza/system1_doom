@@ -54,9 +54,9 @@ Two clocks:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
-import random
 import re
 import statistics
 import time
@@ -202,6 +202,12 @@ def after_of(tree: RuleTree, d: Decision) -> Optional[str]:
     callers = [s.node for s in d.steps if s.kind == "skill"]
     action = tree.nodes[callers[-1]].action if callers else None
     return action.after if isinstance(action, SkillCall) else None
+
+
+def drawn_lag(lo: int, hi: int, seed: int, i: int) -> int:
+    """Decision i's lag, from lo to hi tics, drawn from the seed and the decision's number (a hash, not `random`, which
+    only the system 1 chooser and the rule tree's root may use: a lag says when an answer is used, never what it is)."""
+    return lo + int(hashlib.sha256(f"{seed}:{i}:lag".encode()).hexdigest(), 16) % (hi - lo + 1)
 
 
 def per_tic(action: str) -> List[str]:
@@ -371,7 +377,7 @@ def play_realtime(
             pending.future = pool.submit(walk, text, frame, i)
         else:
             pending.decision, pending.seconds = walk(text, frame, i)
-            pending.ready_at = t + (lo if lo == hi else random.Random(f"{seed}:{i}:lag").randint(lo, hi))
+            pending.ready_at = t + drawn_lag(lo, hi, seed, i)
         next_ask = t + TICS if cadence == "pipeline" else 1 << 30
 
     try:
