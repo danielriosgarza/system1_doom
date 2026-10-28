@@ -2906,6 +2906,15 @@ with Python's `random`; drawn again from a hash of the seed and the
 decision, as `drawn_lag` does now, `general-11`, `steady-11`, `general-11`
 with the fair helper and `goals-11` with it cleared the same 0, 0, 0 and 3.)
 
+*Is it the decider?* Kev-27B (tuned, `--ahead --budget 60`, four at a
+time) played `goals-11` with the fair helper at a lag of 7, the game
+waiting while it answered, on the same 41 seeds: 31 cleared, as Laya
+(both on 30 of the same seeds; deaths at x 307–786 for both). With the
+game held, a slow teacher plays Laya's real time; but on these questions
+the program, not the answers, limits the score, so fine-tuning Laya on
+Kev's real-time answers would change little until the rules change. The
+5,153 questions Kev answered were kept with their texts (`--keep-text`).
+
 ## 16. Testing
 
 ```bash
