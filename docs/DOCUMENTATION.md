@@ -2898,7 +2898,10 @@ stall. `goals-11`'s follow-ups end the stalls (none; it walks about half
 its tics at every lag) but meet the next enemies sooner, and from 28 tics
 on it dies instead (40 of 41 at 28, all 41 at 52). What limits a slow
 decider is no longer aiming but noticing a new enemy: each one is given a
-full reaction time before the walk names it.
+full reaction time before the walk names it. (The 7–52 lags were first drawn
+with Python's `random`; drawn again from a hash of the seed and the
+decision, as `drawn_lag` does now, `general-11`, `steady-11`, `general-11`
+with the fair helper and `goals-11` with it cleared the same 0, 0, 0 and 3.)
 
 ## 16. Testing
 
