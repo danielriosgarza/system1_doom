@@ -468,7 +468,7 @@ def summary(record: Dict[str, Any]) -> Dict[str, Any]:
 
 def evaluate(run: Any, seeds: Sequence[int], lag: Union[None, int, Tuple[int, int]], fill: str = "hold", label: str = "",
              tree: Optional[RuleTree] = None, cadence: str = "pipeline", predict: bool = False,
-             track: Optional[str] = None, reflex: int = REFLEX) -> List[Dict[str, Any]]:
+             track: Optional[str] = None, reflex: int = REFLEX, keep_text: bool = False) -> List[Dict[str, Any]]:
     """Play every seed once in real time with fresh answers; each game is kept in `<run>/realtime/<label>s<seed>.json`.
     On the wall clock the games are played one after another, so that no other game's questions wait on the model in
     front of them; with a fixed lag, `run.workers` at a time."""
@@ -481,7 +481,7 @@ def evaluate(run: Any, seeds: Sequence[int], lag: Union[None, int, Tuple[int, in
         game = run._borrow()
         try:
             record = play_realtime(game, tree, jev, seed, lag=lag, fill=fill, cadence=cadence, predict=predict,
-                                   track=track, reflex=reflex)
+                                   track=track, reflex=reflex, keep_text=keep_text)
         except Exception as exc:  # noqa: BLE001 - a crashed game is reported with the others, not raised
             run._discard(game)
             return {"seed": seed, "event": "crashed", "error": f"{type(exc).__name__}: {exc}"[:500]}

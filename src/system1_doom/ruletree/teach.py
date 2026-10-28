@@ -7,7 +7,9 @@ Each line is one question in the `{state, questions, gold | expected}` form `lay
 teacher's probabilities, `expected` the one option the text makes right (two that both hold share the mass, as
 `gold`). With `--labels text` only the questions `agreement.settled` decides are written; with `text+teacher` the text's
 answer is used where it settles one and the teacher's elsewhere. A question asked again with the same text and options
-is written once. A missed answer is left out.
+is written once. A missed answer is left out. Games played in real time (`realtime --keep-text`, in `RUN/realtime/`)
+are read as well: their decisions are the trace, each with the state text it was decided from, so a teacher held to
+Laya's lag gives answers to the states Laya meets in real time.
 
 Laya fine-tuned this way on 3,212 of Jev's answers (seeds 400-424) is in §15 of docs/DOCUMENTATION.md.
 """
@@ -62,11 +64,12 @@ def build(runs: Sequence[Path], seeds: Sequence[int], labels: str = "teacher") -
     """The training lines of every game of the runs played on the seeds, and a count by question and label source."""
     wanted, lines, counts, seen = set(seeds), [], Counter(), set()
     for run in runs:
-        for path in sorted(Path(run, "games").glob("*.json")):
+        for path in sorted(Path(run, "games").glob("*.json")) + sorted(Path(run, "realtime").glob("*.json")):
             game = json.loads(path.read_text(encoding="utf-8"))
-            if game.get("seed") not in wanted or not game.get("trace"):
+            trace = game.get("trace") or [d for d in game.get("decisions", []) if "text" in d]
+            if game.get("seed") not in wanted or not trace:
                 continue
-            for kind, node, text, question, options, answer in game_questions(game["trace"]):
+            for kind, node, text, question, options, answer in game_questions(trace):
                 key = (text, question, tuple(sorted(options.items())))
                 if key in seen:
                     continue

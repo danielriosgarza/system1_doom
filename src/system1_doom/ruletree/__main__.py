@@ -89,6 +89,8 @@ def _parser() -> argparse.ArgumentParser:
                     help="a helper turns toward the focus every tic, the tree choosing what to aim at and what to do "
                          "(with pipeline): screen (the default) sees only what the player sees, `--reflex` tics late; "
                          "engine reads every enemy's position from the engine, on screen or not (not a fair player)")
+    rt.add_argument("--keep-text", action="store_true", help="keep each decision's state text in its game, for training "
+                                                             "data (teach.py reads RUN/realtime/ too)")
     rt.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the screen helper sees late (default {REFLEX})")
     rt.add_argument("--label", default="", help="a prefix for the games' files, to keep several settings in one run")
     loop = sub.add_parser("loop", help="run the soft loop")
@@ -184,7 +186,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         if args.command == "realtime":
             lag = None if args.lag == "wall" else tuple(map(int, args.lag.split("-"))) if "-" in args.lag else int(args.lag)
             results = evaluate(run, parse_seeds(args.seeds), lag, args.fill, args.label, cadence=args.cadence,
-                               predict=args.predict, track=args.track, reflex=args.reflex)
+                               predict=args.predict, track=args.track, reflex=args.reflex, keep_text=args.keep_text)
             for r in results:
                 say(json.dumps(r))
             cleared = sum(r["event"] == "cleared" for r in results)

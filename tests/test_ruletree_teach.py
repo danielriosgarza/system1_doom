@@ -47,3 +47,22 @@ def test_the_text_settles_what_it_can_and_the_teacher_the_rest(tmp_path):
     assert main([str(out), str(run), "--seeds", "400", "--labels", "text+teacher"]) == 0
     assert [json.loads(line).get("expected", {}).get("q") for line in out.read_text().splitlines()] == ["r1", "r4"]
     assert NONE in json.loads(out.read_text().splitlines()[1])["questions"]["q"]["criteria"]
+
+
+def test_real_time_games_with_their_texts_are_read_too(tmp_path):
+    """A real-time game keeps its decisions, each with the state it was decided from (`--keep-text`)."""
+    from tests.test_ruletree_game import _always, _jev
+    from system1_doom.ruletree.game import Game
+    from system1_doom.ruletree.realtime import play_realtime
+
+    g = Game()
+    try:
+        record = play_realtime(g, _always("0001"), _jev(), 9, lag=5, keep_text=True, stop_on_event=False, max_tics=8 * 4)
+    finally:
+        g.close()
+    (tmp_path / "realtime").mkdir()
+    (tmp_path / "realtime" / "lag5-s9.json").write_text(json.dumps(record), encoding="utf-8")
+    lines, counts = build([tmp_path], [9])
+    assert lines and sum(counts.values()) == len(lines)
+    assert all(line["state"].startswith("[goal]") for line in lines)
+    assert build([tmp_path], [10])[0] == []
