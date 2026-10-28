@@ -36,7 +36,7 @@ from .writers import Writer, parse
 PROMPT = Path(__file__).resolve().parent / "prompts" / "rule-writer-realtime.md"
 ATTEMPTS = 3
 PROGRESS = 48  # units further along the corridor that count, at an equal number cleared
-SETTINGS = {"lag": 7, "track": "screen", "reflex": REFLEX, "fill": "hold"}
+SETTINGS = {"lag": 7, "track": "screen", "reflex": REFLEX, "fill": "hold", "aim": "box"}
 
 
 def play_rt(run: Any, seed: int, tree: RuleTree, label: str = "", settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -153,8 +153,9 @@ def rt_sees(run: Any, tree: RuleTree, proposal: Proposal, name: str) -> Tuple[Ru
 
 
 def rt_gate(run: Any, current: List[Dict[str, Any]], candidate: RuleTree, seeds: Sequence[int], failure_seed: int,
-            label: str, settings: Optional[Dict[str, Any]] = None) -> GateReport:
-    """The new tree on every training seed, against the round's games with the current tree."""
+            label: str, settings: Optional[Dict[str, Any]] = None, margin: int = 1) -> GateReport:
+    """The new tree on every training seed, against the round's games with the current tree. It passes with
+    `margin` more seeds cleared, or (with a margin of 1) as many with the failure's game further on."""
     results = play_rt_jobs(run, [(s, candidate, label) for s in seeds], settings)
     rows = [{"seed": s, "current": c, "with_rule": w} for s, c, w in zip(seeds, current, results)]
     n_current = sum(r["current"]["event"] == "cleared" for r in rows)
@@ -162,7 +163,7 @@ def rt_gate(run: Any, current: List[Dict[str, Any]], candidate: RuleTree, seeds:
     mine = next(r for r in rows if r["seed"] == failure_seed)
     further = (mine["with_rule"]["event"] == "cleared" and mine["current"]["event"] != "cleared") or \
         (mine["with_rule"].get("max_x") or 0) >= (mine["current"].get("max_x") or 0) + PROGRESS
-    passed = n_with > n_current or (n_with == n_current and further)
+    passed = n_with >= n_current + margin or (margin == 1 and n_with == n_current and further)
     return GateReport(current=n_current, with_rule=n_with, of=len(seeds), passed=passed, rows=rows)
 
 
@@ -181,7 +182,7 @@ def prompt_for(run: Any, game: str, history: List[Tuple[Dict[str, Any], str]]) -
 
 
 def rt_attempt(run: Any, writer: Writer, train: Sequence[int], current: List[Dict[str, Any]], failure: Dict[str, Any],
-               n: int, attempts: int = ATTEMPTS, settings: Optional[Dict[str, Any]] = None) -> bool:
+               n: int, attempts: int = ATTEMPTS, settings: Optional[Dict[str, Any]] = None, margin: int = 1) -> bool:
     """Up to `attempts` proposals for one failure; True if a rule was committed."""
     game = failure["game"]
     history: List[Tuple[Dict[str, Any], str]] = []
@@ -220,13 +221,14 @@ def rt_attempt(run: Any, writer: Writer, train: Sequence[int], current: List[Dic
         if not sees["pass"]:
             history.append((raw, verdict))
             continue
-        g = rt_gate(run, current, new, train, failure["seed"], f"{name}-", settings)
+        g = rt_gate(run, current, new, train, failure["seed"], f"{name}-", settings, margin)
         (folder / f"{name}.gate.txt").write_text(g.summary(rule), encoding="utf-8")
         run.log(step="gate", name=name, current=g.current, with_rule=g.with_rule, of=g.of, passed=g.passed)
         if not g.passed:
             history.append((raw, verdict + f"\n\ngate: FAIL. Played in real time on every training seed, the current tree "
-                            f"cleared {g.current} and the tree with your rule {g.with_rule} of {g.of} (it must clear more, or "
-                            f"as many with this game getting at least {PROGRESS} units further):\n" + g.summary(rule)))
+                            f"cleared {g.current} and the tree with your rule {g.with_rule} of {g.of} (it must clear at least "
+                            f"{margin} more" + (f", or as many with this game getting at least {PROGRESS} units further"
+                                                if margin == 1 else "") + "):\n" + g.summary(rule)))
             continue
         run.save(new)
         run.log(step="commit", name=name, rule=rule, tree=tree_lines(run.tree()))
@@ -235,9 +237,10 @@ def rt_attempt(run: Any, writer: Writer, train: Sequence[int], current: List[Dic
 
 
 def run_rt_loop(run: Any, writer: Writer, train: Sequence[int], held: Sequence[int], rounds: int = 8,
-                attempts: int = ATTEMPTS, settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                attempts: int = ATTEMPTS, settings: Optional[Dict[str, Any]] = None, margin: int = 1,
+                monitor: Sequence[int] = ()) -> Dict[str, Any]:
     """Rounds until every training seed clears (then the held-out seeds are played), `rounds` run out, or every
-    failure has been tried."""
+    failure has been tried. After each commit the `monitor` seeds, never trained on, are played and logged."""
     train, held = list(train), list(held)
     result: Dict[str, Any] = {"rounds": 0, "train": None, "held": None}
     tried: set = set()
@@ -255,8 +258,12 @@ def run_rt_loop(run: Any, writer: Writer, train: Sequence[int], held: Sequence[i
         if failure is None:
             run.log(step="stop", reason="every failure has been tried")
             break
-        if not rt_attempt(run, writer, train, results, failure, r, attempts, settings):
+        if not rt_attempt(run, writer, train, results, failure, r, attempts, settings, margin):
             tried.add(failure["seed"])
+        elif monitor:
+            seen = play_rt_jobs(run, [(s, run.tree(), f"monitor{r}-") for s in monitor], settings)
+            run.log(step="monitor", round=r, cleared=sum(x["event"] == "cleared" for x in seen), of=len(monitor),
+                    games=[{k: x.get(k) for k in ("seed", "game", "event", "max_x")} for x in seen])
     if held:
         held_results = play_rt_jobs(run, [(s, run.tree(), "held-") for s in held], settings)
         n_held = sum(x["event"] == "cleared" for x in held_results)

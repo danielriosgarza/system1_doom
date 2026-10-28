@@ -108,6 +108,10 @@ def _parser() -> argparse.ArgumentParser:
     rtl.add_argument("--attempts", type=int, default=ATTEMPTS)
     rtl.add_argument("--lag", type=int, default=7, help="tics from a state to its action (default 7, Laya's)")
     rtl.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the helper sees late (default {REFLEX})")
+    rtl.add_argument("--aim", choices=AIMS, default="box", help="how the helper aims (default box)")
+    rtl.add_argument("--margin", type=int, default=1, help="more training seeds a rule must clear to pass the gate "
+                     "(default 1, which also passes as many with the failed game further on)")
+    rtl.add_argument("--monitor", default="", help="seeds never trained on, played after each commit")
     loop = sub.add_parser("loop", help="run the soft loop")
     loop.add_argument("run")
     loop.add_argument("--tree", help="the tree to start the run from, the first time")
@@ -213,9 +217,9 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
             return 0
 
         if args.command == "rtloop":
-            settings = {"lag": args.lag, "track": "screen", "reflex": args.reflex, "fill": "hold"}
+            settings = {"lag": args.lag, "track": "screen", "reflex": args.reflex, "fill": "hold", "aim": args.aim}
             result = run_rt_loop(run, writer_named(args.writer, args.writer_cmd), parse_seeds(args.train), parse_seeds(args.held),
-                                 args.rounds, args.attempts, settings)
+                                 args.rounds, args.attempts, settings, args.margin, parse_seeds(args.monitor))
             say(json.dumps(result))
             return 0
 

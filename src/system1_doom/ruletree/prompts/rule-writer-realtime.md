@@ -23,11 +23,11 @@ names a monster type, a map distance or a place may fix this game and break the 
   channel. Rules under that node speak of "the focus", never of a monster type. You may give a rule its own focus
   question when the fix is to attend to something else (`"focus": {"from": ["threats"], "question": "..."}`).
 - **Aiming is done for you.** An action `{"skill": "aim", "then": "0001"}` hands the focus to a **helper**: every
-  tic, the helper turns toward the focus while it is more than 3 degrees off, and presses the `then` code once it is
-  within 3 degrees, until the next action starts. The helper sees only what the player sees (what is on screen, a
-  little late, and where an enemy was last seen), and it chooses nothing. An action may also say what to do once
-  the focus enemy is dead: `{"skill": "aim", "then": "0001", "after": "F001"}` presses `after`, turned toward the
-  goal System 1 last picked, once the helper sees the enemy fall. Do not write turning rules: the helper turns.
+  tic, the helper turns toward the focus until the crosshair is on it (within its shown width), and presses the
+  `then` code while it is, until the next action starts. The helper sees only what the player sees (what is on
+  screen, a little late, and where an enemy was last seen), and it chooses nothing. An action may also say what to
+  do once the focus enemy is dead: `{"skill": "aim", "then": "0001", "after": "F001"}` presses `after`, turned
+  toward the goal System 1 last picked, once the helper sees the enemy fall. Do not write turning rules: the helper turns.
 - Your rule becomes a child (an exception) of the node that decides at the frame you pick, shown in the dossier as
   "by rN". You may instead name, as `under`, any node on that frame's path ("path" in the dossier). You never edit
   or delete existing rules.
