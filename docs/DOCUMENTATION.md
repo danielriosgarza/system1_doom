@@ -2822,7 +2822,9 @@ The naive pipeline asks at tic 8 while the action chosen at tic 0 is
 still turning, so the next aim turns again for the same angle: on seed 12
 it swung 16° past the first ShotgunGuy and died at tic 48 without killing
 him, where the paused game killed him at tic 20. Tracking does not differ
-from paused beyond chance (Fisher's exact p ≈ 0.19), and its deaths fall
+from paused beyond chance (Fisher's exact p ≈ 0.19), but it is not a fair
+player: it reads every enemy's position from the engine's objects,
+including enemies not on screen, so its score is an upper bound, and its deaths fall
 where the paused ones do (8 of 11 at x 726–877); the efference copy is
 below paused (p ≈ 0.003) and not clearly below tracking (p ≈ 0.16); the
 sequential cadence spends about a third of its tics (139 a game) on the
