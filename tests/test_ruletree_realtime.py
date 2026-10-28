@@ -7,7 +7,7 @@ import pytest
 
 from system1_doom.ruletree.codes import segments
 from system1_doom.ruletree.game import Game, play
-from system1_doom.ruletree.realtime import (TIC_RATE, filled, held_turning, outcome_of, per_tic, play_realtime, run_length,
+from system1_doom.ruletree.realtime import (TIC_RATE, Helper, filled, held_turning, outcome_of, per_tic, play_realtime, run_length,
                                          shifted, summary, tracking, turned)
 from system1_doom.ruletree.walk import Jev
 from tests.fake_d1 import FakeD1
@@ -129,10 +129,11 @@ def test_a_tracked_action_turns_while_the_focus_is_off_and_does_its_then_once_ai
     assert tracking("0001", 2.9) == "0001" and tracking("F000", None) == "F000"
 
 
-def test_tracking_turns_toward_the_focus_whatever_band_the_tree_read(game):
+@pytest.mark.parametrize("track", ["screen", "engine"])
+def test_tracking_turns_toward_the_focus_whatever_band_the_tree_read(game, track):
     # The scripted answers always say "more than 12 degrees to the right"; the reflex turns toward the enemy instead.
     jev = Jev(jev_client(FakeD1(scripted(by_text("at least one enemy", "more than 12 degrees to the right")), decider="jev")))
-    live = play_realtime(game, general_tree(), jev, 9, lag=0, track=True, stop_on_event=False, max_tics=8 * 2)
+    live = play_realtime(game, general_tree(), jev, 9, lag=0, track=track, stop_on_event=False, max_tics=8 * 2)
     d = live["decisions"][0]
     assert d["route"] == "r1/aim/r6" and d["code"] == "00R0:7+0001:1" and d["target"][0] == "enemy"
     focus = next(s["pick"] for s in d["steps"] if s["kind"] == "focus")
@@ -149,3 +150,44 @@ def test_a_lag_range_draws_each_decisions_lag_and_a_replay_draws_the_same(game):
     assert lags == [d["lag"] for d in runs[1]["decisions"]]
     with pytest.raises(ValueError):
         play_realtime(game, _always("F001"), _jev(), 9, lag=(9, 7))
+
+
+class _Seen:
+    """A stand-in for the game as the helper sees it: the labels on screen and the facing, tic by tic."""
+
+    def __init__(self):
+        self.sight, self.facing = {}, 0.0
+
+    def on_screen(self):
+        return dict(self.sight)
+
+    def var(self, name):
+        assert name == "ANGLE"
+        return self.facing
+
+
+def test_the_fair_helper_sees_late_counts_its_own_turning_and_remembers_where_an_enemy_went():
+    seen = _Seen()
+    helper = Helper(seen, reflex=2)
+    seen.sight = {7: ("ShotgunGuy", 10.0)}
+    helper.look()
+    assert helper.bearing(("enemy", 7)) == pytest.approx(10.0)
+    # The player turns 4 degrees left and the enemy steps 6 to the left: the helper still sees him as two tics ago,
+    # less its own turn.
+    seen.facing, seen.sight = 4.0, {7: ("ShotgunGuy", 12.0)}
+    helper.look()
+    assert helper.bearing(("enemy", 7)) == pytest.approx(6.0)
+    helper.look()
+    helper.look()
+    assert helper.bearing(("enemy", 7)) == pytest.approx(12.0)
+    # Out of view: where he was last seen.
+    seen.sight = {}
+    for _ in range(3):
+        helper.look()
+    seen.facing = 10.0
+    assert helper.bearing(("enemy", 7)) == pytest.approx(6.0)
+    # Dead: gone. Never seen: nothing to turn toward.
+    seen.sight = {7: ("DeadShotgunGuy", 0.0)}
+    for _ in range(3):
+        helper.look()
+    assert helper.bearing(("enemy", 7)) is None and helper.bearing(("enemy", 99)) is None

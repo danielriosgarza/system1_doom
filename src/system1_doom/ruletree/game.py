@@ -118,6 +118,17 @@ class Game:
             x, y = what
         return (math.degrees(math.atan2(y - py, x - px)) - ang + 180) % 360 - 180
 
+    def on_screen(self) -> Dict[int, Tuple[str, float]]:
+        """What the player sees this tic, as the state text is made from it: each labelled actor on screen by its
+        label's id, with its name (a dead monster's name starts with Dead) and its angle from the crosshair, left
+        positive, from where its label is drawn."""
+        st = self.g.get_state()
+        if st is None or not st.labels:
+            return {}
+        half = st.screen_buffer.shape[-1] / 2.0 if st.screen_buffer is not None else 160.0
+        return {int(lb.object_id): (lb.object_name, math.degrees(math.atan((half - (lb.x + lb.width // 2)) / half)))
+                for lb in st.labels}
+
     def press(self, keys: List[int], tics: int) -> None:
         """Hold the keys for `tics` tics: the only place the game's keys are pressed. With `keep_screen` they are held
         one tic at a time, to keep each tic's screen; the game plays the same."""

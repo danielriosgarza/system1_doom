@@ -26,10 +26,14 @@ Three ways to live with the lag, chosen with `cadence` and `predict`:
                 a decision then takes 8 + lag tics, and the lag is spent in `fill`.
     predict     (with pipeline) before asking, shift every angle in the state by the turn the keys already chosen
                 will make before the answer is in (an efference copy: the turn is known, so it need not be seen).
-    track       (with pipeline) the tree picks what to aim at and what to do once aimed; a reflex turns toward it
-                every tic from the engine's positions, which need no question. An action that went through the aim
-                skill presses its turn while the focus is more than 3 degrees off (the skill's narrowest band) and
-                its `then` code otherwise, through its 8 tics and the fill after them.
+    track       (with pipeline) the tree picks what to aim at and what to do once aimed; a helper turns toward it
+                every tic, which needs no question. An action that went through the aim skill presses its turn
+                while the focus is more than 3 degrees off (the skill's narrowest band) and its `then` code
+                otherwise, through its 8 tics and the fill after them. `track="screen"` is the fair helper: it sees
+                only what the state text is made from (the labels on screen, its own facing and position, the
+                pickups it has seen), `reflex` tics late, and keeps the direction where an enemy was last seen.
+                `track="engine"` reads every enemy's position from the engine's objects, on screen or not: it is
+                not a fair player, only an upper bound.
 
 The state's counters (decisions so far, under fire, stall streak, fruitless firing) and the outcome of each stretch
 are kept per 8 tics of game time, whatever the lag, so the state reads as it did in training; the history names the
@@ -54,12 +58,14 @@ import random
 import re
 import statistics
 import time
+from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from system1_doom.evidence import enemy_line, landmark_line, shown_enemies, shown_landmarks
+from system1_doom.motor import is_enemy_name
 
 from .codes import TICS, buttons, segments
 from .game import Game
@@ -78,6 +84,8 @@ SLOW_TURN, FAST_TURN, SLOW_TICS = 360 * 320 / 65536, 360 * 640 / 65536, 5
 ANGLE = re.compile(r"(\d+(?:\.\d+)?) deg (left|right)|straight ahead")
 TURNED_CHANNELS = ("threats", "pickups", "landmarks")
 DEADBAND = 3.0  # degrees off the focus a tracked action still turns at
+TRACKS = ("screen", "engine")
+REFLEX = 4  # tics the fair helper sees late (0.11 s, a quick hand)
 
 
 def turned(codes: Sequence[str], held: int = 0) -> float:
@@ -145,6 +153,37 @@ def tracking(then: str, bearing: Optional[float]) -> str:
     return "00" + ("L" if bearing > 0 else "R") + "0"
 
 
+class Helper:
+    """The fair helper: where the focus lies now, from what the player has seen. An enemy is found by its label among
+    those on screen `reflex` tics ago, its angle then less what the player has turned since (the player knows its own
+    turning); one out of view is where it was last seen; a dead one (its label renamed Dead...) is gone. A pickup is
+    where the player saw it, from its own position and facing, as the landmarks channel says."""
+
+    def __init__(self, game: Game, reflex: int = REFLEX) -> None:
+        self.game = game
+        self.seen: "deque[Tuple[Dict[int, Tuple[str, float]], float]]" = deque(maxlen=reflex + 1)
+        self.last: Dict[int, float] = {}  # enemy -> the facing that would have it under the crosshair, when last seen
+
+    def look(self) -> None:
+        """Every tic, before the keys are chosen."""
+        self.seen.append((self.game.on_screen(), self.game.var("ANGLE")))
+
+    def bearing(self, target: Tuple[str, Any]) -> Optional[float]:
+        kind, what = target
+        if kind == "point":
+            return self.game.bearing(target)
+        sight, facing_then = self.seen[0]
+        facing = self.game.var("ANGLE")
+        if what in sight:
+            name, offset = sight[what]
+            if not is_enemy_name(name):
+                return None
+            self.last[what] = facing_then + offset
+        if what not in self.last:
+            return None
+        return (self.last[what] - facing + 180) % 360 - 180
+
+
 def per_tic(action: str) -> List[str]:
     """The code pressed at each of an action's 8 tics."""
     return [code for code, tics in segments(action) for _ in range(tics)]
@@ -206,7 +245,8 @@ def play_realtime(
     fill: str = "hold",
     cadence: str = "pipeline",
     predict: bool = False,
-    track: bool = False,
+    track: Optional[str] = None,
+    reflex: int = REFLEX,
     tic_rate: float = TIC_RATE,
     keep_text: bool = False,
     stop_on_event: bool = True,
@@ -222,6 +262,8 @@ def play_realtime(
         raise ValueError(f"a lag is 0 tics or more, and a range runs from low to high, not {lag!r}")
     if cadence not in CADENCES:
         raise ValueError(f"cadence is one of {CADENCES}, not {cadence!r}")
+    if track is not None and track not in TRACKS:
+        raise ValueError(f"track is one of {TRACKS}, not {track!r}")
     if (predict or track) and cadence != "pipeline":
         raise ValueError("predict and track are ways to ask while the last action plays: they go with pipeline")
     game.reset(seed)
@@ -235,6 +277,7 @@ def play_realtime(
     texts: Dict[int, str] = {}
     predicted: Dict[int, float] = {}
     pressed_all: List[str] = []  # every tic's keys, for the turn held so far
+    helper = Helper(game, reflex) if track == "screen" else None
     before = game.begin()
     clock0 = time.perf_counter()
 
@@ -322,10 +365,12 @@ def play_realtime(
                     ask()
                 else:
                     break
+            if helper is not None:
+                helper.look()
             if plan is None:
                 code = IDLE
             elif plan.target is not None:
-                code = tracking(plan.codes[-1], game.bearing(plan.target))
+                code = tracking(plan.codes[-1], helper.bearing(plan.target) if helper else game.bearing(plan.target))
             elif t - plan.start < TICS:
                 code = plan.codes[t - plan.start]
             else:
@@ -357,7 +402,8 @@ def play_realtime(
     if plan is not None and "played" not in plan.record:
         played = t - plan.start
         plan.record.update(played=played, cut=0, filled=max(0, played - TICS))
-    return {"seed": seed, "lag": lag, "fill": fill, "cadence": cadence, "predict": predict, "track": track, "tics": t, "late_tics": late,
+    return {"seed": seed, "lag": lag, "fill": fill, "cadence": cadence, "predict": predict, "track": track,
+            "reflex": reflex if track == "screen" else None, "tics": t, "late_tics": late,
             "seconds": round(time.perf_counter() - clock0, 2), "decisions": decisions, "windows": windows}
 
 
@@ -387,7 +433,7 @@ def summary(record: Dict[str, Any]) -> Dict[str, Any]:
 
 def evaluate(run: Any, seeds: Sequence[int], lag: Union[None, int, Tuple[int, int]], fill: str = "hold", label: str = "",
              tree: Optional[RuleTree] = None, cadence: str = "pipeline", predict: bool = False,
-             track: bool = False) -> List[Dict[str, Any]]:
+             track: Optional[str] = None, reflex: int = REFLEX) -> List[Dict[str, Any]]:
     """Play every seed once in real time with fresh answers; each game is kept in `<run>/realtime/<label>s<seed>.json`.
     On the wall clock the games are played one after another, so that no other game's questions wait on the model in
     front of them; with a fixed lag, `run.workers` at a time."""
@@ -400,7 +446,7 @@ def evaluate(run: Any, seeds: Sequence[int], lag: Union[None, int, Tuple[int, in
         game = run._borrow()
         try:
             record = play_realtime(game, tree, jev, seed, lag=lag, fill=fill, cadence=cadence, predict=predict,
-                                   track=track)
+                                   track=track, reflex=reflex)
         except Exception as exc:  # noqa: BLE001 - a crashed game is reported with the others, not raised
             run._discard(game)
             return {"seed": seed, "event": "crashed", "error": f"{type(exc).__name__}: {exc}"[:500]}

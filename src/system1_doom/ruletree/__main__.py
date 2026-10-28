@@ -39,7 +39,7 @@ from system1_doom.d1_client import D1UltraClient, decider_of, load_api_key
 from .check import ProposalError, check, commit
 from .gate import gate
 from .loop import ATTEMPTS, run_loop
-from .realtime import CADENCES, FILLS, evaluate
+from .realtime import CADENCES, FILLS, REFLEX, TRACKS, evaluate
 from .run import Run
 from .tree import DEFAULT_TREE, Proposal, load_tree, shipped_trees, tree_lines
 from .walk import DEFAULT_BUDGET
@@ -85,8 +85,11 @@ def _parser() -> argparse.ArgumentParser:
                     "(pipeline), or once it has played (sequential)")
     rt.add_argument("--predict", action="store_true", help="shift the state's angles by the turn still to come before "
                                                            "the answer is in (with pipeline)")
-    rt.add_argument("--track", action="store_true", help="turn toward the focus every tic from the engine's positions, "
-                                                         "the tree choosing what to aim at and what to do (with pipeline)")
+    rt.add_argument("--track", nargs="?", const="screen", choices=TRACKS,
+                    help="a helper turns toward the focus every tic, the tree choosing what to aim at and what to do "
+                         "(with pipeline): screen (the default) sees only what the player sees, `--reflex` tics late; "
+                         "engine reads every enemy's position from the engine, on screen or not (not a fair player)")
+    rt.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the screen helper sees late (default {REFLEX})")
     rt.add_argument("--label", default="", help="a prefix for the games' files, to keep several settings in one run")
     loop = sub.add_parser("loop", help="run the soft loop")
     loop.add_argument("run")
@@ -181,7 +184,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         if args.command == "realtime":
             lag = None if args.lag == "wall" else tuple(map(int, args.lag.split("-"))) if "-" in args.lag else int(args.lag)
             results = evaluate(run, parse_seeds(args.seeds), lag, args.fill, args.label, cadence=args.cadence,
-                               predict=args.predict, track=args.track)
+                               predict=args.predict, track=args.track, reflex=args.reflex)
             for r in results:
                 say(json.dumps(r))
             cleared = sum(r["event"] == "cleared" for r in results)
