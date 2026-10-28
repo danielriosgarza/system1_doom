@@ -8,7 +8,7 @@ import jsonschema
 import pytest
 
 from system1_doom import export
-from system1_doom.d1_client import DECIDERS
+from system1_doom.d1_client import DECIDER_NAMES
 from system1_doom.actions import ActionVocabulary
 from system1_doom.history import load_history, rerender_instance
 from system1_doom.logger import TRACE_SCHEMA_VERSION, TickTrace
@@ -261,7 +261,7 @@ SHIPPED = sorted(p.parent for p in RECORDINGS.glob("*/episode.json") if "solutio
 def test_every_shipped_recording_is_a_valid_schema_2_bundle_played_by_a_known_decider(shipped):
     assert export.check_bundle(shipped) == []
     meta = export.EpisodeMeta.model_validate_json((shipped / "episode.json").read_text())
-    assert meta.schema_version == 2 and meta.decider in DECIDERS and meta.name == shipped.name
+    assert meta.schema_version == 2 and meta.decider in DECIDER_NAMES and meta.name == shipped.name
     assert meta.result.finished_reason != "connection_lost"
     listed = json.loads((RECORDINGS / "index.json").read_text())
     raw = json.loads((shipped / "episode.json").read_text())
@@ -271,7 +271,8 @@ def test_every_shipped_recording_is_a_valid_schema_2_bundle_played_by_a_known_de
 
 def test_the_site_ships_recordings_played_by_each_decider():
     listed = json.loads((RECORDINGS / "index.json").read_text())["episodes"]
-    assert {e["decider"] for e in listed} == set(DECIDERS)
+    # The hierarchy's deciders; Laya and Kev serve the rule tree only, whose recordings are Jev's.
+    assert {e["decider"] for e in listed} == set(DECIDER_NAMES)
     # The landing plays the newest cleared senses recording, one in which the senses chose the motor's targets.
     senses = [e for e in listed if e.get("solution", "senses-and-central") == "senses-and-central"]
     newest = max((e for e in senses if e["cleared"]), key=lambda e: e["recorded_at"])
