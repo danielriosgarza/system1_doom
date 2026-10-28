@@ -88,6 +88,12 @@ ANGLE = re.compile(r"(\d+(?:\.\d+)?) deg (left|right)|straight ahead")
 TURNED_CHANNELS = ("threats", "pickups", "landmarks")
 DEADBAND = 3.0  # degrees off the focus a tracked action still turns at
 AIMS = ("band", "box")
+FIRES = ("hold", "tap", "tap-narrow")
+# The pistol fires 4 tics after the trigger finds it ready, and checks the trigger again 10 tics after a shot: held
+# there, it fires again at once but off its aim (Doom's refire spread); released there, it fires again 19 tics after
+# the last shot, on its aim. Measured on deadly_corridor: held, a shot every 14 tics.
+RELEASE = (8, 11)  # tics after a shot when the helper lifts the trigger, with fire="tap"
+NARROW = 2.0  # degrees: with fire="tap-narrow", the focus's half-width under which the helper taps
 MIN_BOX = 1.0  # degrees: with aim="box", the narrowest the helper turns toward, a little under one tic of turning
 TRACKS = ("screen", "engine")
 REFLEX = 4  # tics the fair helper sees late (0.11 s, a quick hand)
@@ -282,6 +288,7 @@ def play_realtime(
     track: Optional[str] = None,
     reflex: int = REFLEX,
     aim: str = "band",
+    fire: str = "hold",
     tic_rate: float = TIC_RATE,
     keep_text: bool = False,
     keep_frames: bool = False,
@@ -298,6 +305,8 @@ def play_realtime(
         raise ValueError(f"a lag is 0 tics or more, and a range runs from low to high, not {lag!r}")
     if cadence not in CADENCES:
         raise ValueError(f"cadence is one of {CADENCES}, not {cadence!r}")
+    if fire not in FIRES:
+        raise ValueError(f"fire is one of {FIRES}, not {fire!r}")
     if aim not in AIMS:
         raise ValueError(f"aim is one of {AIMS}, not {aim!r}")
     if track is not None and track not in TRACKS:
@@ -317,6 +326,7 @@ def play_realtime(
     predicted: Dict[int, float] = {}
     pressed_all: List[str] = []  # every tic's keys, for the turn held so far
     helper = Helper(game, reflex) if track == "screen" else None
+    ammo, last_shot = game.var("AMMO2"), None  # the player's own gun: when it last fired
     goal: Optional[Tuple[str, Any]] = None  # the landmark the walk last focused on
     before = game.begin()
     clock0 = time.perf_counter()
@@ -422,6 +432,9 @@ def play_realtime(
                 band = (lambda target: max(MIN_BOX, helper.half.get(target[1], DEADBAND)) if target[0] == "enemy"
                         else DEADBAND) if aim == "box" else None
                 code = tracked(plan, helper.bearing, goal, lambda target: target[1] in helper.dead, band)
+                if fire != "hold" and code[3] == "1" and last_shot is not None and RELEASE[0] <= t - last_shot <= RELEASE[1]:
+                    if fire == "tap" or (plan.target[0] == "enemy" and helper.half.get(plan.target[1], 9.0) < NARROW):
+                        code = code[:3] + "0"
                 if code[2] != "0" and pressed_all and pressed_all[-1][2] not in ("0", code[2]):
                     # Never turn back on the very next tic: Doom counts a turn key held either way as one long turn,
                     # which doubles its speed after 5 tics and swings past a narrow focus for ever. One tic of the
@@ -440,6 +453,11 @@ def play_realtime(
                 n = max(1, min(due - t, TICS - len(pressed)))
                 late += n - 1
             game.press(buttons(code), n)
+            if not game.g.is_episode_finished():
+                now = game.var("AMMO2")
+                if now < ammo:
+                    last_shot = t + n - 1
+                ammo = now
             pressed += [code] * n
             pressed_all.extend([code] * n)
             t += n
@@ -461,7 +479,8 @@ def play_realtime(
         played = t - plan.start
         plan.record.update(played=played, cut=0, filled=max(0, played - TICS))
     return {"seed": seed, "lag": lag, "fill": fill, "cadence": cadence, "predict": predict, "track": track,
-            "reflex": reflex if track == "screen" else None, "aim": aim if track == "screen" else None, "tics": t, "late_tics": late,
+            "reflex": reflex if track == "screen" else None, "aim": aim if track == "screen" else None,
+            "fire": fire if track == "screen" else None, "tics": t, "late_tics": late,
             "seconds": round(time.perf_counter() - clock0, 2), "decisions": decisions, "windows": windows}
 
 
@@ -492,7 +511,7 @@ def summary(record: Dict[str, Any]) -> Dict[str, Any]:
 def evaluate(run: Any, seeds: Sequence[int], lag: Union[None, int, Tuple[int, int]], fill: str = "hold", label: str = "",
              tree: Optional[RuleTree] = None, cadence: str = "pipeline", predict: bool = False,
              track: Optional[str] = None, reflex: int = REFLEX, keep_text: bool = False,
-             aim: str = "band") -> List[Dict[str, Any]]:
+             aim: str = "band", fire: str = "hold") -> List[Dict[str, Any]]:
     """Play every seed once in real time with fresh answers; each game is kept in `<run>/realtime/<label>s<seed>.json`.
     On the wall clock the games are played one after another, so that no other game's questions wait on the model in
     front of them; with a fixed lag, `run.workers` at a time."""
@@ -505,7 +524,7 @@ def evaluate(run: Any, seeds: Sequence[int], lag: Union[None, int, Tuple[int, in
         game = run._borrow()
         try:
             record = play_realtime(game, tree, jev, seed, lag=lag, fill=fill, cadence=cadence, predict=predict,
-                                   track=track, reflex=reflex, keep_text=keep_text, aim=aim)
+                                   track=track, reflex=reflex, keep_text=keep_text, aim=aim, fire=fire)
         except Exception as exc:  # noqa: BLE001 - a crashed game is reported with the others, not raised
             run._discard(game)
             return {"seed": seed, "event": "crashed", "error": f"{type(exc).__name__}: {exc}"[:500]}

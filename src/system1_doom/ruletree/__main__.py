@@ -40,7 +40,7 @@ from system1_doom.d1_client import D1UltraClient, decider_of, load_api_key
 from .check import ProposalError, check, commit
 from .gate import gate
 from .loop import ATTEMPTS, run_loop
-from .realtime import AIMS, CADENCES, FILLS, REFLEX, TRACKS, evaluate
+from .realtime import AIMS, CADENCES, FILLS, FIRES, REFLEX, TRACKS, evaluate
 from .rtloop import run_rt_loop
 from .run import Run
 from .tree import DEFAULT_TREE, Proposal, load_tree, shipped_trees, tree_lines
@@ -95,6 +95,8 @@ def _parser() -> argparse.ArgumentParser:
                                                              "data (teach.py reads RUN/realtime/ too)")
     rt.add_argument("--aim", choices=AIMS, default="band", help="with --track screen, turn until the focus is within 3 "
                     "degrees (band, the default) or until the crosshair is on its label (box)")
+    rt.add_argument("--fire", choices=FIRES, default="hold", help="with --track screen: hold the trigger (the default), "
+                    "or lift it between shots so each is on its aim (tap; tap-narrow: only at a narrow focus)")
     rt.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the screen helper sees late (default {REFLEX})")
     rt.add_argument("--label", default="", help="a prefix for the games' files, to keep several settings in one run")
     rtl = sub.add_parser("rtloop", help="run the soft loop on real-time games (rtloop.py)")
@@ -110,6 +112,7 @@ def _parser() -> argparse.ArgumentParser:
                                                 "for each decision")
     rtl.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the helper sees late (default {REFLEX})")
     rtl.add_argument("--aim", choices=AIMS, default="box", help="how the helper aims (default box)")
+    rtl.add_argument("--fire", choices=FIRES, default="hold", help="how the helper fires (default hold)")
     rtl.add_argument("--margin", type=int, default=1, help="more training seeds a rule must clear to pass the gate "
                      "(default 1, which also passes as many with the failed game further on)")
     rtl.add_argument("--monitor", default="", help="seeds never trained on, played after each commit")
@@ -207,7 +210,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
             lag = None if args.lag == "wall" else tuple(map(int, args.lag.split("-"))) if "-" in args.lag else int(args.lag)
             results = evaluate(run, parse_seeds(args.seeds), lag, args.fill, args.label, cadence=args.cadence,
                                predict=args.predict, track=args.track, reflex=args.reflex, keep_text=args.keep_text,
-                               aim=args.aim)
+                               aim=args.aim, fire=args.fire)
             for r in results:
                 say(json.dumps(r))
             cleared = sum(r["event"] == "cleared" for r in results)
@@ -219,7 +222,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
 
         if args.command == "rtloop":
             lag = tuple(map(int, args.lag.split("-"))) if "-" in args.lag else int(args.lag)
-            settings = {"lag": lag, "track": "screen", "reflex": args.reflex, "fill": "hold", "aim": args.aim}
+            settings = {"lag": lag, "track": "screen", "reflex": args.reflex, "fill": "hold", "aim": args.aim, "fire": args.fire}
             result = run_rt_loop(run, writer_named(args.writer, args.writer_cmd), parse_seeds(args.train), parse_seeds(args.held),
                                  args.rounds, args.attempts, settings, args.margin, parse_seeds(args.monitor))
             say(json.dumps(result))
