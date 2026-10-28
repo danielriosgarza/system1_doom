@@ -183,8 +183,11 @@ def prompt_for(run: Any, game: str, history: List[Tuple[Dict[str, Any], str]]) -
 
 
 def rt_attempt(run: Any, writer: Writer, train: Sequence[int], current: List[Dict[str, Any]], failure: Dict[str, Any],
-               n: int, attempts: int = ATTEMPTS, settings: Optional[Dict[str, Any]] = None, margin: int = 1) -> bool:
-    """Up to `attempts` proposals for one failure; True if a rule was committed."""
+               n: int, attempts: int = ATTEMPTS, settings: Optional[Dict[str, Any]] = None, margin: int = 1,
+               monitor: Sequence[int] = (), monitored: Optional[Dict[str, Any]] = None) -> bool:
+    """Up to `attempts` proposals for one failure; True if a rule was committed. With `monitor` seeds and their count
+    under the current tree (`monitored["cleared"]`), a rule one training seed short of the margin still passes if
+    the monitor seeds clear at least as many with it; `monitored` then holds its monitor games."""
     game = failure["game"]
     history: List[Tuple[Dict[str, Any], str]] = []
     folder = run.proposals_dir()
@@ -225,6 +228,14 @@ def rt_attempt(run: Any, writer: Writer, train: Sequence[int], current: List[Dic
         g = rt_gate(run, current, new, train, failure["seed"], f"{name}-", settings, margin)
         (folder / f"{name}.gate.txt").write_text(g.summary(rule), encoding="utf-8")
         run.log(step="gate", name=name, current=g.current, with_rule=g.with_rule, of=g.of, passed=g.passed)
+        if not g.passed and monitor and monitored is not None and margin > 1 and g.with_rule == g.current + margin - 1:
+            seen = play_rt_jobs(run, [(s, new, f"{name}-monitor-") for s in monitor], settings)
+            n_seen = sum(x["event"] == "cleared" for x in seen)
+            run.log(step="monitor-gate", name=name, current=monitored["cleared"], with_rule=n_seen, of=len(monitor),
+                    passed=n_seen >= monitored["cleared"])
+            if n_seen >= monitored["cleared"]:
+                g.passed = True
+                monitored.update(cleared=n_seen, games=seen, fresh=True)
         if not g.passed:
             history.append((raw, verdict + f"\n\ngate: FAIL. Played in real time on every training seed, the current tree "
                             f"cleared {g.current} and the tree with your rule {g.with_rule} of {g.of} (it must clear at least "
@@ -245,6 +256,12 @@ def run_rt_loop(run: Any, writer: Writer, train: Sequence[int], held: Sequence[i
     train, held = list(train), list(held)
     result: Dict[str, Any] = {"rounds": 0, "train": None, "held": None}
     tried: set = set()
+    monitored: Dict[str, Any] = {}
+    if monitor and margin > 1:
+        seen = play_rt_jobs(run, [(s, run.tree(), "monitor0-") for s in monitor], settings)
+        monitored.update(cleared=sum(x["event"] == "cleared" for x in seen))
+        run.log(step="monitor", round=0, cleared=monitored["cleared"], of=len(monitor),
+                games=[{k: x.get(k) for k in ("seed", "game", "event", "max_x")} for x in seen])
     for r in range(1, rounds + 1):
         tree = run.tree()
         results = play_rt_jobs(run, [(s, tree, "") for s in train], settings)
@@ -259,11 +276,15 @@ def run_rt_loop(run: Any, writer: Writer, train: Sequence[int], held: Sequence[i
         if failure is None:
             run.log(step="stop", reason="every failure has been tried")
             break
-        if not rt_attempt(run, writer, train, results, failure, r, attempts, settings, margin):
+        if not rt_attempt(run, writer, train, results, failure, r, attempts, settings, margin, monitor, monitored):
             tried.add(failure["seed"])
         elif monitor:
-            seen = play_rt_jobs(run, [(s, run.tree(), f"monitor{r}-") for s in monitor], settings)
-            run.log(step="monitor", round=r, cleared=sum(x["event"] == "cleared" for x in seen), of=len(monitor),
+            if monitored.pop("fresh", False):
+                seen = monitored.pop("games")
+            else:
+                seen = play_rt_jobs(run, [(s, run.tree(), f"monitor{r}-") for s in monitor], settings)
+            monitored["cleared"] = sum(x["event"] == "cleared" for x in seen)
+            run.log(step="monitor", round=r, cleared=monitored["cleared"], of=len(monitor),
                     games=[{k: x.get(k) for k in ("seed", "game", "event", "max_x")} for x in seen])
     if held:
         held_results = play_rt_jobs(run, [(s, run.tree(), "held-") for s in held], settings)
