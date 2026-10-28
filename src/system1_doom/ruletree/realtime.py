@@ -276,6 +276,7 @@ def play_realtime(
     reflex: int = REFLEX,
     tic_rate: float = TIC_RATE,
     keep_text: bool = False,
+    keep_frames: bool = False,
     stop_on_event: bool = True,
     max_tics: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -302,6 +303,7 @@ def play_realtime(
     pending: Optional[Pending] = None
     pressed: List[str] = []
     texts: Dict[int, str] = {}
+    seen: Dict[int, Dict[str, Any]] = {}  # with keep_frames: the screen and where the enemies really were
     predicted: Dict[int, float] = {}
     pressed_all: List[str] = []  # every tic's keys, for the turn held so far
     helper = Helper(game, reflex) if track == "screen" else None
@@ -332,6 +334,8 @@ def play_realtime(
                "steps": [s.model_dump(exclude_none=True) for s in d.steps]}
         if keep_text:
             rec["text"] = texts[pending.i]
+        if keep_frames:
+            rec.update(seen[pending.i])
         if pending.i in predicted:
             rec["predicted_turn"] = predicted[pending.i]
         target = target_of(pending.inputs, d) if track else None
@@ -372,6 +376,8 @@ def play_realtime(
             predicted[i] = round(turn, 2)
         if keep_text:
             texts[i] = text
+        if keep_frames:
+            seen[i] = {"frame": frame, "truth": game.truth()}
         pending = Pending(i=i, observed=t, inputs=game.last_inputs if track else None)
         if pool is not None:
             pending.future = pool.submit(walk, text, frame, i)

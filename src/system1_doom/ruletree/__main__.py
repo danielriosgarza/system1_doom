@@ -6,6 +6,7 @@
   python -m system1_doom.ruletree play   RUN --tree general-11 --seed 9
   python -m system1_doom.ruletree realtime RUN --seeds 9-19 --decider laya --model ruletree-kev-v1 --lag wall
   python -m system1_doom.ruletree loop   RUN --tree general-9 --writer codex --train 9-19 --held 20-39
+  python -m system1_doom.ruletree rtloop RUN --tree realtime-5 --writer codex --decider kev --ahead --lag 7
   python -m system1_doom.ruletree check  RUN PROPOSAL.json
   python -m system1_doom.ruletree gate   RUN PROPOSAL.json --seeds 9-19
   python -m system1_doom.ruletree commit RUN PROPOSAL.json
@@ -40,6 +41,7 @@ from .check import ProposalError, check, commit
 from .gate import gate
 from .loop import ATTEMPTS, run_loop
 from .realtime import CADENCES, FILLS, REFLEX, TRACKS, evaluate
+from .rtloop import run_rt_loop
 from .run import Run
 from .tree import DEFAULT_TREE, Proposal, load_tree, shipped_trees, tree_lines
 from .walk import DEFAULT_BUDGET
@@ -93,6 +95,17 @@ def _parser() -> argparse.ArgumentParser:
                                                              "data (teach.py reads RUN/realtime/ too)")
     rt.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the screen helper sees late (default {REFLEX})")
     rt.add_argument("--label", default="", help="a prefix for the games' files, to keep several settings in one run")
+    rtl = sub.add_parser("rtloop", help="run the soft loop on real-time games (rtloop.py)")
+    rtl.add_argument("run")
+    rtl.add_argument("--tree", help="the tree to start the run from, the first time")
+    rtl.add_argument("--writer", choices=("codex", "claude", "file"), default="codex")
+    rtl.add_argument("--writer-cmd", help="the writer's command, when it differs from the default ({out}: its answer file)")
+    rtl.add_argument("--train", default="9-19")
+    rtl.add_argument("--held", default="20-39")
+    rtl.add_argument("--rounds", type=int, default=8)
+    rtl.add_argument("--attempts", type=int, default=ATTEMPTS)
+    rtl.add_argument("--lag", type=int, default=7, help="tics from a state to its action (default 7, Laya's)")
+    rtl.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the helper sees late (default {REFLEX})")
     loop = sub.add_parser("loop", help="run the soft loop")
     loop.add_argument("run")
     loop.add_argument("--tree", help="the tree to start the run from, the first time")
@@ -166,7 +179,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         if getattr(args, "tree", None):
             run.start(args.tree)
         elif not (run.tree_dir / "tree.json").is_file():
-            if args.command not in ("play", "eval", "realtime"):
+            if args.command not in ("play", "eval", "realtime", "rtloop"):
                 say(f"{args.run} has no tree yet: start it with --tree")
                 return 2
             say(f"starting {args.run} from {DEFAULT_TREE}")
@@ -194,6 +207,13 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
                     predict=args.predict, track=args.track, label=args.label,
                     models=run.client.models_answered(), cleared=cleared, of=len(results), games=results)
             say(f"cleared {cleared} of {len(results)}")
+            return 0
+
+        if args.command == "rtloop":
+            settings = {"lag": args.lag, "track": "screen", "reflex": args.reflex, "fill": "hold"}
+            result = run_rt_loop(run, writer_named(args.writer, args.writer_cmd), parse_seeds(args.train), parse_seeds(args.held),
+                                 args.rounds, args.attempts, settings)
+            say(json.dumps(result))
             return 0
 
         if args.command == "loop":
