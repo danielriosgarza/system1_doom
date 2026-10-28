@@ -168,12 +168,12 @@ class _Seen:
 def test_the_fair_helper_sees_late_counts_its_own_turning_and_remembers_where_an_enemy_went():
     seen = _Seen()
     helper = Helper(seen, reflex=2)
-    seen.sight = {7: ("ShotgunGuy", 10.0)}
+    seen.sight = {7: ("ShotgunGuy", 10.0, 2.0)}
     helper.look()
     assert helper.bearing(("enemy", 7)) == pytest.approx(10.0)
     # The player turns 4 degrees left and the enemy steps 6 to the left: the helper still sees him as two tics ago,
     # less its own turn.
-    seen.facing, seen.sight = 4.0, {7: ("ShotgunGuy", 12.0)}
+    seen.facing, seen.sight = 4.0, {7: ("ShotgunGuy", 12.0, 2.0)}
     helper.look()
     assert helper.bearing(("enemy", 7)) == pytest.approx(6.0)
     helper.look()
@@ -186,7 +186,7 @@ def test_the_fair_helper_sees_late_counts_its_own_turning_and_remembers_where_an
     seen.facing = 10.0
     assert helper.bearing(("enemy", 7)) == pytest.approx(6.0)
     # Dead: gone. Never seen: nothing to turn toward.
-    seen.sight = {7: ("DeadShotgunGuy", 0.0)}
+    seen.sight = {7: ("DeadShotgunGuy", 0.0, 2.0)}
     for _ in range(3):
         helper.look()
     assert helper.bearing(("enemy", 7)) is None and helper.bearing(("enemy", 99)) is None
@@ -203,3 +203,18 @@ def test_once_the_focus_is_dead_a_rule_with_a_follow_up_walks_on_toward_the_goal
     assert tracked(plan, look, None, lambda target: True) == "F001"
     # Without a follow-up the rule's own code goes on.
     assert tracked(Plan(per_tic("0001"), 0, {}, ("enemy", 7)), look, None, lambda target: True) == "00L0"
+
+
+def test_aiming_at_the_box_turns_until_the_crosshair_is_on_the_focus():
+    plan = Plan(per_tic("0001"), 0, {}, ("enemy", 7))
+    look = {("enemy", 7): 2.0}.get
+    assert tracked(plan, look, None, lambda target: False) == "0001"  # within the 3-degree band
+    assert tracked(plan, look, None, lambda target: False, lambda target: 1.0) == "00L0"  # off a narrow enemy's box
+    assert tracked(plan, look, None, lambda target: False, lambda target: 2.5) == "0001"
+
+
+def test_the_screen_shows_each_label_and_the_angle_it_spans(game):
+    game.reset(9)
+    sight = game.on_screen()
+    enemies = [v for v in sight.values() if v[0] in ("ShotgunGuy", "Zombieman")]
+    assert enemies and all(len(v) == 3 and v[2] > 0 for v in enemies)

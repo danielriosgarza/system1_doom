@@ -29,7 +29,8 @@ Three ways to live with the lag, chosen with `cadence` and `predict`:
     track       (with pipeline) the tree picks what to aim at and what to do once aimed; a helper turns toward it
                 every tic, which needs no question. An action that went through the aim skill presses its turn
                 while the focus is more than 3 degrees off (the skill's narrowest band) and its `then` code
-                otherwise, through its 8 tics and the fill after them. `track="screen"` is the fair helper: it sees
+                otherwise, through its 8 tics and the fill after them (`aim="box"`: until the crosshair is on the
+                focus's label, at least 1 degree, instead of 3 degrees). `track="screen"` is the fair helper: it sees
                 only what the state text is made from (the labels on screen, its own facing and position, the
                 pickups it has seen), `reflex` tics late, and keeps the direction where an enemy was last seen.
                 `track="engine"` reads every enemy's position from the engine's objects, on screen or not: it is
@@ -86,6 +87,8 @@ SLOW_TURN, FAST_TURN, SLOW_TICS = 360 * 320 / 65536, 360 * 640 / 65536, 5
 ANGLE = re.compile(r"(\d+(?:\.\d+)?) deg (left|right)|straight ahead")
 TURNED_CHANNELS = ("threats", "pickups", "landmarks")
 DEADBAND = 3.0  # degrees off the focus a tracked action still turns at
+AIMS = ("band", "box")
+MIN_BOX = 1.0  # degrees: with aim="box", the narrowest the helper turns toward, a little under one tic of turning
 TRACKS = ("screen", "engine")
 REFLEX = 4  # tics the fair helper sees late (0.11 s, a quick hand)
 
@@ -148,9 +151,10 @@ def target_of(inputs: Any, d: Decision) -> Optional[Tuple[str, Any]]:
     return None
 
 
-def tracking(then: str, bearing: Optional[float]) -> str:
-    """A tracked action's code this tic: turn toward the focus while it is more than DEADBAND off, else `then`."""
-    if bearing is None or abs(bearing) <= DEADBAND:
+def tracking(then: str, bearing: Optional[float], band: float = DEADBAND) -> str:
+    """A tracked action's code this tic: turn toward the focus while it is more than `band` degrees off, else
+    `then`."""
+    if bearing is None or abs(bearing) <= band:
         return then
     return "00" + ("L" if bearing > 0 else "R") + "0"
 
@@ -163,8 +167,9 @@ class Helper:
 
     def __init__(self, game: Game, reflex: int = REFLEX) -> None:
         self.game = game
-        self.seen: "deque[Tuple[Dict[int, Tuple[str, float]], float]]" = deque(maxlen=reflex + 1)
+        self.seen: "deque[Tuple[Dict[int, Tuple[str, float, float]], float]]" = deque(maxlen=reflex + 1)
         self.last: Dict[int, float] = {}  # enemy -> the facing that would have it under the crosshair, when last seen
+        self.half: Dict[int, float] = {}  # enemy -> the angle its label spanned either side of its centre, when last seen
         self.dead: set = set()
 
     def look(self) -> None:
@@ -178,23 +183,25 @@ class Helper:
         sight, facing_then = self.seen[0]
         facing = self.game.var("ANGLE")
         if what in sight:
-            name, offset = sight[what]
+            name, offset, half = sight[what]
             if not is_enemy_name(name):
                 self.dead.add(what)
                 return None
             self.last[what] = facing_then + offset
+            self.half[what] = half
         if what not in self.last:
             return None
         return (self.last[what] - facing + 180) % 360 - 180
 
 
-def tracked(plan: "Plan", look: Any, goal: Optional[Tuple[str, Any]], dead: Any) -> str:
+def tracked(plan: "Plan", look: Any, goal: Optional[Tuple[str, Any]], dead: Any, band: Any = None) -> str:
     """A tracked action's code this tic: toward its focus with its last code, or, once the focus is dead and the
-    rule named an `after`, that code toward the goal."""
+    rule named an `after`, that code toward the goal. `band(target)` is how far off the focus may be before the
+    helper turns (DEADBAND when not given)."""
     bearing = look(plan.target)
     if plan.after is not None and plan.target[0] == "enemy" and dead(plan.target):
         return tracking(plan.after, look(goal) if goal is not None else None)
-    return tracking(plan.codes[-1], bearing)
+    return tracking(plan.codes[-1], bearing, band(plan.target) if band is not None else DEADBAND)
 
 
 def after_of(tree: RuleTree, d: Decision) -> Optional[str]:
@@ -274,6 +281,7 @@ def play_realtime(
     predict: bool = False,
     track: Optional[str] = None,
     reflex: int = REFLEX,
+    aim: str = "band",
     tic_rate: float = TIC_RATE,
     keep_text: bool = False,
     keep_frames: bool = False,
@@ -290,6 +298,8 @@ def play_realtime(
         raise ValueError(f"a lag is 0 tics or more, and a range runs from low to high, not {lag!r}")
     if cadence not in CADENCES:
         raise ValueError(f"cadence is one of {CADENCES}, not {cadence!r}")
+    if aim not in AIMS:
+        raise ValueError(f"aim is one of {AIMS}, not {aim!r}")
     if track is not None and track not in TRACKS:
         raise ValueError(f"track is one of {TRACKS}, not {track!r}")
     if (predict or track) and cadence != "pipeline":
@@ -409,7 +419,9 @@ def play_realtime(
             if plan is None:
                 code = IDLE
             elif plan.target is not None and helper is not None:
-                code = tracked(plan, helper.bearing, goal, lambda target: target[1] in helper.dead)
+                band = (lambda target: max(MIN_BOX, helper.half.get(target[1], DEADBAND)) if target[0] == "enemy"
+                        else DEADBAND) if aim == "box" else None
+                code = tracked(plan, helper.bearing, goal, lambda target: target[1] in helper.dead, band)
             elif plan.target is not None:
                 code = tracking(plan.codes[-1], game.bearing(plan.target))
             elif t - plan.start < TICS:
@@ -444,7 +456,7 @@ def play_realtime(
         played = t - plan.start
         plan.record.update(played=played, cut=0, filled=max(0, played - TICS))
     return {"seed": seed, "lag": lag, "fill": fill, "cadence": cadence, "predict": predict, "track": track,
-            "reflex": reflex if track == "screen" else None, "tics": t, "late_tics": late,
+            "reflex": reflex if track == "screen" else None, "aim": aim if track == "screen" else None, "tics": t, "late_tics": late,
             "seconds": round(time.perf_counter() - clock0, 2), "decisions": decisions, "windows": windows}
 
 
@@ -474,7 +486,8 @@ def summary(record: Dict[str, Any]) -> Dict[str, Any]:
 
 def evaluate(run: Any, seeds: Sequence[int], lag: Union[None, int, Tuple[int, int]], fill: str = "hold", label: str = "",
              tree: Optional[RuleTree] = None, cadence: str = "pipeline", predict: bool = False,
-             track: Optional[str] = None, reflex: int = REFLEX, keep_text: bool = False) -> List[Dict[str, Any]]:
+             track: Optional[str] = None, reflex: int = REFLEX, keep_text: bool = False,
+             aim: str = "band") -> List[Dict[str, Any]]:
     """Play every seed once in real time with fresh answers; each game is kept in `<run>/realtime/<label>s<seed>.json`.
     On the wall clock the games are played one after another, so that no other game's questions wait on the model in
     front of them; with a fixed lag, `run.workers` at a time."""
@@ -487,7 +500,7 @@ def evaluate(run: Any, seeds: Sequence[int], lag: Union[None, int, Tuple[int, in
         game = run._borrow()
         try:
             record = play_realtime(game, tree, jev, seed, lag=lag, fill=fill, cadence=cadence, predict=predict,
-                                   track=track, reflex=reflex, keep_text=keep_text)
+                                   track=track, reflex=reflex, keep_text=keep_text, aim=aim)
         except Exception as exc:  # noqa: BLE001 - a crashed game is reported with the others, not raised
             run._discard(game)
             return {"seed": seed, "event": "crashed", "error": f"{type(exc).__name__}: {exc}"[:500]}

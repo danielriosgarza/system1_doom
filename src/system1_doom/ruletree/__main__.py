@@ -40,7 +40,7 @@ from system1_doom.d1_client import D1UltraClient, decider_of, load_api_key
 from .check import ProposalError, check, commit
 from .gate import gate
 from .loop import ATTEMPTS, run_loop
-from .realtime import CADENCES, FILLS, REFLEX, TRACKS, evaluate
+from .realtime import AIMS, CADENCES, FILLS, REFLEX, TRACKS, evaluate
 from .rtloop import run_rt_loop
 from .run import Run
 from .tree import DEFAULT_TREE, Proposal, load_tree, shipped_trees, tree_lines
@@ -93,6 +93,8 @@ def _parser() -> argparse.ArgumentParser:
                          "engine reads every enemy's position from the engine, on screen or not (not a fair player)")
     rt.add_argument("--keep-text", action="store_true", help="keep each decision's state text in its game, for training "
                                                              "data (teach.py reads RUN/realtime/ too)")
+    rt.add_argument("--aim", choices=AIMS, default="band", help="with --track screen, turn until the focus is within 3 "
+                    "degrees (band, the default) or until the crosshair is on its label (box)")
     rt.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the screen helper sees late (default {REFLEX})")
     rt.add_argument("--label", default="", help="a prefix for the games' files, to keep several settings in one run")
     rtl = sub.add_parser("rtloop", help="run the soft loop on real-time games (rtloop.py)")
@@ -199,7 +201,8 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         if args.command == "realtime":
             lag = None if args.lag == "wall" else tuple(map(int, args.lag.split("-"))) if "-" in args.lag else int(args.lag)
             results = evaluate(run, parse_seeds(args.seeds), lag, args.fill, args.label, cadence=args.cadence,
-                               predict=args.predict, track=args.track, reflex=args.reflex, keep_text=args.keep_text)
+                               predict=args.predict, track=args.track, reflex=args.reflex, keep_text=args.keep_text,
+                               aim=args.aim)
             for r in results:
                 say(json.dumps(r))
             cleared = sum(r["event"] == "cleared" for r in results)
