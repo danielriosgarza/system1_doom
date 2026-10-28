@@ -83,7 +83,8 @@ def describe_code(code: str) -> str:
 def describe(action: Union[str, dict]) -> str:
     """An action in words, as the site and the rule writer read it."""
     if isinstance(action, dict):
-        return f"use skill {action['skill']}, then {describe_code(action['then'])}"
+        after = f"; once the focus is gone, {describe_code(action['after'])} toward the goal" if action.get("after") else ""
+        return f"use skill {action['skill']}, then {describe_code(action['then'])}{after}"
     if action == THEN:
         return "the caller's action"
     if action == RANDOM:

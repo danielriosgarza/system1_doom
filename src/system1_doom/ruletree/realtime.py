@@ -33,7 +33,9 @@ Three ways to live with the lag, chosen with `cadence` and `predict`:
                 only what the state text is made from (the labels on screen, its own facing and position, the
                 pickups it has seen), `reflex` tics late, and keeps the direction where an enemy was last seen.
                 `track="engine"` reads every enemy's position from the engine's objects, on screen or not: it is
-                not a fair player, only an upper bound.
+                not a fair player, only an upper bound. A rule whose skill call names an `after` code says what to
+                do once its focus is gone: when the screen helper sees the enemy dead, it plays that code, turned
+                toward the goal the walk last focused on (the landmark of the last decision that picked one).
 
 The state's counters (decisions so far, under fire, stall streak, fruitless firing) and the outcome of each stretch
 are kept per 8 tics of game time, whatever the lag, so the state reads as it did in training; the history names the
@@ -69,7 +71,7 @@ from system1_doom.motor import is_enemy_name
 
 from .codes import TICS, buttons, segments
 from .game import Game
-from .tree import RuleTree
+from .tree import RuleTree, SkillCall
 from .walk import Decision, Jev, decide
 
 TIC_RATE = 35  # Doom's tics a second
@@ -163,6 +165,7 @@ class Helper:
         self.game = game
         self.seen: "deque[Tuple[Dict[int, Tuple[str, float]], float]]" = deque(maxlen=reflex + 1)
         self.last: Dict[int, float] = {}  # enemy -> the facing that would have it under the crosshair, when last seen
+        self.dead: set = set()
 
     def look(self) -> None:
         """Every tic, before the keys are chosen."""
@@ -177,11 +180,28 @@ class Helper:
         if what in sight:
             name, offset = sight[what]
             if not is_enemy_name(name):
+                self.dead.add(what)
                 return None
             self.last[what] = facing_then + offset
         if what not in self.last:
             return None
         return (self.last[what] - facing + 180) % 360 - 180
+
+
+def tracked(plan: "Plan", look: Any, goal: Optional[Tuple[str, Any]], dead: Any) -> str:
+    """A tracked action's code this tic: toward its focus with its last code, or, once the focus is dead and the
+    rule named an `after`, that code toward the goal."""
+    bearing = look(plan.target)
+    if plan.after is not None and plan.target[0] == "enemy" and dead(plan.target):
+        return tracking(plan.after, look(goal) if goal is not None else None)
+    return tracking(plan.codes[-1], bearing)
+
+
+def after_of(tree: RuleTree, d: Decision) -> Optional[str]:
+    """The `after` code of the rule whose skill call the walk followed last, if it names one."""
+    callers = [s.node for s in d.steps if s.kind == "skill"]
+    action = tree.nodes[callers[-1]].action if callers else None
+    return action.after if isinstance(action, SkillCall) else None
 
 
 def per_tic(action: str) -> List[str]:
@@ -234,6 +254,7 @@ class Plan:
     start: int
     record: Dict[str, Any] = field(default_factory=dict)
     target: Optional[Tuple[str, Any]] = None  # with track: what the focus picked
+    after: Optional[str] = None  # with the screen helper: the rule's code once the focus is gone
 
 
 def play_realtime(
@@ -278,6 +299,7 @@ def play_realtime(
     predicted: Dict[int, float] = {}
     pressed_all: List[str] = []  # every tic's keys, for the turn held so far
     helper = Helper(game, reflex) if track == "screen" else None
+    goal: Optional[Tuple[str, Any]] = None  # the landmark the walk last focused on
     before = game.begin()
     clock0 = time.perf_counter()
 
@@ -289,7 +311,7 @@ def play_realtime(
         return pending.ready_at is not None and t >= pending.ready_at
 
     def adopt() -> None:
-        nonlocal plan, pending, next_ask
+        nonlocal plan, pending, next_ask, goal
         assert pending is not None
         if pending.future is not None:
             pending.decision, pending.seconds = pending.future.result()
@@ -307,10 +329,15 @@ def play_realtime(
         if pending.i in predicted:
             rec["predicted_turn"] = predicted[pending.i]
         target = target_of(pending.inputs, d) if track else None
+        after = after_of(tree, d) if helper is not None and target is not None else None
         if target is not None:
             rec["target"] = [target[0], target[1]]
+            if target[0] == "point":
+                goal = target
+        if after is not None:
+            rec["after"] = after
         decisions.append(rec)
-        plan = Plan(per_tic(d.action), t, rec, target)
+        plan = Plan(per_tic(d.action), t, rec, target, after)
         pending = None
         if cadence == "sequential":
             next_ask = t + TICS
@@ -369,8 +396,10 @@ def play_realtime(
                 helper.look()
             if plan is None:
                 code = IDLE
+            elif plan.target is not None and helper is not None:
+                code = tracked(plan, helper.bearing, goal, lambda target: target[1] in helper.dead)
             elif plan.target is not None:
-                code = tracking(plan.codes[-1], helper.bearing(plan.target) if helper else game.bearing(plan.target))
+                code = tracking(plan.codes[-1], game.bearing(plan.target))
             elif t - plan.start < TICS:
                 code = plan.codes[t - plan.start]
             else:

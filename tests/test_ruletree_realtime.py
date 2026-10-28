@@ -7,7 +7,7 @@ import pytest
 
 from system1_doom.ruletree.codes import segments
 from system1_doom.ruletree.game import Game, play
-from system1_doom.ruletree.realtime import (TIC_RATE, Helper, filled, held_turning, outcome_of, per_tic, play_realtime, run_length,
+from system1_doom.ruletree.realtime import (TIC_RATE, Helper, Plan, filled, tracked, held_turning, outcome_of, per_tic, play_realtime, run_length,
                                          shifted, summary, tracking, turned)
 from system1_doom.ruletree.walk import Jev
 from tests.fake_d1 import FakeD1
@@ -191,3 +191,16 @@ def test_the_fair_helper_sees_late_counts_its_own_turning_and_remembers_where_an
     for _ in range(3):
         helper.look()
     assert helper.bearing(("enemy", 7)) is None and helper.bearing(("enemy", 99)) is None
+
+
+def test_once_the_focus_is_dead_a_rule_with_a_follow_up_walks_on_toward_the_goal():
+    plan = Plan(per_tic("00L0:5+0001:3"), 0, {}, ("enemy", 7), "F001")
+    bearings = {("enemy", 7): 10.0, ("point", (900.0, 0.0)): -5.0}
+    look = bearings.get
+    assert tracked(plan, look, ("point", (900.0, 0.0)), lambda target: False) == "00L0"
+    assert tracked(plan, look, ("point", (900.0, 0.0)), lambda target: True) == "00R0"
+    bearings[("point", (900.0, 0.0))] = 1.0
+    assert tracked(plan, look, ("point", (900.0, 0.0)), lambda target: True) == "F001"
+    assert tracked(plan, look, None, lambda target: True) == "F001"
+    # Without a follow-up the rule's own code goes on.
+    assert tracked(Plan(per_tic("0001"), 0, {}, ("enemy", 7)), look, None, lambda target: True) == "00L0"
