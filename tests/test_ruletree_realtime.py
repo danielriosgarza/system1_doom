@@ -218,3 +218,12 @@ def test_the_screen_shows_each_label_and_the_angle_it_spans(game):
     sight = game.on_screen()
     enemies = [v for v in sight.values() if v[0] in ("ShotgunGuy", "Zombieman")]
     assert enemies and all(len(v) == 3 and v[2] > 0 for v in enemies)
+
+
+def test_the_helper_never_turns_back_on_the_next_tic(game):
+    # Box aiming at enemies on seed 25 once swung left and right every tic for ever (a turn key held either way
+    # speeds the turn up); now a reversal waits a tic.
+    jev = Jev(jev_client(FakeD1(scripted(by_text("at least one enemy", "more than 400")), decider="jev")))
+    live = play_realtime(game, general_tree(), jev, 25, lag=7, track="screen", aim="box", stop_on_event=False, max_tics=8 * 30)
+    tics = [c for w in live["windows"] for c, n in segments(w["code"], partial=True) for _ in range(n)]
+    assert not any(a[2] != "0" and b[2] != "0" and a[2] != b[2] for a, b in zip(tics, tics[1:]))

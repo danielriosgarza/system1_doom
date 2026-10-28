@@ -422,6 +422,11 @@ def play_realtime(
                 band = (lambda target: max(MIN_BOX, helper.half.get(target[1], DEADBAND)) if target[0] == "enemy"
                         else DEADBAND) if aim == "box" else None
                 code = tracked(plan, helper.bearing, goal, lambda target: target[1] in helper.dead, band)
+                if code[2] != "0" and pressed_all and pressed_all[-1][2] not in ("0", code[2]):
+                    # Never turn back on the very next tic: Doom counts a turn key held either way as one long turn,
+                    # which doubles its speed after 5 tics and swings past a narrow focus for ever. One tic of the
+                    # rule's code without its turn lets the next turn start slow.
+                    code = filled(plan.codes[-1], "steady")
             elif plan.target is not None:
                 code = tracking(plan.codes[-1], game.bearing(plan.target))
             elif t - plan.start < TICS:
