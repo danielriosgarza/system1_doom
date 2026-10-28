@@ -106,7 +106,8 @@ def _parser() -> argparse.ArgumentParser:
     rtl.add_argument("--held", default="20-39")
     rtl.add_argument("--rounds", type=int, default=8)
     rtl.add_argument("--attempts", type=int, default=ATTEMPTS)
-    rtl.add_argument("--lag", type=int, default=7, help="tics from a state to its action (default 7, Laya's)")
+    rtl.add_argument("--lag", default="7", help="tics from a state to its action (default 7, Laya's), or a range LO-HI drawn "
+                                                "for each decision")
     rtl.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the helper sees late (default {REFLEX})")
     rtl.add_argument("--aim", choices=AIMS, default="box", help="how the helper aims (default box)")
     rtl.add_argument("--margin", type=int, default=1, help="more training seeds a rule must clear to pass the gate "
@@ -217,7 +218,8 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
             return 0
 
         if args.command == "rtloop":
-            settings = {"lag": args.lag, "track": "screen", "reflex": args.reflex, "fill": "hold", "aim": args.aim}
+            lag = tuple(map(int, args.lag.split("-"))) if "-" in args.lag else int(args.lag)
+            settings = {"lag": lag, "track": "screen", "reflex": args.reflex, "fill": "hold", "aim": args.aim}
             result = run_rt_loop(run, writer_named(args.writer, args.writer_cmd), parse_seeds(args.train), parse_seeds(args.held),
                                  args.rounds, args.attempts, settings, args.margin, parse_seeds(args.monitor))
             say(json.dumps(result))

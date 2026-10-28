@@ -90,7 +90,8 @@ def write_rt_dossier(folder: Path, name: str, game: Dict[str, Any], tree: RuleTr
     happened = ", ".join(last["events"]) or ("cleared" if last.get("cleared") else "none")
     s = game["realtime"]
     lines = [f"# {name}: seed {game['seed']}, tic {game['tics']} (decision {len(decisions) - 1}): {happened}", "",
-             f"Played in real time: every action started {s['lag']} tics after the state it was decided from; the helper "
+             f"Played in real time: every action started {s['lag'] if isinstance(s['lag'], int) else '%d to %d' % tuple(s['lag'])} "
+             f"tics after the state it was decided from; the helper "
              f"aimed ({s['track']}, {s['reflex']} tics late).", "",
              "## The rule tree that played", "", "```", *tree_lines(tree), "```", "",
              f"## The last {WINDOW} decisions", ""]
