@@ -27,7 +27,7 @@
 
 **Package:** `system1-doom` 0.4.0 · **Python:** ≥ 3.11 · **Source layout:**
 `src/system1_doom/` (32 modules, ≈ 11,500 LOC) · **Tests:** `tests/`
-(37 files, 345 tests, 7 of them live) · **Web explainer:** `web/` (Vite +
+(38 files, 357 tests, 7 of them live) · **Web explainer:** `web/` (Vite +
 React + TypeScript, on trace schema 2; 92 Vitest and 49 Playwright
 tests), online at <https://danielriosgarza.github.io/system1_doom/>
 
@@ -2800,11 +2800,57 @@ for this tree. A tree with conditions worded otherwise (a new rule from
 the soft loop) has not been tried on the fine-tuned checkpoint, and may
 need answers to its own questions.
 
+**The rule tree in real time** (2026-10-28, `realtime`, §8.17; Laya
+trained on Kev's answers, `general-11`, the 81 benchmark seeds, one game
+at a time on the wall clock with nothing else asking Laya). Alone, a walk
+asks 3.2 questions at about 52 ms each, 168 ms in all (median; 90th
+percentile 201 ms), or 5.9 tics; reading the state takes 4 ms and the
+engine 4 ms. Asking ahead does not help Laya (177 ms), whose server
+answers each question of a request on its own. With `--lag 0` the four
+Local models recordings were played again decision for decision (43,
+39, 47 and 42 decisions; health 70, 76, 100 and 46).
+
+| | Paused (§15 above) | Naive | Sequential | Efference copy | Tracking |
+|---|---:|---:|---:|---:|---:|
+| Cleared | 76 of 81 | 9 of 81 | 30 of 81 | 62 of 81 | 70 of 81 |
+| Died / stalled | 5 / 0 | 67 / 5 | 51 / 0 | 18 / 1 | 11 / 0 |
+| Stretches of 8 tics to clear (mean) | 43.1 | 67.2 | 53.2 | 46.5 | 40.9 |
+| Answer late by (median) | 0 | 7 tics (170 ms) | 7 tics | 6 tics | 6 tics |
+
+The naive pipeline asks at tic 8 while the action chosen at tic 0 is
+still turning, so the next aim turns again for the same angle: on seed 12
+it swung 16° past the first ShotgunGuy and died at tic 48 without killing
+him, where the paused game killed him at tic 20. Tracking does not differ
+from paused beyond chance (Fisher's exact p ≈ 0.19), and its deaths fall
+where the paused ones do (8 of 11 at x 726–877); the efference copy is
+below paused (p ≈ 0.003) and not clearly below tracking (p ≈ 0.16); the
+sequential cadence spends about a third of its tics (139 a game) on the
+last code while waiting. No game fell behind the clock (0 late tics in 324
+games).
+
+With a fixed lag, on seeds 201–215, 301–315 and 9–19 (41; paused 39 of
+41, which a lag of 0 is for every setting but tracking), six at a time:
+
+| Lag (tics) | 0 | 2 | 4 | 7 | 8 | 12 | 24 | 40 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Naive | 39 | 34 | 32 | 2 | 2 | 8 | 0 | 0 |
+| Sequential | 39 | | | 17 | 16 | | 0 | 0 |
+| Efference copy | 39 | | | 31 | 30 | | 0 | |
+| Tracking | 40 | | | | 37 | | 8 | 0 |
+
+On the same 41 seeds the wall-clock runs cleared 6, 14, 35 and 37, close
+to the fixed lag of 6 or 7 tics. The naive tree is worst at a lag of
+about one action; past 24 tics (0.7 s) only tracking clears any, and at
+40 (1.1 s, about Jev's or Kev's decision) none does: the reflex still
+aims, but the walk's choice goes stale (17 of 41 tracking games stall,
+standing and firing at an enemy already dead). Of the deciders tried,
+only Laya is fast enough to play this tree in real time.
+
 ## 16. Testing
 
 ```bash
-python -m pytest                 # 345 tests, 37 files, from the repo root
-python -m pytest -k "not live"   # the 338 that need no key, as CI runs them
+python -m pytest                 # 357 tests, 38 files, from the repo root
+python -m pytest -k "not live"   # the 350 that need no key, as CI runs them
 ```
 
 Every behaviour is exercised without a key through `tests/fake_d1.py`:
