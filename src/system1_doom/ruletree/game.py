@@ -50,6 +50,7 @@ class Game:
         self.last_screen: Optional[Any] = None
         self.max_x: List[float] = []
         self.decisions = self.under_fire = self.stall = self.missed = 0
+        self.last_inputs: Optional[Any] = None  # what the last state text was rendered from (realtime.py's tracking)
 
     def close(self) -> None:
         self.bridge.close()
@@ -77,6 +78,7 @@ class Game:
             sectors_discovered=len(self.bridge._episode_cells),
         )
         inputs = build_inputs(ws, menu=[], counters=counters)
+        self.last_inputs = inputs
         text = GOAL + "\n\n" + "\n\n".join(render_channel(inputs, c) for c in CHANNELS)
         if self.missed >= MISSED_SHOTS_SHOWN:
             head = "[outgoing]\n"
@@ -101,6 +103,21 @@ class Game:
                          "side": side, "on_screen": o.id in on_screen})
         return sorted(rows, key=lambda r: r["dist"])
 
+    def bearing(self, target: Tuple[str, Any]) -> Optional[float]:
+        """Degrees from the facing to an enemy (`("enemy", object id)`) or a point (`("point", (x, y))`), left
+        positive, from the engine's positions this tic; None when the enemy is gone."""
+        px, py, ang = self.var("POSITION_X"), self.var("POSITION_Y"), self.var("ANGLE")
+        kind, what = target
+        if kind == "enemy":
+            st = self.g.get_state()
+            found = [o for o in (st.objects if st is not None else []) if o.id == what]
+            if not found:
+                return None
+            x, y = found[0].position_x, found[0].position_y
+        else:
+            x, y = what
+        return (math.degrees(math.atan2(y - py, x - px)) - ang + 180) % 360 - 180
+
     def press(self, keys: List[int], tics: int) -> None:
         """Hold the keys for `tics` tics: the only place the game's keys are pressed. With `keep_screen` they are held
         one tic at a time, to keep each tic's screen; the game plays the same."""
@@ -117,14 +134,24 @@ class Game:
 
     def step(self, code: str) -> Dict[str, Any]:
         """Press one action's buttons for its 8 tics; the decision's outcome."""
-        b = self.bridge
-        x0, y0, h0, r0 = self.var("POSITION_X"), self.var("POSITION_Y"), self.var("HEALTH"), self.g.get_total_reward()
-        hits0 = self.var("HITCOUNT")
-        b._episode_cells.add(b._current_cell())
+        before = self.begin()
         for seg, tics in segments(code):
             self.press(buttons(seg), tics)
             if self.g.is_episode_finished():
                 break
+        return self.end(code, before)
+
+    def begin(self) -> Tuple[float, float, float, float, float]:
+        """What a decision's outcome is measured from: position, health, reward and hits before its tics."""
+        before = (self.var("POSITION_X"), self.var("POSITION_Y"), self.var("HEALTH"), self.g.get_total_reward(), self.var("HITCOUNT"))
+        self.bridge._episode_cells.add(self.bridge._current_cell())
+        return before
+
+    def end(self, code: str, before: Tuple[float, float, float, float, float]) -> Dict[str, Any]:
+        """The outcome of the tics pressed since `begin`, `code` naming them (a sequence when they changed), and the
+        counters the next state shows. Real-time play (realtime.py) presses a decision's tics itself and ends here."""
+        b = self.bridge
+        x0, y0, h0, r0, hits0 = before
         finished = self.g.is_episode_finished()
         reward = self.g.get_total_reward() - r0
         if not finished:

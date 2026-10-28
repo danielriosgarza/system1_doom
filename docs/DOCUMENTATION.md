@@ -1878,6 +1878,42 @@ clears none of the benchmark seeds; fine-tuned on 3,212 of Jev's
 answers it clears 75 of 81, and Kev-27B answers as well as Jev without
 fine-tuning (§15).
 
+**Real time** (`realtime.py`). Every command above holds the game while
+the tree is walked. `realtime` does not: the game runs at 35 tics a
+second, and a decision read from the state at tic t starts when its
+answers are in, `lag` tics later, the keys of the last action pressed
+meanwhile. A decision is asked at most every 8 tics and never before the
+last is answered, so with a lag under 8 every action plays its 8 tics in
+full, late; with a longer lag the decisions are `lag` tics apart and the
+tics after an action's 8 follow `--fill`: `hold` (its last code),
+`idle` (no key) or `steady` (its last code without the turn). The state's
+counters and the death, stall and clear checks are kept per 8 tics of game
+time (`Game.begin` and `Game.end` share `step`'s bookkeeping), so the
+state reads as in training; the history names the keys pressed in those 8
+tics, which can be the end of one action and the start of the next. Two
+clocks: `--lag wall` walks the tree on a thread of its own while the game
+plays tic by tic, held to the wall clock (tics the game falls behind are
+played at once with the keys as they are; `late_tics` counts them), one
+game at a time so that no other game's questions queue at the model;
+`--lag N` holds the game for the walk, then plays N tics before the
+answer is used, so the same answers give the same game and `--lag 0` is
+`play` exactly. Three ways to live with the lag: `--cadence sequential`
+asks only once the last action has played its 8 tics, so every state
+shows all of it (a decision then takes 8 + lag tics); `--predict` shifts
+every angle of the threats, pickups and landmarks by the turn the keys
+already chosen will make before the answer is in (Doom turns 1.76° a tic
+for the first 5 tics a turn key is held, then 3.52°), an efference copy;
+`--track` keeps what the walk chose (its focus and the aim skill's `then`)
+but replaces the aim's timed turn with a reflex: every tic, the focus's
+bearing is read from the engine's positions (`Game.bearing`; an enemy by
+its object id, a remembered pickup by its position) and the turn key is
+pressed while it is more than 3° off (the skill's narrowest band), the
+`then` code otherwise, through the action and the fill after it. Each
+game goes to `RUN/realtime/<label>s<seed>.json`: every decision (the tic
+its state was read, the tic it started, its walk, how many of its tics
+were played, cut short or filled) and every 8 tics of game time with its
+outcome.
+
 ---
 
 ## 9. The slow path end-to-end
@@ -2102,6 +2138,7 @@ from with `--tree` (a shipped tree's name or a tree folder). `play` and
 | `show [--tree T]` | Print a tree |
 | `play RUN --seed N` | Play one seed; the game and its dossier go to `RUN/games/` |
 | `eval RUN --seeds 201-215,301-315` | Play each seed once, in parallel, and print one line per seed and the number cleared |
+| `realtime RUN --seeds 9-19 --lag wall\|N [--fill hold\|idle\|steady] [--cadence pipeline\|sequential] [--predict] [--track] [--label L]` | Play each seed once without holding the game for the answers (§8.17): on the wall clock, one game at a time, or with every action started N tics after its state, `--workers` at a time; one JSON line per seed and the number cleared |
 | `loop RUN --writer codex\|claude\|file --train 9-19 --held 20-39 --rounds 12` | Run the soft loop until every training seed clears (then play the held-out seeds) or the rounds run out |
 | `check RUN PROPOSAL.json` | Check a proposal against a game of the run; exit 0 if it passes |
 | `gate RUN PROPOSAL.json --seeds 9-19` | Check it, then play the seeds with and without it |
@@ -2822,7 +2859,7 @@ minute with them.
 | `test_cli.py` | Fail fast without the key; the flags reach the controller; a configuration file; System 2 runs unless `--no-system2`, its cycle in `reflections.jsonl` and the configuration saved; a second run in the same run folder starts at the saved version and restores System 2's state, and `--fresh-configuration` starts at version 1 with System 2 fresh; a change queued when a run ends takes effect at the next run's first tick boundary as the saved version + 1, its trial starting there; a configuration that does not load stops play with its remedy; `--decider jev` reaches the summary (`decider`, `models`) and every call goes to TypeSafe; `--decider jev` fails fast naming `TYPESAFE_API_KEY` |
 | `test_export.py` | A `basic.cfg` bundle (schema 2) has every file and a frame per tick; pruned + legal partition the vocabulary; six instances, their evidence and the pick per tick; the history re-renders what each instance saw; the schema validates a trace, a meta, a history record and the ledger; copied run files; the index; a `connection_lost` episode is written but not shippable; a schema-1 bundle is reported; fail fast without the key; `failing_condition` agrees with `is_satisfied`; `reflections.jsonl` in every bundle, checked line by line against System 2's records and `episode.json`'s counts; `--no-system2` records none; exported episodes start from the run folder's saved configuration and carry it on, the first from version 1 with `--fresh-configuration`; a change queued at an exported episode's end takes effect at the next episode's first tick; every shipped recording in `web/public/episodes/` passes `--check`, is a schema-2 bundle played by d1-ultra or Jev and is listed in the index with its decider and whether the senses chose the motor's targets, and the site ships recordings by each decider, the newest cleared one with the senses choosing targets; a bundle whose configuration names no sense's target is indexed as recorded before the senses chose targets, after the ones since; a bundle played by the fake Jev names its decider, validates against the schema (whose `decider` enum is `d1-ultra`, `jev`) and passes `--check` |
 | `test_serve.py` | Two live `basic.cfg` episodes in-process on the fake: the event order, frames on disk before their tick, the episode in progress from memory, each finished episode a valid schema-2 bundle, the next seed, the status; stopping mid-episode; clearing the live folder; a macro admitted mid-episode reaching the catalog with configuration versions 1 → 2; a slow-path answer in flight at the end logged in its own episode; the flags in the status and serving needs the key; System 2's records streamed as `reflection` events, equal to the bundle's file; `--no-system2`, `--configuration` and `--fresh-configuration`; `--decider jev` reaches the status |
-| `test_ruletree_codes.py`, `test_ruletree_tree.py`, `test_ruletree_walk.py`, `test_ruletree_game.py`, `test_ruletree_check.py`, `test_ruletree_loop.py`, `test_ruletree_cli.py`, `test_ruletree_agreement.py`, `test_ruletree_teach.py`, `test_ruletree_bundle.py` | The rule tree (§8.17): codes and sequences; rules added as exceptions, groups, a rule's own focus, actions checked where they are placed, a tree folder with its cornerstones, the shipped trees; the walk on the fake Jev (none, the focus asked before the children, a skill finished by `then`, one focus option needs no question, misses, kept answers, and asking ahead: the same walk in two requests instead of four); the game on ViZDoom (8-tic decisions, a replayed prefix is the same game, deaths and stalls, true angles, the run of fruitless firing, keys pressed only in `game.py`, the same game when keys are held one tic at a time); the comparisons, and a check, gate and commit on a stand-in corridor (`tests/ruletree_fixtures.py`); the loop end to end with scripted writers and its `build.jsonl`; the command line, `--budget` and `--ahead` reaching every walk, and `eval --decider laya` and `--decider kev` with no key, every question at that model's server on this machine with the text alone; the agreement check (`test_ruletree_agreement.py`: a recording's questions rebuilt as they were sent, the answers the text settles, both models scored, and the site's `models.json` matched to each question's step, out-of-step answers refused); training data from games (`test_ruletree_teach.py`: each question once as it was sent, the teacher's or the text's label, misses and other seeds left out); a recording of seed 9 on ViZDoom (every decision with its walk and screen, `--check` finding a changed action and a missing frame, the schema, the index listing it after the senses' recordings, the shipped rule-tree recordings) |
+| `test_ruletree_codes.py`, `test_ruletree_tree.py`, `test_ruletree_walk.py`, `test_ruletree_game.py`, `test_ruletree_check.py`, `test_ruletree_loop.py`, `test_ruletree_cli.py`, `test_ruletree_agreement.py`, `test_ruletree_teach.py`, `test_ruletree_bundle.py`, `test_ruletree_realtime.py` | The rule tree (§8.17): codes and sequences; rules added as exceptions, groups, a rule's own focus, actions checked where they are placed, a tree folder with its cornerstones, the shipped trees; the walk on the fake Jev (none, the focus asked before the children, a skill finished by `then`, one focus option needs no question, misses, kept answers, and asking ahead: the same walk in two requests instead of four); the game on ViZDoom (8-tic decisions, a replayed prefix is the same game, deaths and stalls, true angles, the run of fruitless firing, keys pressed only in `game.py`, the same game when keys are held one tic at a time); the comparisons, and a check, gate and commit on a stand-in corridor (`tests/ruletree_fixtures.py`); the loop end to end with scripted writers and its `build.jsonl`; the command line, `--budget` and `--ahead` reaching every walk, and `eval --decider laya` and `--decider kev` with no key, every question at that model's server on this machine with the text alone; the agreement check (`test_ruletree_agreement.py`: a recording's questions rebuilt as they were sent, the answers the text settles, both models scored, and the site's `models.json` matched to each question's step, out-of-step answers refused); training data from games (`test_ruletree_teach.py`: each question once as it was sent, the teacher's or the text's label, misses and other seeds left out); a recording of seed 9 on ViZDoom (every decision with its walk and screen, `--check` finding a changed action and a missing frame, the schema, the index listing it after the senses' recordings, the shipped rule-tree recordings); real time (`test_ruletree_realtime.py`: a lag of 0 is the paused game, with either cure too; a lag under 8 plays every action in full that many tics late, a longer one spaces the decisions and fills the gap as `--fill` says; sequential asks once the last action has played; Doom's turn model and the angles shifted by the turn still to come; a tracked action turns toward the focus whatever band the tree read; on the wall clock the game keeps time while a slow walk runs) |
 | `test_state_and_actions.py`, `test_features.py`, `test_simulator.py`, `test_visualizer.py` | The state, action, encoding and simulator contracts; the HUD and the panel of the six instances |
 
 The web explainer has its own checks, run from `web/`: `npm run lint`

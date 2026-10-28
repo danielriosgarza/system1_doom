@@ -4,6 +4,7 @@
   python -m system1_doom.ruletree eval   RUN --tree general-11 --seeds 9-19,40-59
   python -m system1_doom.ruletree eval   RUN --tree general-11 --seeds 9-19 --decider laya
   python -m system1_doom.ruletree play   RUN --tree general-11 --seed 9
+  python -m system1_doom.ruletree realtime RUN --seeds 9-19 --decider laya --model ruletree-kev-v1 --lag wall
   python -m system1_doom.ruletree loop   RUN --tree general-9 --writer codex --train 9-19 --held 20-39
   python -m system1_doom.ruletree check  RUN PROPOSAL.json
   python -m system1_doom.ruletree gate   RUN PROPOSAL.json --seeds 9-19
@@ -12,6 +13,8 @@
 
 RUN is a folder (see `run.py`); it starts from `--tree` (a shipped tree's name or a tree folder) the first time;
 `play` and `eval` start it from general-11 when no tree is named.
+`realtime` plays the seeds without holding the game for the answers (realtime.py): `--lag wall` on the wall clock,
+one game at a time, or `--lag N` with every action started N tics after the state it was decided from.
 `check` tests a proposal against a game of the run; `gate` checks it, then plays the seeds with and without it;
 `commit` checks it and, if it passed, adds it to the run's tree. `finish` copies the run's tree and record into a
 tree folder of its own. Jev is reached with TYPESAFE_API_KEY from the environment or `.env`; without it every
@@ -35,6 +38,7 @@ from system1_doom.d1_client import D1UltraClient, decider_of, load_api_key
 from .check import ProposalError, check, commit
 from .gate import gate
 from .loop import ATTEMPTS, run_loop
+from .realtime import CADENCES, FILLS, evaluate
 from .run import Run
 from .tree import DEFAULT_TREE, Proposal, load_tree, shipped_trees, tree_lines
 from .walk import DEFAULT_BUDGET
@@ -68,6 +72,20 @@ def _parser() -> argparse.ArgumentParser:
             p.add_argument("--seed", type=int, required=True)
         else:
             p.add_argument("--seeds", required=True)
+    rt = sub.add_parser("realtime", help="play seeds while the game goes on during each decision")
+    rt.add_argument("run")
+    rt.add_argument("--tree", help=f"the tree to start the run from, the first time (default {DEFAULT_TREE})")
+    rt.add_argument("--seeds", required=True)
+    rt.add_argument("--lag", default="wall", help="wall (the wall clock, one game at a time) or a number of tics")
+    rt.add_argument("--fill", choices=FILLS, default="hold", help="the keys between the end of one action and the start "
+                                                                   "of the next, when a decision takes over 8 tics")
+    rt.add_argument("--cadence", choices=CADENCES, default="pipeline", help="ask every 8 tics while the last action plays "
+                    "(pipeline), or once it has played (sequential)")
+    rt.add_argument("--predict", action="store_true", help="shift the state's angles by the turn still to come before "
+                                                           "the answer is in (with pipeline)")
+    rt.add_argument("--track", action="store_true", help="turn toward the focus every tic from the engine's positions, "
+                                                         "the tree choosing what to aim at and what to do (with pipeline)")
+    rt.add_argument("--label", default="", help="a prefix for the games' files, to keep several settings in one run")
     loop = sub.add_parser("loop", help="run the soft loop")
     loop.add_argument("run")
     loop.add_argument("--tree", help="the tree to start the run from, the first time")
@@ -141,7 +159,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         if getattr(args, "tree", None):
             run.start(args.tree)
         elif not (run.tree_dir / "tree.json").is_file():
-            if args.command not in ("play", "eval"):
+            if args.command not in ("play", "eval", "realtime"):
                 say(f"{args.run} has no tree yet: start it with --tree")
                 return 2
             say(f"starting {args.run} from {DEFAULT_TREE}")
@@ -155,6 +173,19 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
             cleared = sum(r["event"] == "cleared" for r in results)
             run.log(step=args.command, tree=run.tree().name, models=run.client.models_answered(), cleared=cleared, of=len(results),
                     games=results)
+            say(f"cleared {cleared} of {len(results)}")
+            return 0
+
+        if args.command == "realtime":
+            lag = None if args.lag == "wall" else int(args.lag)
+            results = evaluate(run, parse_seeds(args.seeds), lag, args.fill, args.label, cadence=args.cadence,
+                               predict=args.predict, track=args.track)
+            for r in results:
+                say(json.dumps(r))
+            cleared = sum(r["event"] == "cleared" for r in results)
+            run.log(step="realtime", tree=run.tree().name, lag=args.lag, fill=args.fill, cadence=args.cadence,
+                    predict=args.predict, track=args.track, label=args.label,
+                    models=run.client.models_answered(), cleared=cleared, of=len(results), games=results)
             say(f"cleared {cleared} of {len(results)}")
             return 0
 
