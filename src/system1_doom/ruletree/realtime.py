@@ -38,7 +38,9 @@ keys pressed in those 8 tics, which can be the end of one action and the start o
 Two clocks:
 
 - `lag=N`: the game is held while the tree is walked, then N tics are played before the answer is used. The same
-  answers give the same game, and `lag=0` is `play()` exactly.
+  answers give the same game, and `lag=0` is `play()` exactly. `lag=(lo, hi)` draws each decision's lag from lo to hi
+  tics, a reaction time that varies from one decision to the next; the draw depends on the seed and the decision's
+  number only, so a replay draws the same.
 - `lag=None`: the wall clock. The walk runs on its own thread while the game plays tic by tic, held to 35 tics a
   second; an answer is used at the first tic after it arrives. If the game itself falls behind the clock (reading the
   state takes a few milliseconds), the missing tics are played at once with the keys as they are.
@@ -48,13 +50,14 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import re
 import statistics
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from system1_doom.evidence import enemy_line, landmark_line, shown_enemies, shown_landmarks
 
@@ -199,7 +202,7 @@ def play_realtime(
     tree: RuleTree,
     jev: Jev,
     seed: int,
-    lag: Optional[int] = None,
+    lag: Union[None, int, Tuple[int, int]] = None,
     fill: str = "hold",
     cadence: str = "pipeline",
     predict: bool = False,
@@ -214,8 +217,9 @@ def play_realtime(
     (`windows`, each with the outcome and events of a decision of `play`)."""
     if fill not in FILLS:
         raise ValueError(f"fill is one of {FILLS}, not {fill!r}")
-    if lag is not None and lag < 0:
-        raise ValueError("a lag is 0 tics or more")
+    lo, hi = (lag, lag) if lag is None or isinstance(lag, int) else lag
+    if lag is not None and not 0 <= lo <= hi:
+        raise ValueError(f"a lag is 0 tics or more, and a range runs from low to high, not {lag!r}")
     if cadence not in CADENCES:
         raise ValueError(f"cadence is one of {CADENCES}, not {cadence!r}")
     if (predict or track) and cadence != "pipeline":
@@ -286,7 +290,7 @@ def play_realtime(
         i = len(decisions)
         if predict:
             recent = [d["lag"] for d in decisions[-5:]]
-            expect = lag if lag is not None else (int(statistics.median(recent)) if recent else EXPECTED_LAG)
+            expect = (lo + hi) // 2 if lag is not None else (int(statistics.median(recent)) if recent else EXPECTED_LAG)
             turn = turned(coming(expect), held_turning(pressed_all))
             text = shifted(text, turn)
             predicted[i] = round(turn, 2)
@@ -297,7 +301,7 @@ def play_realtime(
             pending.future = pool.submit(walk, text, frame, i)
         else:
             pending.decision, pending.seconds = walk(text, frame, i)
-            pending.ready_at = t + lag
+            pending.ready_at = t + (lo if lo == hi else random.Random(f"{seed}:{i}:lag").randint(lo, hi))
         next_ask = t + TICS if cadence == "pipeline" else 1 << 30
 
     try:
@@ -381,7 +385,7 @@ def summary(record: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def evaluate(run: Any, seeds: Sequence[int], lag: Optional[int], fill: str = "hold", label: str = "",
+def evaluate(run: Any, seeds: Sequence[int], lag: Union[None, int, Tuple[int, int]], fill: str = "hold", label: str = "",
              tree: Optional[RuleTree] = None, cadence: str = "pipeline", predict: bool = False,
              track: bool = False) -> List[Dict[str, Any]]:
     """Play every seed once in real time with fresh answers; each game is kept in `<run>/realtime/<label>s<seed>.json`.

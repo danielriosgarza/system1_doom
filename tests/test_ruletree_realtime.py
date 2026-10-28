@@ -139,3 +139,13 @@ def test_tracking_turns_toward_the_focus_whatever_band_the_tree_read(game):
     toward = "00L0" if "deg left" in focus else "00R0"
     assert live["windows"][0]["code"].startswith(toward)
     assert "0001" in live["windows"][0]["code"] + live["windows"][1]["code"]
+
+
+def test_a_lag_range_draws_each_decisions_lag_and_a_replay_draws_the_same(game):
+    runs = [play_realtime(game, _always("B001"), _jev(), 9, lag=(7, 52), stop_on_event=False, max_tics=8 * 30)
+            for _ in range(2)]
+    lags = [d["lag"] for d in runs[0]["decisions"]]
+    assert len(lags) >= 2 and all(7 <= x <= 52 for x in lags) and len(set(lags)) > 1
+    assert lags == [d["lag"] for d in runs[1]["decisions"]]
+    with pytest.raises(ValueError):
+        play_realtime(game, _always("F001"), _jev(), 9, lag=(9, 7))

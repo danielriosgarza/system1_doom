@@ -14,7 +14,8 @@
 RUN is a folder (see `run.py`); it starts from `--tree` (a shipped tree's name or a tree folder) the first time;
 `play` and `eval` start it from general-11 when no tree is named.
 `realtime` plays the seeds without holding the game for the answers (realtime.py): `--lag wall` on the wall clock,
-one game at a time, or `--lag N` with every action started N tics after the state it was decided from.
+one game at a time, or `--lag N` with every action started N tics after the state it was decided from (`--lag 7-52`:
+a lag drawn from 7 to 52 tics for each decision).
 `check` tests a proposal against a game of the run; `gate` checks it, then plays the seeds with and without it;
 `commit` checks it and, if it passed, adds it to the run's tree. `finish` copies the run's tree and record into a
 tree folder of its own. Jev is reached with TYPESAFE_API_KEY from the environment or `.env`; without it every
@@ -76,7 +77,8 @@ def _parser() -> argparse.ArgumentParser:
     rt.add_argument("run")
     rt.add_argument("--tree", help=f"the tree to start the run from, the first time (default {DEFAULT_TREE})")
     rt.add_argument("--seeds", required=True)
-    rt.add_argument("--lag", default="wall", help="wall (the wall clock, one game at a time) or a number of tics")
+    rt.add_argument("--lag", default="wall", help="wall (the wall clock, one game at a time), a number of tics, or a range "
+                                                  "LO-HI drawn afresh for each decision")
     rt.add_argument("--fill", choices=FILLS, default="hold", help="the keys between the end of one action and the start "
                                                                    "of the next, when a decision takes over 8 tics")
     rt.add_argument("--cadence", choices=CADENCES, default="pipeline", help="ask every 8 tics while the last action plays "
@@ -177,7 +179,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
             return 0
 
         if args.command == "realtime":
-            lag = None if args.lag == "wall" else int(args.lag)
+            lag = None if args.lag == "wall" else tuple(map(int, args.lag.split("-"))) if "-" in args.lag else int(args.lag)
             results = evaluate(run, parse_seeds(args.seeds), lag, args.fill, args.label, cadence=args.cadence,
                                predict=args.predict, track=args.track)
             for r in results:
