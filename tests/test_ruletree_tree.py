@@ -94,7 +94,7 @@ def test_the_shipped_trees_play_on_their_own():
     from system1_doom.ruletree.tree import shipped_trees
 
     assert {"general-9", "general-11", "codex-11"} <= set(shipped_trees())
-    rules = {"general-9": 9, "general-11": 11, "codex-11": 11, "steady-11": 11, "goals-11": 11, "realtime-5": 5, "realtime-6": 6}
+    rules = {"general-9": 9, "general-11": 11, "codex-11": 11, "steady-11": 11, "goals-11": 11, "realtime-5": 5, "realtime-6": 6, "realtime-12": 12}
     for name, n in rules.items():
         tree = load_tree(name)
         assert tree.name == name and sum(1 for nid in tree.nodes if nid not in ("root", "aim")) == n
