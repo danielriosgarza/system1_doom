@@ -153,23 +153,23 @@ answered them, from the recording's `models.json`), The rule tree, and
 Reference. Panels it shares with the rule tree take Laya's wording from
 `content/local/explainers.ts`; nothing on its screens is Jev's.
 
-The fourth tab, **Real time**, is a rule tree Laya walks while the game
-goes on (`docs/DOCUMENTATION.md`, §8.17): the game runs at 35 tics a
-second, each action begins at the first tic after Laya's answers are in,
-and between answers a helper aims at the focus Laya picked, from what is on
-the screen. Its recordings are rule-tree recordings whose `episode.json`
-has `realtime` (the index line `"realtime": true`), and each decision adds
-`observed_tic`, `start_tic`, `walk_ms`, `target`, `after` and `pressed`
-(the keys pressed until the next action began). Its six screens: Watch
-(the rule tree's, with a Timing row and a Helper row under the action),
-The questions, How it plays in real time (from a state to its action,
-the helper and why it is fair, the decisions around this one, this
-recording's settings), Results (from 9 of 81 to 80 of 81 on the real
-clock, the rule writer's loops, Laya retrained on Kev's real-time
-answers, and what a late answer did to the paused tree), The rule tree
-(`realtime-12`) and Reference, at `#realtime/<recording>/<decision>/<screen>`
-with `timing` for the third screen. Its words are in
-`content/realtime/`; nothing on its screens is Jev's.
+The fourth tab, **Real time**, shows Laya playing a rule tree without
+pausing the game (`docs/DOCUMENTATION.md`, §8.17). The game runs at 35
+tics a second, each action starts at the first tic after Laya's answers
+arrive, and between answers a helper turns toward the focus Laya selected,
+using what is on the screen. Its recordings are rule-tree recordings whose
+`episode.json` has `realtime` (the index line `"realtime": true`), and each
+decision adds `observed_tic`, `start_tic`, `walk_ms`, `target`, `after` and
+`pressed` (the keys pressed until the next action started). It has six
+screens: Watch (the rule tree's, with a Timing row and a Helper row under
+the action), The questions, How it plays in real time (from state to
+action, what the helper does, the decisions around this one, this
+recording's settings), Results (from 9 to 80 of the 81 benchmark seeds, the
+rule-writing rounds, Laya's retraining on Kev's real-time answers, and the
+effect of the delay on the original rules), The rule tree (`realtime-12`)
+and Reference, at `#realtime/<recording>/<decision>/<screen>`, with
+`timing` for the third screen. Its text is in `content/realtime/`. Every
+answer in its recordings is Laya's; none is Jev's.
 
 Every screen but Watch shares a timeline like the senses and central's,
 with marks for damage, kills, a death and a miss, and a band under the

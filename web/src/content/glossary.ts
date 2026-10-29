@@ -560,7 +560,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: 'lag',
     aliases: ['late by'],
     meaning:
-      'How many tics after its state was read a decision’s action begins. In real time the game does not wait for the answers, so the action begins at the first tic after they are in: about 5 tics, a seventh of a second, for Laya. Until then the keys of the action before stay pressed.',
+      'The number of tics between reading a decision’s state and starting its action. In real time the game is not paused while Laya answers, so for Laya this is about 5 tics (0.14 s). During that time the keys of the previous action stay pressed.',
     see: [
       { screen: 'timing', panel: 'rtm-steps', label: 'from a state to its action' },
       { screen: 'timing', panel: 'rtm-around', label: 'the lag of the decisions around this one' },
@@ -573,7 +573,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: 'helper',
     aliases: [],
     meaning:
-      'What presses the keys between Laya’s answers in real time. Given the focus Laya picked and the action’s keys, it turns toward the focus at every tic until the crosshair is on it, then presses those keys. It sees only what the player sees, presses only the player’s buttons, and chooses nothing.',
+      'The code that presses the keys between Laya’s answers in real time. At every tic it turns toward the focus Laya selected until the crosshair is on it, then presses the action’s keys. It uses only what is shown on the screen and presses only the player’s buttons. It does not select a target or an action.',
     see: [{ screen: 'timing', panel: 'rtm-helper', label: 'what the helper does' }],
     code: 'ruletree/realtime.py · Helper',
     solutions: ['realtime'],
@@ -583,7 +583,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: 'tap firing',
     aliases: [],
     meaning:
-      'Lifting the trigger between shots. Held down, Doom’s pistol fires every 14 tics but scatters every shot after the first; lifted at the right moment, it fires every 19 tics and each shot goes where it is aimed. The helper taps at a narrow enemy, where aim matters most.',
+      'Releasing the fire button between shots. When the button is held, Doom’s pistol fires every 14 tics, but every shot after the first is spread at random. When it is released and pressed again, the pistol fires every 19 tics and each shot goes where it is aimed. The helper does this when the focus is narrow on the screen, usually a distant enemy.',
     see: [{ screen: 'timing', panel: 'rtm-helper', label: 'what the helper does' }],
     code: 'ruletree/realtime.py · play_realtime',
     solutions: ['realtime'],

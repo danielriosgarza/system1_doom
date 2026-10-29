@@ -1841,22 +1841,23 @@ its words is Jev's. It has six screens too:
   words with Laya and Kev of their own, how the recording was made, and
   the keys.
 
-The fourth tab, **Real time**, is a rule tree Laya walks while the game
-goes on (`realtime.py` above, §15): its recordings are rule-tree
+The fourth tab, **Real time**, shows Laya playing a rule tree without
+pausing the game (`realtime.py` above, §15): its recordings are rule-tree
 recordings with `realtime` in `episode.json` (`export --solution
 rule-tree --tree realtime-12 --tree-decider laya --tree-model
 ruletree-rt-v2 --tree-endpoint http://127.0.0.1:8002/v1/systemone
 --realtime wall`), whose decisions add the tic the state was read
-(`observed_tic`), the tic the action began (`start_tic`), the walk's
+(`observed_tic`), the tic the action started (`start_tic`), the walk's
 time, what the helper aimed at, the rule's `after`, and the keys pressed
-until the next action began (`pressed`). Its six screens: Watch (with a
+until the next action started (`pressed`). It has six screens: Watch (with a
 Timing row and a Helper row under the action), The questions, How it
-plays in real time (`timing`: from a state to its action, the helper and
-why it is fair, the decisions around this one, this recording's
-settings), Results (from 9 of 81 to 80 of 81 on the wall clock, the
-loops, Laya retrained, and the first day's lag sweep, cited from §15),
+plays in real time (`timing`: from state to action, what the helper
+does, the decisions around this one, this recording's
+settings), Results (from 9 to 80 of the 81 benchmark seeds on the wall clock, the
+rule-writing rounds, Laya's retraining, and the first lag sweep, from §15),
 The rule tree (`realtime-12`) and Reference, at
-`#realtime/<recording>/<decision>/<screen>`; none of its words is Jev's.
+`#realtime/<recording>/<decision>/<screen>`. Every answer in its
+recordings is Laya's; none is Jev's.
 
 Its links are `#rules/<recording>/<decision>/<screen>`, and the local
 models' `#local/<recording>/<decision>/<screen>` (the third screen is
@@ -1944,14 +1945,15 @@ label (half its on-screen width, at least 1°) rather than within 3°,
 which is wider than a narrow enemy; `Game.on_screen` gives each label's
 half-width. It never turns back on the very next tic: Doom counts a turn
 key held either way as one long turn and doubles its speed after 5 tics,
-so alternating swung past a 1-pixel enemy for ever. With `--fire
+so turning left and right on alternate tics kept overshooting an enemy 1 pixel wide. With `--fire
 tap-narrow` it lifts the trigger 8 to 11 tics after each shot (it reads
 its own ammunition) at a focus under 2° half-wide: held, the pistol fires
-every 14 tics but every shot after the first scatters (Doom's refire
-spread); lifted at its refire check, it fires every 19 tics on its aim.
+every 14 tics but every shot after the first is spread at random (Doom's
+refire spread); released and pressed again, it fires every 19 tics and
+each shot goes where it is aimed.
 
 **The soft loop in real time** (`rtloop.py`). `rtloop` runs the soft loop
-on games the game did not wait in: each training seed is played at a
+on games played without pausing for the answers: each training seed is played at a
 fixed lag (`--lag`, Laya's 7 tics by default) with the fair helper aiming,
 the decider answering while the game is held, so a slow decider (Kev)
 plays as Laya would. The first failure not yet tried goes to the writer
@@ -2921,8 +2923,8 @@ each decision, 0.2 to 1.5 s):
 | `general-11` | 39 | 2 | 4 | 1 | 0 | 0 |
 | `steady-11` | 33 | 25 | 1 | 0 | 0 | 0 |
 
-Shorter turns and moves safe to hold rescue a reaction time of 0.2 s, at
-some cost paused, and nothing from 0.4 s on. At a lag of 28 tics or more
+Shorter turns and moves that are safe to hold help at a reaction time of
+0.2 s, cost some games when paused, and do not help from 0.4 s on. At a lag of 28 tics or more
 the player stands still through its first reaction time while the two
 nearest enemies fire (seed 9: 30 health lost before its first action at
 tic 35), and every enemy takes several decisions to aim at; the median
@@ -3248,9 +3250,9 @@ from both; the Reference screen names them in one line of history.
 | **Rule tree** | The second solution: a tree of rules Jev walks at every decision (`ruletree/`, §8.17). A tree is a file: rules, focus questions, skills, and each added rule's cornerstone. |
 | **Laya** | Convai Innovations' open-weight decision model (421M parameters), served on the machine that plays by `laya-serve` (`--decider laya`, §8.10). It reads the state as text only. Trained on Kev-27B's answers (`ruletree-kev-v1`), it walks the rule tree in the third solution, Local models, and plays the site's local recordings (§15). |
 | **Kev** | Jared Palmer's open-weight decision model; Kev-27B, a fine-tune of Qwen3.8-27B, answers the rule tree's questions as well as Jev with no training on them (`--decider kev`, served by `tools/kev_thor/serve_thor.py` on the Jetson Thor, §15). Its answers in 100 games on seeds 500–599 were Laya's training examples. |
-| **Lag** | In real time (`ruletree/realtime.py`, §8.17), how many tics after its state was read a decision's action begins: the game does not wait for the answers. About 5 tics on the wall clock for Laya; `--lag N` or `LO-HI` fixes it with the game held during the walk. |
-| **Helper** | What presses the keys between the decider's answers in real time (`realtime.Helper`, `--track screen`): it turns toward the walk's focus every tic until the crosshair is on it (`--aim box`), then presses the action's code; it sees only the labels on screen, its own facing and the pickups seen, `--reflex` tics late, and chooses nothing. |
-| **Tap firing** | The helper lifting the trigger 8 to 11 tics after each shot at a narrow focus (`--fire tap-narrow`): held, the pistol fires every 14 tics with every shot after the first scattered; lifted, every 19 tics on its aim. |
+| **Lag** | In real time (`ruletree/realtime.py`, §8.17), the number of tics between reading a decision's state and starting its action, because the game is not paused while the decider answers. About 5 tics for Laya on the wall clock. `--lag N` or `LO-HI` sets it instead, with the game held during the walk. |
+| **Helper** | The code that presses the keys between the decider's answers in real time (`realtime.Helper`, `--track screen`). At every tic it turns toward the walk's focus until the crosshair is on it (`--aim box`), then presses the action's code. It uses only the labels on screen (`--reflex` tics late), its own facing and the pickups it has seen. It does not select a target or an action. |
+| **Tap firing** | The helper releasing the fire button 8 to 11 tics after each shot when the focus is narrow on the screen (`--fire tap-narrow`). Held, the pistol fires every 14 tics and every shot after the first is spread at random. Released and pressed again, it fires every 19 tics and each shot goes where it is aimed. |
 | **Rule** | A node of the tree: a condition and an action. A rule under another is an exception to it; the walk goes into it when Jev picks its condition (`RuleNode`). |
 | **Condition** | A rule's sentence about what the state shows ("The focus channel says the enemy is more than 400 units away."), offered to Jev as one option of a choice; the program never tests it. |
 | **Walk** | One decision of the rule tree: from the root, "Which of these is true right now?" at each node with children, into the child Jev picks, until it picks `none` or reaches a leaf; that node's action plays (`walk.decide`). |

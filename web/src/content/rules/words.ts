@@ -14,7 +14,7 @@ export const SOLUTION_TITLES: Record<Solution, string> = {
   local:
     'At each decision, Laya, a small model running on the computer that plays and trained on the answers of Kev-27B, answers the questions of a tree of rules that lead to an action. No question goes to Jev.',
   realtime:
-    'Laya plays while the game goes on: it answers a tree of rules in about a tenth of a second, and between its answers a helper aims at the enemy it chose, from what is on the screen. Nothing waits for the answers.',
+    'At each decision, Laya answers the questions of a tree of rules in about a tenth of a second while the game keeps running. Between its answers, a helper aims at the target Laya selected, using what is on the screen.',
 }
 
 /** Who wrote a tree's rules, as the tree names them. */
