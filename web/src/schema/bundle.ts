@@ -327,6 +327,10 @@ export interface BundleIndexEntry {
    * The rule tree that played; None for senses and central
    */
   tree?: string | null
+  /**
+   * A rule tree played without holding the game for the answers
+   */
+  realtime?: boolean
 }
 /**
  * The central instance: its scope and the concern its instructions name.
@@ -1240,6 +1244,48 @@ export interface ProposalTrace {
   admitted_strategy_id?: string | null
 }
 /**
+ * How a real-time recording was played (`realtime.play_realtime`).
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "RealtimeSettings".
+ */
+export interface RealtimeSettings {
+  /**
+   * wall: the game ran at 35 tics a second while the walk ran; fixed: the game was held for the walk, then `lag` tics were played
+   */
+  clock: 'wall' | 'fixed'
+  /**
+   * fixed: the lag in tics, low and high
+   */
+  lag?: number[] | null
+  /**
+   * screen: the fair helper aimed; engine: the helper read the engine
+   */
+  track?: string | null
+  aim?: string | null
+  fire?: string | null
+  /**
+   * Tics the helper sees late
+   */
+  reflex?: number | null
+  /**
+   * Game tics played
+   */
+  tics: number
+  /**
+   * Tics the game fell behind the clock and played at once
+   */
+  late_tics?: number
+  /**
+   * Median tics from a state to its action
+   */
+  lag_median: number
+  /**
+   * Median time of a walk, in milliseconds
+   */
+  walk_ms_median: number
+}
+/**
  * Jev's answer to one question of a walk, or a miss.
  *
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
@@ -1472,7 +1518,7 @@ export interface RuleNode {
   id: string
   parent: string | null
   condition: string | null
-  action: SkillCall | string
+  action: SkillCallDict | string
   focus?: Focus | null
   children?: string[]
   cornerstones?: Cornerstone[]
@@ -1484,14 +1530,18 @@ export interface RuleNode {
   }
 }
 /**
- * Go on walking in a skill; its rules' partial actions are completed by `then`.
+ * A skill call as tree.json holds it: `after` only when the rule names one.
  *
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
  * via the `definition` "SkillCall".
+ *
+ * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
+ * via the `definition` "SkillCallDict".
  */
-export interface SkillCall {
+export interface SkillCallDict {
   skill: string
   then: string
+  after?: string
 }
 /**
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema
@@ -1563,6 +1613,30 @@ export interface RuleTreeDecision {
    * The furthest point reached along the corridor so far
    */
   max_x: number
+  /**
+   * Real time: the tic the state was read at
+   */
+  observed_tic?: number | null
+  /**
+   * Real time: the tic the action began at, once the answers were in
+   */
+  start_tic?: number | null
+  /**
+   * Real time: how long the walk took, in milliseconds
+   */
+  walk_ms?: number | null
+  /**
+   * Real time: what the helper aimed at, as the focus named it
+   */
+  target?: string | null
+  /**
+   * Real time: the code the rule plays once its focus is dead
+   */
+  after?: string | null
+  /**
+   * Real time: the keys pressed from this action's start to the next one's (the helper's turns and taps included)
+   */
+  pressed?: ActionSegment[]
   /**
    * died, timed out, or stalled (less than 48 units further in 24 decisions)
    */
@@ -1661,6 +1735,10 @@ export interface RuleTreeEpisodeMeta {
   files: string[]
   package_version?: string
   recorded_at: string
+  /**
+   * Played without holding the game for the answers; None for a recording that held it
+   */
+  realtime?: RealtimeSettings | null
 }
 /**
  * This interface was referenced by `System1DoomEpisodeBundle`'s JSON-Schema

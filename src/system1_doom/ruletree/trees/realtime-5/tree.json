@@ -1,0 +1,213 @@
+{
+ "name": "realtime-5",
+ "writer": "claude",
+ "nodes": {
+  "root": {
+   "id": "root",
+   "parent": null,
+   "condition": null,
+   "action": "F001",
+   "focus": null,
+   "children": [
+    "r1",
+    "r3"
+   ],
+   "cornerstones": [],
+   "provenance": {
+    "why": "For any reaction time: an action is held until the next one starts, so every action must be safe to hold for a second or more. A random code may hold a turn and spin the player round; walking forward and firing does not.",
+    "writer": "claude",
+    "from": "general-11 root"
+   }
+  },
+  "r1": {
+   "id": "r1",
+   "parent": "root",
+   "condition": "The threats list shows at least one enemy.",
+   "action": {
+    "skill": "aim",
+    "then": "0001",
+    "after": "F001"
+   },
+   "focus": {
+    "from": [
+     "threats"
+    ],
+    "question": "Which of these enemies is the biggest danger to me right now?"
+   },
+   "children": [
+    "r2",
+    "r11"
+   ],
+   "cornerstones": [],
+   "provenance": {
+    "why": "For a slow player: an order outlives its goal when the next decision is a second away, and a player told to stand and fire at an enemy already dead stands still while the next one shoots. The rule says what to do once its focus is gone: walk on toward the goal, firing.",
+    "writer": "claude",
+    "from": "steady-11 r1"
+   }
+  },
+  "r2": {
+   "id": "r2",
+   "parent": "r1",
+   "condition": "The focus channel says the enemy is more than 400 units away.",
+   "action": {
+    "skill": "aim",
+    "then": "F001",
+    "after": "F001"
+   },
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "For a slow player: an order outlives its goal when the next decision is a second away, and a player told to stand and fire at an enemy already dead stands still while the next one shoots. The rule says what to do once its focus is gone: walk on toward the goal, firing.",
+    "writer": "claude",
+    "from": "steady-11 r2"
+   }
+  },
+  "r3": {
+   "id": "r3",
+   "parent": "root",
+   "condition": "The threats list says no enemy is visible.",
+   "action": {
+    "skill": "aim",
+    "then": "F000"
+   },
+   "focus": {
+    "from": [
+     "landmarks"
+    ],
+    "question": "Which of these is the goal I am trying to reach?"
+   },
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "general rewrite of the v2 tree",
+    "writer": "claude"
+   }
+  },
+  "aim": {
+   "id": "aim",
+   "parent": null,
+   "condition": null,
+   "action": "then",
+   "focus": null,
+   "children": [],
+   "cornerstones": [],
+   "provenance": {
+    "why": "In real time the helper turns toward the focus every tic, so the skill needs no turning rules: it faces the focus, then does the caller's action.",
+    "writer": "claude",
+    "from": "goals-11 aim"
+   }
+  },
+  "r11": {
+   "id": "r11",
+   "parent": "r1",
+   "condition": "The outgoing channel says the last 5 or more decisions in which I fired hit nothing.",
+   "action": {
+    "skill": "aim",
+    "then": "F001",
+    "after": "F001"
+   },
+   "focus": null,
+   "children": [
+    "r12"
+   ],
+   "cornerstones": [
+    {
+     "seed": 14,
+     "prefix": [
+      "00L0:7+0001:1",
+      "00L0:7+0001:1",
+      "00L0:3+0001:5",
+      "00R0:7+0001:1",
+      "00R0:7+0001:1",
+      "00R0:3+0001:5",
+      "00L0:7+F000:1",
+      "F000",
+      "F000",
+      "F000",
+      "00L0:5+F001:3",
+      "F001",
+      "00R0:7+0001:1",
+      "0001",
+      "00R0:3+0001:5",
+      "0001",
+      "0001",
+      "0001",
+      "00L0:7+0001:1",
+      "00L0:3+0001:5",
+      "0001",
+      "0001",
+      "0001",
+      "0001"
+     ],
+     "state_text": "[goal]\nYou are the player in Doom's Deadly Corridor. Reach the green armor at the far end of the corridor alive. Enemies stand along both sides. Each action is held for about a quarter of a second, then you choose again.\n\n[vitals]\nhealth 64, armor 0, ammo 43, weapon pistol\n\n[threats]\n1 enemy visible, nearest first:\n- Zombieman at distance 344, 2 deg right, size 1x1 px\n\n[incoming]\ndamage taken since the last decision 0; consecutive decisions under fire 0\n\n[outgoing]\ndamage dealt since the last decision 0, hits 0, kills 0; the last 6 decisions in which you fired hit nothing\n\n[pickups]\n2 pickups visible, nearest first:\n- Chaingun (weapon) at distance 354, 15 deg right\n- GreenArmor (armor) at distance 1044, 7 deg right\n\n[landmarks]\n4 pickups seen this episode and not picked up, where each lies now from your position and facing, nearest first:\n- Shotgun (weapon): 105 away, 142 deg left, behind you, out of view, last seen 14 decisions ago; reward rose as you got closer (agreement +0.57 over 13 moves)\n- Clip (ammo): 125 away, 155 deg right, behind you, out of view, last seen 15 decisions ago; no clear link between its distance and reward (agreement +0.37 over 13 moves)\n- Chaingun (weapon): 354 away, 19 deg right, in view; no reward link yet\n- GreenArmor (armor): 1044 away, 9 deg right, in view; reward rose as you got closer (agreement +1.00 over 15 moves)\n\n[geometry]\nwall distance ahead 144, left 24, right 64; still\n\n[position]\nx 268, y 11, facing 9 deg; 6 sectors discovered this episode\n\n[progress]\ndecisions so far 24, reward so far 267.9, reward from the last decision +0.0, kills 3, last displacement 0 units, stall streak 10\n\n[history]\nlast 6 primitives executed, oldest first: turn left for 7 tics, then fire for 1 tics, turn left for 3 tics, then fire for 5 tics, fire, fire, fire, fire\nlast 3 decisions, oldest first:\n- tick=22 act=fire hp=64 r=-0.1\n- tick=23 act=fire hp=64 r=+0.0\n- tick=24 act=fire hp=64 r=+0.0",
+     "frame": "cornerstones/r11-0.jpg",
+     "expect": "r1/r11/aim",
+     "event_at": 36,
+     "horizon": 60,
+     "standing": [
+      1,
+      1,
+      34.0,
+      1244.0
+     ]
+    }
+   ],
+   "provenance": {
+    "why": "For a slow player: an order outlives its goal when the next decision is a second away, and a player told to stand and fire at an enemy already dead stands still while the next one shoots. The rule says what to do once its focus is gone: walk on toward the goal, firing.",
+    "writer": "claude",
+    "from": "steady-11 r11"
+   }
+  },
+  "r12": {
+   "id": "r12",
+   "parent": "r11",
+   "condition": "The focus channel shows the enemy at least 6 pixels wide.",
+   "action": {
+    "skill": "aim",
+    "then": "0001",
+    "after": "F001"
+   },
+   "focus": null,
+   "children": [],
+   "cornerstones": [
+    {
+     "seed": 19,
+     "prefix": [
+      "00L0:7+0001:1",
+      "00L0:7+0001:1",
+      "00L0:3+0001:5",
+      "00R0:7+0001:1",
+      "00R0:7+0001:1",
+      "00R0:3+0001:5",
+      "00L0:7+F000:1",
+      "F000",
+      "F000",
+      "F000",
+      "00L0:5+F001:3",
+      "F001",
+      "00R0:7+0001:1",
+      "0001",
+      "00R0:3+0001:5"
+     ],
+     "state_text": "[goal]\nYou are the player in Doom's Deadly Corridor. Reach the green armor at the far end of the corridor alive. Enemies stand along both sides. Each action is held for about a quarter of a second, then you choose again.\n\n[vitals]\nhealth 76, armor 0, ammo 48, weapon pistol\n\n[threats]\n2 enemies visible, nearest first:\n- Zombieman at distance 336, 20 deg left, size 5x27 px\n- ChaingunGuy at distance 339, 1 deg left, size 9x32 px, under the crosshair\n\n[incoming]\ndamage taken since the last decision 0; consecutive decisions under fire 0\n\n[outgoing]\ndamage dealt since the last decision 0, hits 0, kills 0; the last 5 decisions in which you fired hit nothing\n\n[pickups]\n1 pickup visible, nearest first:\n- GreenArmor (armor) at distance 1036, 10 deg left\n\n[landmarks]\n3 pickups seen this episode and not picked up, where each lies now from your position and facing, nearest first:\n- Shotgun (weapon): 128 away, 166 deg left, behind you, out of view, last seen 6 decisions ago; no clear link between its distance and reward (agreement +0.45 over 8 moves)\n- Clip (ammo): 133 away, 130 deg right, behind you, out of view, last seen 6 decisions ago; no clear link between its distance and reward (agreement +0.45 over 8 moves)\n- GreenArmor (armor): 1036 away, 12 deg left, in view; reward rose as you got closer (agreement +1.00 over 10 moves)\n\n[geometry]\nwall distance ahead 163, left 46, right 29; moving\n\n[position]\nx 277, y 7, facing 348 deg; 6 sectors discovered this episode\n\n[progress]\ndecisions so far 15, reward so far 276.6, reward from the last decision +7.7, kills 2, last displacement 8 units, stall streak 1\n\n[history]\nlast 6 primitives executed, oldest first: walk forward, turn left for 5 tics, then walk forward + fire for 3 tics, walk forward + fire, turn right for 7 tics, then fire for 1 tics, fire, turn right for 3 tics, then fire for 5 tics\nlast 3 decisions, oldest first:\n- tick=13 act=turn right for 7 tics, then fire for 1 tics hp=76 r=+37.0\n- tick=14 act=fire hp=76 r=+16.8\n- tick=15 act=turn right for 3 tics, then fire for 5 tics hp=76 r=+7.7",
+     "frame": "cornerstones/r12-0.jpg",
+     "expect": "r1/r11/r12/aim",
+     "event_at": 18,
+     "horizon": 42,
+     "standing": [
+      1,
+      0,
+      16.0,
+      987.0
+     ]
+    }
+   ],
+   "provenance": {
+    "why": "For a slow player: an order outlives its goal when the next decision is a second away, and a player told to stand and fire at an enemy already dead stands still while the next one shoots. The rule says what to do once its focus is gone: walk on toward the goal, firing.",
+    "writer": "claude",
+    "from": "steady-11 r12"
+   }
+  }
+ }
+}

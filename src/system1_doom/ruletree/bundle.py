@@ -11,6 +11,10 @@
 
 The episode is played from the start to its end (cleared, died or timed out), with fresh answers. A stall does not
 stop it, as it stops a game of the soft loop; the decision where the soft loop would have stopped is in the result.
+
+A real-time recording (`record_realtime_episode`) is the same folder for a game the game did not wait in
+(`realtime.py`): episode.json names how it was played (`realtime`), and each decision also says when its state was
+read and its action began, what the helper aimed at, and the keys pressed until the next action began.
 """
 
 from __future__ import annotations
@@ -121,6 +125,13 @@ class RuleTreeDecision(BaseModel):
     angle: Optional[int] = None
     reward: float
     max_x: int = Field(description="The furthest point reached along the corridor so far")
+    observed_tic: Optional[int] = Field(default=None, description="Real time: the tic the state was read at")
+    start_tic: Optional[int] = Field(default=None, description="Real time: the tic the action began at, once the answers were in")
+    walk_ms: Optional[float] = Field(default=None, description="Real time: how long the walk took, in milliseconds")
+    target: Optional[str] = Field(default=None, description="Real time: what the helper aimed at, as the focus named it")
+    after: Optional[str] = Field(default=None, description="Real time: the code the rule plays once its focus is dead")
+    pressed: List[ActionSegment] = Field(default_factory=list, description="Real time: the keys pressed from this "
+                                         "action's start to the next one's (the helper's turns and taps included)")
     events: List[str] = Field(description="died, timed out, or stalled (less than 48 units further in 24 decisions)")
     finished: bool
     died: bool
@@ -150,6 +161,24 @@ class RuleTreeFrames(BaseModel):
     width: int = 320
     height: int = 240
     end_frame: Optional[str] = None
+
+
+class RealtimeSettings(BaseModel):
+    """How a real-time recording was played (`realtime.play_realtime`)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    clock: Literal["wall", "fixed"] = Field(description="wall: the game ran at 35 tics a second while the walk ran; fixed: "
+                                            "the game was held for the walk, then `lag` tics were played")
+    lag: Optional[List[int]] = Field(default=None, description="fixed: the lag in tics, low and high")
+    track: Optional[str] = Field(default=None, description="screen: the fair helper aimed; engine: the helper read the engine")
+    aim: Optional[str] = None
+    fire: Optional[str] = None
+    reflex: Optional[int] = Field(default=None, description="Tics the helper sees late")
+    tics: int = Field(description="Game tics played")
+    late_tics: int = Field(default=0, description="Tics the game fell behind the clock and played at once")
+    lag_median: float = Field(description="Median tics from a state to its action")
+    walk_ms_median: float = Field(description="Median time of a walk, in milliseconds")
 
 
 class RuleTreeEpisodeMeta(BaseModel):
@@ -186,6 +215,8 @@ class RuleTreeEpisodeMeta(BaseModel):
     files: List[str]
     package_version: str = Field(default_factory=_package_version)
     recorded_at: str
+    realtime: Optional[RealtimeSettings] = Field(default=None, description="Played without holding the game for the "
+                                                 "answers; None for a recording that held it")
 
 
 def recording_game() -> Game:
@@ -324,6 +355,153 @@ def record_episode(
         frames=RuleTreeFrames(end_frame=end_frame),
         files=files,
         recorded_at=datetime.now(timezone.utc).isoformat(),
+    )
+    (out / "episode.json").write_text(meta.model_dump_json(indent=2), encoding="utf-8")
+    return meta
+
+
+def _tics(windows: List[Dict[str, Any]]) -> List[str]:
+    """The code pressed at every tic of a real-time game, from its stretches of 8 tics."""
+    return [c for w in windows for c, n in segments(w["code"], partial=True) for _ in range(n)]
+
+
+def _window_at(windows: List[Dict[str, Any]], tic: int) -> Optional[Dict[str, Any]]:
+    done = [w for w in windows if w["tic"] <= tic]
+    return done[-1] if done else None
+
+
+def _runs(codes: List[str]) -> List[ActionSegment]:
+    out: List[List[Any]] = []
+    for c in codes:
+        if out and out[-1][0] == c:
+            out[-1][1] += 1
+        else:
+            out.append([c, 1])
+    return [ActionSegment(code=c, tics=n, words=describe_code(c)) for c, n in out]
+
+
+def _realtime_decisions(record: Dict[str, Any]) -> List[RuleTreeDecision]:
+    """The decisions of a real-time game, each with what followed until the next one's state was read."""
+    windows, decs = record["windows"], record["decisions"]
+    tics, last = _tics(windows), windows[-1]
+    out = []
+    for k, d in enumerate(decs):
+        final = k == len(decs) - 1
+        until = record["tics"] if final else decs[k + 1]["observed"]
+        w0, w1 = _window_at(windows, d["observed"]), (last if final else _window_at(windows, until))
+        h0 = w0["health_after"] if w0 else 100.0
+        h1 = w1["health_after"] if w1 else h0
+        between = [w for w in windows if d["observed"] < w["tic"] <= until or (final and w is last)]
+        next_start = record["tics"] if final else decs[k + 1]["start"]
+        later = w1 or {}
+        rec = {
+            **d, "text": d["text"], "health_before": h0, "health_after": h1, "armor": later.get("armor"),
+            "kills": later.get("kills"), "x": later.get("x"), "y": later.get("y"), "angle": later.get("angle"),
+            "reward": round(sum(w["reward"] for w in between), 1), "max_x": (w1 or {"max_x": 0})["max_x"],
+            "events": sorted({e for w in between for e in w["events"]}), "finished": bool(final and last["finished"]),
+            "died": bool(final and last.get("died")), "cleared": bool(final and last.get("cleared")),
+        }
+        target = None
+        if d.get("target"):
+            picks = [s.get("focus_line") or s.get("pick") for s in d["steps"] if s["kind"] == "focus" and s.get("pick")]
+            target = picks[-1] if picks else f"{d['target'][0]} {d['target'][1]}"
+        base = _decision(rec)
+        out.append(base.model_copy(update={
+            "observed_tic": d["observed"], "start_tic": d["start"], "walk_ms": round(1000 * d["seconds"], 1),
+            "target": target, "after": d.get("after"), "pressed": _runs(tics[d["start"]:next_start]),
+        }))
+    return out
+
+
+def record_realtime_episode(
+    tree: RuleTree,
+    seed: int,
+    out: Path,
+    client: D1UltraClient,
+    settings: Dict[str, Any],
+    name: Optional[str] = None,
+    title: Optional[str] = None,
+    budget: float = DEFAULT_BUDGET,
+    game_factory: Callable[[], Game] = recording_game,
+) -> RuleTreeEpisodeMeta:
+    """Play one seeded episode in real time (`settings` as `realtime.play_realtime` takes them; `lag` None is the wall
+    clock) and write it as a recording in `out`."""
+    from .realtime import play_realtime  # realtime imports this package's game; imported here to keep bundle light
+
+    out = Path(out)
+    if out.exists() and any(out.iterdir()):
+        raise FileExistsError(f"{out} is not empty; choose another --out or remove it first")
+    jev = Jev(client, AnswerBook(), budget)
+    game = game_factory()
+    t0 = time.monotonic()
+    try:
+        record = play_realtime(game, tree, jev, seed, keep_text=True, keep_frames=True, stop_on_event=False, **settings)
+        last_screen = getattr(game, "last_screen", None)
+    finally:
+        game.close()
+    seconds = round(time.monotonic() - t0, 1)
+
+    (out / FRAME_DIR).mkdir(parents=True, exist_ok=True)
+    decisions = _realtime_decisions(record)
+    for d, raw in zip(decisions, record["decisions"]):
+        (out / d.frame).write_bytes(base64.b64decode(raw["frame"]))
+    end_frame = None
+    if last_screen is not None:
+        _write_jpeg(last_screen, out / END_FRAME)
+        end_frame = END_FRAME
+    (out / DECISIONS_FILE).write_text("".join(d.model_dump_json() + "\n" for d in decisions), encoding="utf-8")
+    home = tree._home
+    save_tree(tree.clone(), out)
+    files = [DECISIONS_FILE, "tree.json"]
+    if home is not None and (home / BUILD_FILE).is_file():
+        shutil.copyfile(home / BUILD_FILE, out / BUILD_FILE)
+        files.append(BUILD_FILE)
+
+    last = record["windows"][-1]
+    stalls = [d.decision for d in decisions if "stalled" in d.events]
+    lag = settings.get("lag")
+    lags = sorted(d["lag"] for d in record["decisions"])
+    walks = sorted(1000 * d["seconds"] for d in record["decisions"])
+    events = last["events"]
+    meta = RuleTreeEpisodeMeta(
+        name=name or out.name,
+        title=title or f"deadly corridor in real time, rule tree {tree.name}, seed {seed}",
+        scenario=SCENARIO,
+        seed=seed,
+        decider=client.decider.name,
+        model=client.model,
+        models=client.models_answered(),
+        tree=tree.name,
+        tree_writer=tree.writer,
+        rules=rule_count(tree),
+        call_budget_sec=budget,
+        result=RuleTreeResult(
+            outcome=events[0] if events and events[0] in ("died", "timed out") else ("cleared" if last.get("cleared") else "died"),
+            cleared=bool(last.get("cleared")),
+            died=bool(last.get("died")),
+            decisions=len(decisions),
+            health=last["health_after"],
+            kills=next((w["kills"] for w in reversed(record["windows"]) if w.get("kills") is not None), 0.0),
+            reward=round(sum(w["reward"] for w in record["windows"]), 1),
+            max_x=last["max_x"],
+            stalled_at=stalls[0] if stalls else None,
+        ),
+        calls=sum(d.calls for d in decisions),
+        cost=round(sum(d.cost for d in decisions), 9),
+        misses=sum(1 for d in decisions for s in d.steps if s.answer is not None and s.answer.miss),
+        decision_count=len(decisions),
+        seconds=seconds,
+        frames=RuleTreeFrames(end_frame=end_frame),
+        files=files,
+        recorded_at=datetime.now(timezone.utc).isoformat(),
+        realtime=RealtimeSettings(
+            clock="wall" if lag is None else "fixed",
+            lag=None if lag is None else ([lag, lag] if isinstance(lag, int) else list(lag)),
+            track=settings.get("track"), aim=settings.get("aim"), fire=settings.get("fire"), reflex=settings.get("reflex"),
+            tics=record["tics"], late_tics=record["late_tics"],
+            lag_median=float(lags[len(lags) // 2]) if lags else 0.0,
+            walk_ms_median=round(walks[len(walks) // 2], 1) if walks else 0.0,
+        ),
     )
     (out / "episode.json").write_text(meta.model_dump_json(indent=2), encoding="utf-8")
     return meta

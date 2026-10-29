@@ -24,20 +24,23 @@ import type { BundleIndexEntry } from './schema/bundle'
 export type Theme = 'dark' | 'light'
 
 /**
- * The three ways this package plays: the senses and central, the rule tree walked by Jev, and the same rule tree
- * walked by a model on the machine that plays (Laya, trained on Kev's answers).
+ * The four ways this package plays: the senses and central, the rule tree walked by Jev, the same rule tree walked by
+ * a model on the machine that plays (Laya, trained on Kev's answers), and a rule tree Laya walks while the game goes
+ * on, a helper aiming between its answers.
  */
-export type Solution = 'senses' | 'rules' | 'local'
+export type Solution = 'senses' | 'rules' | 'local' | 'realtime'
 export type SensesScreen = 'watch' | 'instances' | 'slow' | 'learning' | 'menu' | 'reference'
 export type RulesScreen = 'watch' | 'questions' | 'written' | 'results' | 'tree' | 'reference'
 export type LocalScreen = 'watch' | 'questions' | 'trained' | 'results' | 'tree' | 'reference'
-export type Screen = SensesScreen | RulesScreen | LocalScreen
+export type RealtimeScreen = 'watch' | 'questions' | 'timing' | 'results' | 'tree' | 'reference'
+export type Screen = SensesScreen | RulesScreen | LocalScreen | RealtimeScreen
 
 /** The side tab's tabs, in its order. */
 export const SOLUTIONS: Array<{ id: Solution; label: string }> = [
   { id: 'senses', label: 'Senses and central' },
   { id: 'rules', label: 'Rule tree' },
   { id: 'local', label: 'Local models' },
+  { id: 'realtime', label: 'Real time' },
 ]
 
 /** Whether a solution plays a rule tree: its recordings are rule-tree recordings (`data/rules.ts`). */
@@ -73,12 +76,34 @@ export const LOCAL_SCREENS: Array<{ id: LocalScreen; label: string }> = [
   { id: 'reference', label: 'Reference' },
 ]
 
+/** Real time's screens, at the same positions; the third tells how the game is played without waiting. */
+export const REALTIME_SCREENS: Array<{ id: RealtimeScreen; label: string }> = [
+  { id: 'watch', label: 'Watch' },
+  { id: 'questions', label: 'The questions' },
+  { id: 'timing', label: 'How it plays in real time' },
+  { id: 'results', label: 'Results' },
+  { id: 'tree', label: 'The rule tree' },
+  { id: 'reference', label: 'Reference' },
+]
+
 export const screensOf = (solution: Solution): Array<{ id: Screen; label: string }> =>
-  solution === 'rules' ? RULE_SCREENS : solution === 'local' ? LOCAL_SCREENS : SCREENS
+  solution === 'rules'
+    ? RULE_SCREENS
+    : solution === 'local'
+      ? LOCAL_SCREENS
+      : solution === 'realtime'
+        ? REALTIME_SCREENS
+        : SCREENS
 
 /** The recordings of a solution in the index. */
 export const entriesOf = (solution: Solution, index: EpisodeIndex | null | undefined): BundleIndexEntry[] =>
-  (solution === 'rules' ? index?.rules : solution === 'local' ? index?.local : index?.episodes) ?? []
+  (solution === 'rules'
+    ? index?.rules
+    : solution === 'local'
+      ? index?.local
+      : solution === 'realtime'
+        ? index?.realtime
+        : index?.episodes) ?? []
 
 const hasScreen = (solution: Solution, screen: string | undefined): screen is Screen =>
   screensOf(solution).some((s) => s.id === screen)
@@ -165,7 +190,10 @@ let themePicked = saved.theme === 'light' || saved.theme === 'dark'
 
 let state: AppState = {
   index: null,
-  solution: saved.solution === 'rules' || saved.solution === 'local' ? saved.solution : 'senses',
+  solution:
+    saved.solution === 'rules' || saved.solution === 'local' || saved.solution === 'realtime'
+      ? saved.solution
+      : 'senses',
   bundle: null,
   rules: null,
   loading: true,
@@ -230,7 +258,8 @@ export function openName(s: AppState = state): string | null {
 // ---------------------------------------------------------------------------------------------
 // The URL hash: `#<episode name>/<tick>/<screen>`; without a screen it means The instances, so a link to a
 // decision opens that decision. `#live/<screen>` follows the live episode, whichever it is; plain `#live`
-// lands on Watch. The rule tree's are `#rules/<episode name>/<decision>/<screen>`, the local models'
+// lands on Watch. The rule tree's are `#rules/<episode name>/<decision>/<screen>`, the local models' (and real time's,
+// `#realtime/...`)
 // `#local/<episode name>/<decision>/<screen>`; without a screen they mean The questions. While a recording plays, the hash keeps the tick it started from and is written when playback
 // stops: browsers limit how often a page may rewrite its address, and real time is more than four decisions a
 // second.
@@ -238,6 +267,7 @@ export function openName(s: AppState = state): string | null {
 const LIVE_HASH = 'live'
 const RULES_HASH = 'rules'
 const LOCAL_HASH = 'local'
+const REALTIME_HASH = 'realtime'
 
 /** The viewer asked the system for less motion: nothing plays on its own, and nothing fades. */
 export function prefersReducedMotion(): boolean {
@@ -258,7 +288,14 @@ interface Wanted {
 
 function readHash(): Wanted {
   const parts = decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/')
-  const tree: Solution | null = parts[0] === RULES_HASH ? 'rules' : parts[0] === LOCAL_HASH ? 'local' : null
+  const tree: Solution | null =
+    parts[0] === RULES_HASH
+      ? 'rules'
+      : parts[0] === LOCAL_HASH
+        ? 'local'
+        : parts[0] === REALTIME_HASH
+          ? 'realtime'
+          : null
   const [episode, tick, screen] = tree ? parts.slice(1) : parts[0] === LIVE_HASH ? [LIVE_HASH, '', parts[1]] : parts
   const parsed = tick === undefined || tick === '' ? NaN : Number(tick)
   const solution: Solution | null = tree ?? (episode ? 'senses' : null)
@@ -276,7 +313,7 @@ function writeHash(push = false): void {
   let hash: string
   if (playsTree(solution)) {
     if (!rules) return
-    const head = solution === 'local' ? LOCAL_HASH : RULES_HASH
+    const head = solution === 'local' ? LOCAL_HASH : solution === 'realtime' ? REALTIME_HASH : RULES_HASH
     hash = `#${head}/${encodeURIComponent(rules.name)}/${rules.decisions[tickIndex]?.decision ?? 0}/${screen}`
   } else {
     if (!bundle) return
@@ -779,7 +816,7 @@ function showScreen(solution: Solution, screen: Screen): void {
 export function onHashChange(): void {
   const wanted = readHash()
   if (!wanted.episode) return
-  if (wanted.solution === 'rules' || wanted.solution === 'local') {
+  if (wanted.solution === 'rules' || wanted.solution === 'local' || wanted.solution === 'realtime') {
     const before = state.solution
     showScreen(wanted.solution, wanted.screen ?? 'questions')
     const { rules } = state

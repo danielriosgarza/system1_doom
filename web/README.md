@@ -19,9 +19,9 @@ first below, and **Rule tree**, where Jev walks a tree of plain-language
 rules at each decision and the rules were written between games by the
 soft loop (`docs/DOCUMENTATION.md`, §8.17).
 
-**Online:** <https://danielriosgarza.github.io/system1_doom/>, the 14
+**Online:** <https://danielriosgarza.github.io/system1_doom/>, the 22
 shipped recordings: nine of the senses and central, five of the rule
-tree. Live mode is not there: a static site cannot stream, so it runs on
+tree, four of the local models and four in real time. Live mode is not there: a static site cannot stream, so it runs on
 your machine (below).
 
 ## Run it
@@ -153,6 +153,24 @@ answered them, from the recording's `models.json`), The rule tree, and
 Reference. Panels it shares with the rule tree take Laya's wording from
 `content/local/explainers.ts`; nothing on its screens is Jev's.
 
+The fourth tab, **Real time**, shows Laya playing a rule tree without
+pausing the game (`docs/DOCUMENTATION.md`, §8.17). The game runs at 35
+tics a second, each action starts at the first tic after Laya's answers
+arrive, and between answers a helper turns toward the focus Laya selected,
+using what is on the screen. Its recordings are rule-tree recordings whose
+`episode.json` has `realtime` (the index line `"realtime": true`), and each
+decision adds `observed_tic`, `start_tic`, `walk_ms`, `target`, `after` and
+`pressed` (the keys pressed until the next action started). It has six
+screens: Watch (the rule tree's, with a Timing row and a Helper row under
+the action), The questions, How it plays in real time (from state to
+action, what the helper does, the decisions around this one, this
+recording's settings), Results (from 9 to 80 of the 81 benchmark seeds, the
+rule-writing rounds, Laya's retraining on Kev's real-time answers, and the
+effect of the delay on the original rules), The rule tree (`realtime-12`)
+and Reference, at `#realtime/<recording>/<decision>/<screen>`, with
+`timing` for the third screen. Its text is in `content/realtime/`. Every
+answer in its recordings is Laya's; none is Jev's.
+
 Every screen but Watch shares a timeline like the senses and central's,
 with marks for damage, kills, a death and a miss, and a band under the
 decisions coloured by the rule picked at the top of the tree. Links are
@@ -261,9 +279,9 @@ finds no `live/status.json` and is the recordings only.
 ```bash
 npm run lint         # oxlint, warnings fail
 npx prettier --check src e2e
-npm test             # Vitest, 92 tests: the loader (schema 1 refused), the strip and instance readings, System 2's records, learning, live events, playback, the rule tree's recordings, the local models' answers, the glossary against the docs and the code
+npm test             # Vitest, 94 tests: the loader (schema 1 refused), the strip and instance readings, System 2's records, learning, live events, playback, the rule tree's recordings, the local models' answers, the real-time recordings apart in the index, the glossary against the docs and the code
 npm run build        # type-check and production build into dist/
-npm run e2e          # Playwright, 49 tests: Watch, The instances (verbatim evidence, out-of-scope channels absent), the slow system's history test table, Learning, Growing the menu, Reference, phone width, the top bar, live mode, the shipped recordings, the side tab's three tabs, the rule tree's six screens, the local models' six
+npm run e2e          # Playwright, 53 tests: Watch, The instances (verbatim evidence, out-of-scope channels absent), the slow system's history test table, Learning, Growing the menu, Reference, phone width, the top bar, live mode, the shipped recordings, the side tab's four tabs, the rule tree's six screens, the local models' six, real time's six
 ```
 
 The unit tests and most browser tests read

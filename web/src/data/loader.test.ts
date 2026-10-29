@@ -38,6 +38,31 @@ describe('loadIndex', () => {
     expect(loaded.rules?.map((e) => e.name)).toEqual(['rules-corridor-9'])
   })
 
+  it('lists the local models’ recordings, and the real-time ones apart from both', async () => {
+    const index = JSON.parse(await readFile(`${FIXTURES}episodes/index.json`, 'utf8')) as {
+      episodes: BundleIndexEntry[]
+    }
+    const [entry] = index.episodes
+    if (!entry) throw new Error('the fixture index lists no recording')
+    const tree = { ...entry, solution: 'rule-tree' as const }
+    const rules: BundleIndexEntry = { ...tree, name: 'rules-corridor-9', tree: 'general-11' }
+    const local: BundleIndexEntry = { ...tree, name: 'local-corridor-9', tree: 'general-11', decider: 'laya' }
+    const realtime: BundleIndexEntry = {
+      ...tree,
+      name: 'realtime-corridor-9',
+      tree: 'realtime-12',
+      decider: 'laya',
+      realtime: true,
+    }
+    const fetcher = diskFetcher({
+      'episodes/index.json': JSON.stringify({ ...index, episodes: [entry, rules, local, realtime] }),
+    })
+    const loaded = await loadIndex('episodes', fetcher)
+    expect(loaded.rules?.map((e) => e.name)).toEqual(['rules-corridor-9'])
+    expect(loaded.local?.map((e) => e.name)).toEqual(['local-corridor-9'])
+    expect(loaded.realtime?.map((e) => e.name)).toEqual(['realtime-corridor-9'])
+  })
+
   it('refuses a schema 1 index, saying it is the old architecture and how to record again', async () => {
     const fetcher = diskFetcher({ 'episodes/index.json': JSON.stringify({ schema_version: 1, episodes: [] }) })
     const error = await loadIndex('episodes', fetcher).catch((e: unknown) => e)

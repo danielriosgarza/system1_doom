@@ -19,7 +19,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer
+from typing_extensions import Required, TypedDict
 
 from .codes import COMBOS, RANDOM, THEN, ActionError, describe, segments
 
@@ -41,13 +42,38 @@ class Focus(BaseModel):
     question: str
 
 
+class SkillCallDict(TypedDict, total=False):
+    """A skill call as tree.json holds it: `after` only when the rule names one."""
+
+    skill: Required[str]
+    then: Required[str]
+    after: str
+
+
 class SkillCall(BaseModel):
-    """Go on walking in a skill; its rules' partial actions are completed by `then`."""
+    """Go on walking in a skill; its rules' partial actions are completed by `then`. `after`, for real-time play
+    with a tracking helper (realtime.py), is the code played once the focus is gone (an enemy dead), turned toward
+    the goal the walk last focused on; paused play ignores it."""
 
     model_config = ConfigDict(frozen=True)
 
     skill: str
     then: str
+    after: Optional[str] = None
+
+    @field_validator("after")
+    @classmethod
+    def _one_code(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in COMBOS:
+            raise ValueError(f"after is one of the 54 codes, not {v!r}")
+        return v
+
+    @model_serializer(mode="wrap")
+    def _without_after(self, handler: Any) -> SkillCallDict:
+        data = handler(self)
+        if isinstance(data, dict) and data.get("after") is None:
+            data.pop("after", None)
+        return data
 
 
 Action = Union[SkillCall, str]

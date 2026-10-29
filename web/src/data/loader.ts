@@ -21,6 +21,8 @@ export interface EpisodeIndex {
   rules?: BundleIndexEntry[]
   /** The same rule tree played by a model on the machine (Laya, Kev): the local models' recordings. */
   local?: BundleIndexEntry[]
+  /** A rule tree played by Laya without holding the game for the answers: the real-time recordings. */
+  realtime?: BundleIndexEntry[]
 }
 
 /** One line of `reflections.jsonl`: a System 2 cycle, a trial's verdict, or a note. */
@@ -115,14 +117,18 @@ export function checkSchemaVersion(version: number | undefined, file: string): v
 export const isSensesRecording = (entry: Pick<BundleIndexEntry, 'solution'>): boolean =>
   (entry.solution ?? 'senses-and-central') === 'senses-and-central'
 
-/** Whether a rule-tree recording was played by a model on the machine (Laya or Kev) rather than Jev. */
-export const isLocalRecording = (entry: Pick<BundleIndexEntry, 'solution' | 'decider'>): boolean =>
-  !isSensesRecording(entry) && (entry.decider === 'laya' || entry.decider === 'kev')
+/** Whether a rule-tree recording was played without holding the game for the answers. */
+export const isRealtimeRecording = (entry: Pick<BundleIndexEntry, 'solution' | 'realtime'>): boolean =>
+  !isSensesRecording(entry) && entry.realtime === true
+
+/** Whether a rule-tree recording was played by a model on the machine (Laya or Kev) rather than Jev, the game held. */
+export const isLocalRecording = (entry: Pick<BundleIndexEntry, 'solution' | 'decider' | 'realtime'>): boolean =>
+  !isSensesRecording(entry) && !isRealtimeRecording(entry) && (entry.decider === 'laya' || entry.decider === 'kev')
 
 /**
  * The index of the recordings, split by solution: `episodes` are the senses and central's, `rules` the rule tree's
- * played by Jev, `local` the rule tree's played by a model on the machine. The last two have files of their own
- * (`decisions.jsonl` instead of `ticks.jsonl`).
+ * played by Jev, `local` the rule tree's played by a model on the machine, `realtime` the rule tree's played without
+ * holding the game. The last three have files of their own (`decisions.jsonl` instead of `ticks.jsonl`).
  */
 export async function loadIndex(root = 'episodes', fetcher: Fetcher = defaultFetcher): Promise<EpisodeIndex> {
   const index = parseJson<EpisodeIndex>(await fetchText(`${root}/index.json`, fetcher), `${root}/index.json`)
@@ -130,8 +136,9 @@ export async function loadIndex(root = 'episodes', fetcher: Fetcher = defaultFet
   return {
     ...index,
     episodes: index.episodes.filter(isSensesRecording),
-    rules: index.episodes.filter((e) => !isSensesRecording(e) && !isLocalRecording(e)),
+    rules: index.episodes.filter((e) => !isSensesRecording(e) && !isLocalRecording(e) && !isRealtimeRecording(e)),
     local: index.episodes.filter(isLocalRecording),
+    realtime: index.episodes.filter(isRealtimeRecording),
   }
 }
 

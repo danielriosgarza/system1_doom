@@ -11,8 +11,9 @@ import { Reference } from './screens/Reference'
 import { SlowSystem } from './screens/SlowSystem'
 import { Watch } from './screens/Watch'
 import { LocalScreens } from './screens/local/LocalScreens'
+import { RealtimeScreens } from './screens/realtime/RealtimeScreens'
 import { RulesScreens } from './screens/rules/RulesScreens'
-import { isLocalBundle } from './data/rules'
+import { isLocalBundle, isRealtimeBundle } from './data/rules'
 import {
   decisionCount,
   followLive,
@@ -49,8 +50,10 @@ export default function App() {
   const screen = useApp((s) => s.screen)
   const solution = useApp((s) => s.solution)
   const rules = useApp((s) => s.rules)
-  // A tree recording shows only on its own solution's screens: Jev's on the rule tree's, Laya's on the local models'.
-  const treeShown = !!rules && (solution === 'local') === isLocalBundle(rules)
+  // A tree recording shows only on its own solution's screens: Jev's on the rule tree's, Laya's on the local models',
+  // a real-time one on real time's.
+  const treeShown =
+    !!rules && (solution === 'local') === isLocalBundle(rules) && (solution === 'realtime') === isRealtimeBundle(rules)
   const both = useApp((s) => SOLUTIONS.filter((x) => entriesOf(x.id, s.index).length > 0).length > 1)
   // The playback timer runs here, so a recording plays on every screen.
   usePlayback()
@@ -126,6 +129,9 @@ export default function App() {
       )}
       {solution === 'local' && treeShown && rules && decision && (
         <LocalScreens bundle={rules} decision={decision} index={tickIndex} screen={screen} />
+      )}
+      {solution === 'realtime' && treeShown && rules && decision && (
+        <RealtimeScreens bundle={rules} decision={decision} index={tickIndex} screen={screen} />
       )}
       {solution === 'senses' && !error && loading && !bundle && <p className="status">Loading the episode…</p>}
       {solution === 'senses' && !error && bundle && !tick && <p className="status">{LIVE_COPY.waiting}</p>}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Meter } from '../../components/Bars'
 import { Progress, Transport } from '../../components/Playback'
 import { FrameStage } from '../../components/Stage'
+import { REALTIME_STRIP } from '../../content/realtime/words'
 import { RULES_WATCH, actSource, rulesEndLine, rulesRecordingName, rulesResultWords } from '../../content/rules/words'
 import { WATCH } from '../../content/watch'
 import { gameSeconds } from '../../data/playback'
@@ -176,10 +177,31 @@ export function WalkStrip({ bundle, decision }: { bundle: RulesBundle; decision:
             <span className="faint"> · {W.actGloss}</span>
             <br />
             <button type="button" className="link-button walk-source" onClick={() => openRule(decision.node)}>
-              {actSource(decision.node, skillOf(decision), decision.missed)}
+              {(decision.observed_tic != null && !decision.missed
+                ? REALTIME_STRIP.source(decision.node, skillOf(decision))
+                : null) ?? actSource(decision.node, skillOf(decision), decision.missed)}
             </button>
           </span>
         </li>
+        {decision.observed_tic != null && (
+          <>
+            <li className="walk-act walk-rt" data-testid="walk-timing">
+              <span className="dot act" aria-hidden />
+              <span className="strip-name">{REALTIME_STRIP.timingLabel}</span>
+              <span className="walk-act-body">{REALTIME_STRIP.timing(decision)}</span>
+            </li>
+            <li className="walk-act walk-rt" data-testid="walk-helper">
+              <span className="dot act" aria-hidden />
+              <span className="strip-name">{REALTIME_STRIP.helperLabel}</span>
+              <span className="walk-act-body">
+                {REALTIME_STRIP.helper(decision)}
+                <br />
+                <span className="faint">{REALTIME_STRIP.pressedLabel}: </span>
+                <span data-testid="walk-pressed">{REALTIME_STRIP.pressed(decision)}</span>
+              </span>
+            </li>
+          </>
+        )}
       </ol>
       <p className="config-line walk-cost" data-testid="walk-cost">
         {W.calls(decision.calls, decision.latency_ms, decision.cost)}

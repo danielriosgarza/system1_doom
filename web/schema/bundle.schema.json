@@ -687,6 +687,12 @@
           "default": null,
           "description": "The rule tree that played; None for senses and central",
           "title": "Tree"
+        },
+        "realtime": {
+          "default": false,
+          "description": "A rule tree played without holding the game for the answers",
+          "title": "Realtime",
+          "type": "boolean"
         }
       },
       "required": [
@@ -3213,6 +3219,115 @@
       "title": "ProposalTrace",
       "type": "object"
     },
+    "RealtimeSettings": {
+      "description": "How a real-time recording was played (`realtime.play_realtime`).",
+      "properties": {
+        "clock": {
+          "description": "wall: the game ran at 35 tics a second while the walk ran; fixed: the game was held for the walk, then `lag` tics were played",
+          "enum": [
+            "wall",
+            "fixed"
+          ],
+          "title": "Clock",
+          "type": "string"
+        },
+        "lag": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "fixed: the lag in tics, low and high",
+          "title": "Lag"
+        },
+        "track": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "screen: the fair helper aimed; engine: the helper read the engine",
+          "title": "Track"
+        },
+        "aim": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aim"
+        },
+        "fire": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fire"
+        },
+        "reflex": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Tics the helper sees late",
+          "title": "Reflex"
+        },
+        "tics": {
+          "description": "Game tics played",
+          "title": "Tics",
+          "type": "integer"
+        },
+        "late_tics": {
+          "default": 0,
+          "description": "Tics the game fell behind the clock and played at once",
+          "title": "Late Tics",
+          "type": "integer"
+        },
+        "lag_median": {
+          "description": "Median tics from a state to its action",
+          "title": "Lag Median",
+          "type": "number"
+        },
+        "walk_ms_median": {
+          "description": "Median time of a walk, in milliseconds",
+          "title": "Walk Ms Median",
+          "type": "number"
+        }
+      },
+      "required": [
+        "clock",
+        "tics",
+        "lag_median",
+        "walk_ms_median"
+      ],
+      "title": "RealtimeSettings",
+      "type": "object"
+    },
     "RecordedAnswer": {
       "description": "Jev's answer to one question of a walk, or a miss.",
       "properties": {
@@ -3834,6 +3949,79 @@
           "title": "Max X",
           "type": "integer"
         },
+        "observed_tic": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Real time: the tic the state was read at",
+          "title": "Observed Tic"
+        },
+        "start_tic": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Real time: the tic the action began at, once the answers were in",
+          "title": "Start Tic"
+        },
+        "walk_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Real time: how long the walk took, in milliseconds",
+          "title": "Walk Ms"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Real time: what the helper aimed at, as the focus named it",
+          "title": "Target"
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Real time: the code the rule plays once its focus is dead",
+          "title": "After"
+        },
+        "pressed": {
+          "description": "Real time: the keys pressed from this action's start to the next one's (the helper's turns and taps included)",
+          "items": {
+            "$ref": "#/$defs/ActionSegment"
+          },
+          "title": "Pressed",
+          "type": "array"
+        },
         "events": {
           "description": "died, timed out, or stalled (less than 48 units further in 24 decisions)",
           "items": {
@@ -4008,6 +4196,18 @@
         "recorded_at": {
           "title": "Recorded At",
           "type": "string"
+        },
+        "realtime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RealtimeSettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Played without holding the game for the answers; None for a recording that held it"
         }
       },
       "required": [
@@ -4188,7 +4388,10 @@
       "type": "object"
     },
     "SkillCall": {
-      "description": "Go on walking in a skill; its rules' partial actions are completed by `then`.",
+      "$ref": "#/$defs/SkillCallDict"
+    },
+    "SkillCallDict": {
+      "description": "A skill call as tree.json holds it: `after` only when the rule names one.",
       "properties": {
         "skill": {
           "title": "Skill",
@@ -4197,13 +4400,17 @@
         "then": {
           "title": "Then",
           "type": "string"
+        },
+        "after": {
+          "title": "After",
+          "type": "string"
         }
       },
       "required": [
         "skill",
         "then"
       ],
-      "title": "SkillCall",
+      "title": "SkillCallDict",
       "type": "object"
     },
     "SlowPathRequestTrace": {

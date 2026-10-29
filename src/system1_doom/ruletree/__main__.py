@@ -4,7 +4,9 @@
   python -m system1_doom.ruletree eval   RUN --tree general-11 --seeds 9-19,40-59
   python -m system1_doom.ruletree eval   RUN --tree general-11 --seeds 9-19 --decider laya
   python -m system1_doom.ruletree play   RUN --tree general-11 --seed 9
+  python -m system1_doom.ruletree realtime RUN --seeds 9-19 --decider laya --model ruletree-kev-v1 --lag wall
   python -m system1_doom.ruletree loop   RUN --tree general-9 --writer codex --train 9-19 --held 20-39
+  python -m system1_doom.ruletree rtloop RUN --tree realtime-5 --writer codex --decider kev --ahead --lag 7
   python -m system1_doom.ruletree check  RUN PROPOSAL.json
   python -m system1_doom.ruletree gate   RUN PROPOSAL.json --seeds 9-19
   python -m system1_doom.ruletree commit RUN PROPOSAL.json
@@ -12,6 +14,9 @@
 
 RUN is a folder (see `run.py`); it starts from `--tree` (a shipped tree's name or a tree folder) the first time;
 `play` and `eval` start it from general-11 when no tree is named.
+`realtime` plays the seeds without holding the game for the answers (realtime.py): `--lag wall` on the wall clock,
+one game at a time, or `--lag N` with every action started N tics after the state it was decided from (`--lag 7-52`:
+a lag drawn from 7 to 52 tics for each decision).
 `check` tests a proposal against a game of the run; `gate` checks it, then plays the seeds with and without it;
 `commit` checks it and, if it passed, adds it to the run's tree. `finish` copies the run's tree and record into a
 tree folder of its own. Jev is reached with TYPESAFE_API_KEY from the environment or `.env`; without it every
@@ -35,6 +40,8 @@ from system1_doom.d1_client import D1UltraClient, decider_of, load_api_key
 from .check import ProposalError, check, commit
 from .gate import gate
 from .loop import ATTEMPTS, run_loop
+from .realtime import AIMS, CADENCES, FILLS, FIRES, REFLEX, TRACKS, evaluate
+from .rtloop import run_rt_loop
 from .run import Run
 from .tree import DEFAULT_TREE, Proposal, load_tree, shipped_trees, tree_lines
 from .walk import DEFAULT_BUDGET
@@ -68,6 +75,47 @@ def _parser() -> argparse.ArgumentParser:
             p.add_argument("--seed", type=int, required=True)
         else:
             p.add_argument("--seeds", required=True)
+    rt = sub.add_parser("realtime", help="play seeds while the game goes on during each decision")
+    rt.add_argument("run")
+    rt.add_argument("--tree", help=f"the tree to start the run from, the first time (default {DEFAULT_TREE})")
+    rt.add_argument("--seeds", required=True)
+    rt.add_argument("--lag", default="wall", help="wall (the wall clock, one game at a time), a number of tics, or a range "
+                                                  "LO-HI drawn afresh for each decision")
+    rt.add_argument("--fill", choices=FILLS, default="hold", help="the keys between the end of one action and the start "
+                                                                   "of the next, when a decision takes over 8 tics")
+    rt.add_argument("--cadence", choices=CADENCES, default="pipeline", help="ask every 8 tics while the last action plays "
+                    "(pipeline), or once it has played (sequential)")
+    rt.add_argument("--predict", action="store_true", help="shift the state's angles by the turn still to come before "
+                                                           "the answer is in (with pipeline)")
+    rt.add_argument("--track", nargs="?", const="screen", choices=TRACKS,
+                    help="a helper turns toward the focus every tic, the tree choosing what to aim at and what to do "
+                         "(with pipeline): screen (the default) sees only what the player sees, `--reflex` tics late; "
+                         "engine reads every enemy's position from the engine, on screen or not (not a fair player)")
+    rt.add_argument("--keep-text", action="store_true", help="keep each decision's state text in its game, for training "
+                                                             "data (teach.py reads RUN/realtime/ too)")
+    rt.add_argument("--aim", choices=AIMS, default="band", help="with --track screen, turn until the focus is within 3 "
+                    "degrees (band, the default) or until the crosshair is on its label (box)")
+    rt.add_argument("--fire", choices=FIRES, default="hold", help="with --track screen: hold the trigger (the default), "
+                    "or lift it between shots so each is on its aim (tap; tap-narrow: only at a narrow focus)")
+    rt.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the screen helper sees late (default {REFLEX})")
+    rt.add_argument("--label", default="", help="a prefix for the games' files, to keep several settings in one run")
+    rtl = sub.add_parser("rtloop", help="run the soft loop on real-time games (rtloop.py)")
+    rtl.add_argument("run")
+    rtl.add_argument("--tree", help="the tree to start the run from, the first time")
+    rtl.add_argument("--writer", choices=("codex", "claude", "file"), default="codex")
+    rtl.add_argument("--writer-cmd", help="the writer's command, when it differs from the default ({out}: its answer file)")
+    rtl.add_argument("--train", default="9-19")
+    rtl.add_argument("--held", default="20-39")
+    rtl.add_argument("--rounds", type=int, default=8)
+    rtl.add_argument("--attempts", type=int, default=ATTEMPTS)
+    rtl.add_argument("--lag", default="7", help="tics from a state to its action (default 7, Laya's), or a range LO-HI drawn "
+                                                "for each decision")
+    rtl.add_argument("--reflex", type=int, default=REFLEX, help=f"tics the helper sees late (default {REFLEX})")
+    rtl.add_argument("--aim", choices=AIMS, default="box", help="how the helper aims (default box)")
+    rtl.add_argument("--fire", choices=FIRES, default="hold", help="how the helper fires (default hold)")
+    rtl.add_argument("--margin", type=int, default=1, help="more training seeds a rule must clear to pass the gate "
+                     "(default 1, which also passes as many with the failed game further on)")
+    rtl.add_argument("--monitor", default="", help="seeds never trained on, played after each commit")
     loop = sub.add_parser("loop", help="run the soft loop")
     loop.add_argument("run")
     loop.add_argument("--tree", help="the tree to start the run from, the first time")
@@ -141,7 +189,7 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
         if getattr(args, "tree", None):
             run.start(args.tree)
         elif not (run.tree_dir / "tree.json").is_file():
-            if args.command not in ("play", "eval"):
+            if args.command not in ("play", "eval", "realtime", "rtloop"):
                 say(f"{args.run} has no tree yet: start it with --tree")
                 return 2
             say(f"starting {args.run} from {DEFAULT_TREE}")
@@ -156,6 +204,28 @@ def main(argv: Optional[Sequence[str]] = None, client: Optional[D1UltraClient] =
             run.log(step=args.command, tree=run.tree().name, models=run.client.models_answered(), cleared=cleared, of=len(results),
                     games=results)
             say(f"cleared {cleared} of {len(results)}")
+            return 0
+
+        if args.command == "realtime":
+            lag = None if args.lag == "wall" else tuple(map(int, args.lag.split("-"))) if "-" in args.lag else int(args.lag)
+            results = evaluate(run, parse_seeds(args.seeds), lag, args.fill, args.label, cadence=args.cadence,
+                               predict=args.predict, track=args.track, reflex=args.reflex, keep_text=args.keep_text,
+                               aim=args.aim, fire=args.fire)
+            for r in results:
+                say(json.dumps(r))
+            cleared = sum(r["event"] == "cleared" for r in results)
+            run.log(step="realtime", tree=run.tree().name, lag=args.lag, fill=args.fill, cadence=args.cadence,
+                    predict=args.predict, track=args.track, label=args.label,
+                    models=run.client.models_answered(), cleared=cleared, of=len(results), games=results)
+            say(f"cleared {cleared} of {len(results)}")
+            return 0
+
+        if args.command == "rtloop":
+            lag = tuple(map(int, args.lag.split("-"))) if "-" in args.lag else int(args.lag)
+            settings = {"lag": lag, "track": "screen", "reflex": args.reflex, "fill": "hold", "aim": args.aim, "fire": args.fire}
+            result = run_rt_loop(run, writer_named(args.writer, args.writer_cmd), parse_seeds(args.train), parse_seeds(args.held),
+                                 args.rounds, args.attempts, settings, args.margin, parse_seeds(args.monitor))
+            say(json.dumps(result))
             return 0
 
         if args.command == "loop":

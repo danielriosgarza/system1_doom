@@ -2,6 +2,7 @@
 // reads, and a formula only where one applies (the n-step return and the history test's metrics). The rule tree's
 // panels are in `rules/explainers.ts`.
 import { LOCAL_PANELS } from './local/explainers'
+import { REALTIME_PANELS } from './realtime/explainers'
 import { RULE_EXPLAINERS } from './rules/explainers'
 
 export interface Explainer {
@@ -250,6 +251,7 @@ export const EXPLAINERS = {
   },
   ...RULE_EXPLAINERS,
   ...LOCAL_PANELS,
+  ...REALTIME_PANELS,
 } satisfies Record<string, Explainer>
 
 export type PanelId = keyof typeof EXPLAINERS

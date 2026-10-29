@@ -28,6 +28,7 @@ const WORDS: Record<Solution, { owner: Map<string, string>; pattern: RegExp }> =
   senses: wordsOf('senses'),
   rules: wordsOf('rules'),
   local: wordsOf('local'),
+  realtime: wordsOf('realtime'),
 }
 
 /**

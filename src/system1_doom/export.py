@@ -89,7 +89,8 @@ from system1_doom.reflection import (
 )
 from system1_doom.relevance import RelevanceLedger, save_ledger
 from system1_doom.ruletree.bundle import SOLUTION as RULE_TREE
-from system1_doom.ruletree.bundle import RuleTreeDecision, RuleTreeEpisodeMeta, check_recording, record_episode
+from system1_doom.ruletree.bundle import (RuleTreeDecision, RuleTreeEpisodeMeta, check_recording, record_episode,
+                                          record_realtime_episode)
 from system1_doom.ruletree.game import SCENARIO as SCENARIO_RULE_TREE
 from system1_doom.ruletree.tree import DEFAULT_TREE, RuleTree, load_tree
 from system1_doom.ruletree.walk import DEFAULT_BUDGET as RULE_TREE_BUDGET
@@ -333,6 +334,7 @@ class BundleIndexEntry(BaseModel):
     recorded_at: str = Field(default="", description="When the bundle was recorded, as its episode.json says")
     solution: Solution = Field(default=SENSES, description="Which way of playing recorded it: senses and central, or a rule tree")
     tree: Optional[str] = Field(default=None, description="The rule tree that played; None for senses and central")
+    realtime: bool = Field(default=False, description="A rule tree played without holding the game for the answers")
 
 
 def _jpeg(screen_buffer: np.ndarray, path: Path) -> None:
@@ -835,6 +837,7 @@ def rule_tree_index_entry(name: str, meta: RuleTreeEpisodeMeta) -> BundleIndexEn
         recorded_at=meta.recorded_at,
         solution=RULE_TREE,
         tree=meta.tree,
+        realtime=meta.realtime is not None,
     )
 
 
@@ -935,10 +938,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tree-decider", choices=("jev", "laya", "kev"), default="jev",
                         help="With --solution rule-tree: who answers every question, Jev (the default) or a model on this machine")
     parser.add_argument("--tree-model", default=None, help="With --solution rule-tree: the decider's model, when it is not its default")
+    parser.add_argument("--tree-endpoint", default=None, help="With --solution rule-tree: the decider's System One URL, when "
+                                                              "it is not its default (a second laya-serve, say)")
+    parser.add_argument("--realtime", metavar="CLOCK", default=None,
+                        help="With --solution rule-tree: play without holding the game for the answers, on the wall clock "
+                             "(wall) or with a lag of N or LO-HI tics, the fair helper aiming (box aiming, tap firing at a "
+                             "narrow focus, 4 tics late)")
     parser.add_argument("--check", metavar="BUNDLE", default=None, help="Validate a bundle and exit")
     parser.add_argument("--index", metavar="DIR", default=None, help="Write DIR/index.json listing its bundles and exit")
     parser.add_argument("--schema", metavar="OUT.json", default=None, help="Write the bundle JSON Schema and exit")
     return parser
+
+
+def realtime_settings(clock: str) -> Dict[str, Any]:
+    """`--realtime`: the wall clock, or a fixed lag (N or LO-HI tics), with the fair helper as it played 80 of 81."""
+    lag: Any = None if clock == "wall" else tuple(map(int, clock.split("-"))) if "-" in clock else int(clock)
+    return {"lag": lag, "track": "screen", "aim": "box", "fire": "tap-narrow", "reflex": 4}
 
 
 def record_rule_tree(args: argparse.Namespace, transport: Optional[TransportFn] = None) -> int:
@@ -960,7 +975,8 @@ def record_rule_tree(args: argparse.Namespace, transport: Optional[TransportFn] 
         print(exc, file=sys.stderr)
         return 2
     budget = args.call_budget if args.call_budget is not None else RULE_TREE_BUDGET
-    client = D1UltraClient(api_key=api_key or "", decider=decider, model=args.tree_model, transport=transport, default_timeout=budget)
+    client = D1UltraClient(api_key=api_key or "", decider=decider, model=args.tree_model, endpoint_url=args.tree_endpoint,
+                           transport=transport, default_timeout=budget)
     try:
         for i in range(args.episodes):
             seed = args.seed + i
@@ -970,10 +986,16 @@ def record_rule_tree(args: argparse.Namespace, transport: Optional[TransportFn] 
             else:
                 out = Path(args.out) if args.episodes == 1 else Path(args.out) / default_out.name
             try:
-                meta = record_episode(
-                    tree, seed, out, client, name=args.name if args.episodes == 1 else None,
-                    title=args.title if args.episodes == 1 else None, budget=budget,
-                )
+                if args.realtime:
+                    meta = record_realtime_episode(
+                        tree, seed, out, client, realtime_settings(args.realtime), name=args.name if args.episodes == 1 else None,
+                        title=args.title if args.episodes == 1 else None, budget=budget,
+                    )
+                else:
+                    meta = record_episode(
+                        tree, seed, out, client, name=args.name if args.episodes == 1 else None,
+                        title=args.title if args.episodes == 1 else None, budget=budget,
+                    )
             except FileExistsError as exc:
                 print(exc, file=sys.stderr)
                 return 2

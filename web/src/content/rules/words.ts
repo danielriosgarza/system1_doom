@@ -13,6 +13,8 @@ export const SOLUTION_TITLES: Record<Solution, string> = {
     'At each decision, Jev, TypeSafe’s decision model, answers a few multiple-choice questions that lead through a tree of rules to an action.',
   local:
     'At each decision, Laya, a small model running on the computer that plays and trained on the answers of Kev-27B, answers the questions of a tree of rules that lead to an action. No question goes to Jev.',
+  realtime:
+    'At each decision, Laya answers the questions of a tree of rules in about a tenth of a second while the game keeps running. Between its answers, a helper aims at the target Laya selected, using what is on the screen.',
 }
 
 /** Who wrote a tree's rules, as the tree names them. */

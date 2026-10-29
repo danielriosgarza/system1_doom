@@ -94,7 +94,7 @@ def test_the_shipped_trees_play_on_their_own():
     from system1_doom.ruletree.tree import shipped_trees
 
     assert {"general-9", "general-11", "codex-11"} <= set(shipped_trees())
-    rules = {"general-9": 9, "general-11": 11, "codex-11": 11}
+    rules = {"general-9": 9, "general-11": 11, "codex-11": 11, "steady-11": 11, "goals-11": 11, "realtime-5": 5, "realtime-6": 6, "realtime-12": 12}
     for name, n in rules.items():
         tree = load_tree(name)
         assert tree.name == name and sum(1 for nid in tree.nodes if nid not in ("root", "aim")) == n
@@ -108,3 +108,12 @@ def test_the_shipped_trees_play_on_their_own():
                 assert c.expect.split("/")[-1] in tree.nodes and node.id in c.expect.split("/")
     assert load_tree("general-11").nodes["r12"].parent == "r11"
     assert load_tree("codex-11").nodes["r11"].action == SkillCall(skill="aim", then="0R01")
+
+
+def test_a_skill_call_may_name_a_follow_up_and_only_a_code():
+    from pydantic import ValidationError
+
+    assert load_tree("goals-11").nodes["r1"].action == SkillCall(skill="aim", then="0001", after="F001")
+    assert "after" not in SkillCall(skill="aim", then="0001").model_dump()
+    with pytest.raises(ValidationError):
+        SkillCall(skill="aim", then="0001", after="F001:3")

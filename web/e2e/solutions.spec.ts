@@ -17,20 +17,23 @@ interface Entry {
   seed: number
   solution?: string
   decider?: string
+  realtime?: boolean
 }
 
-async function entries(page: Page): Promise<{ senses: Entry[]; rules: Entry[]; local: Entry[] }> {
+async function entries(page: Page): Promise<{ senses: Entry[]; rules: Entry[]; local: Entry[]; realtime: Entry[] }> {
   const index = (await (await page.request.get(`${RECORDINGS}episodes/index.json`)).json()) as { episodes: Entry[] }
   const tree = index.episodes.filter((e) => e.solution === 'rule-tree')
-  const local = tree.filter((e) => e.decider === 'laya' || e.decider === 'kev')
+  const realtime = tree.filter((e) => e.realtime)
+  const local = tree.filter((e) => !e.realtime && (e.decider === 'laya' || e.decider === 'kev'))
   return {
     senses: index.episodes.filter((e) => !tree.includes(e)),
-    rules: tree.filter((e) => !local.includes(e)),
+    rules: tree.filter((e) => !local.includes(e) && !realtime.includes(e)),
     local,
+    realtime,
   }
 }
 
-const tab = (page: Page, solution: 'senses' | 'rules' | 'local') =>
+const tab = (page: Page, solution: 'senses' | 'rules' | 'local' | 'realtime') =>
   page.getByTestId('solution-tabs').locator(`button[data-solution="${solution}"]`)
 
 test('the side tab switches solution at the same screen position, opening the recording of the same seed', async ({
@@ -61,7 +64,7 @@ test('the side tab switches solution at the same screen position, opening the re
   expect(errors).toEqual([])
 })
 
-test('the side tab has three tabs, and Local models opens Laya’s recording of the same seed at the same position', async ({
+test('the side tab has four tabs, and Local models opens Laya’s recording of the same seed at the same position', async ({
   page,
 }) => {
   const errors = collectErrors(page)
@@ -70,6 +73,7 @@ test('the side tab has three tabs, and Local models opens Laya’s recording of 
     'Senses and central',
     'Rule tree',
     'Local models',
+    'Real time',
   ])
   // The third screen of the rule tree is How the rules were written; the local models' is How Laya was trained.
   await tab(page, 'local').click()
@@ -83,7 +87,7 @@ test('the side tab has three tabs, and Local models opens Laya’s recording of 
 })
 
 test('the picker lists only the recordings of the solution shown', async ({ page }) => {
-  const { senses, rules, local } = await entries(page)
+  const { senses, rules, local, realtime } = await entries(page)
   await page.goto('./#corridor-9/3/instances')
   const options = page.locator('.topbar select option')
   await expect(options).toHaveCount(senses.length)
@@ -98,6 +102,12 @@ test('the picker lists only the recordings of the solution shown', async ({ page
   await expect(options).toHaveCount(local.length)
   expect(await options.evaluateAll((els) => els.map((el) => (el as HTMLOptionElement).value).sort())).toEqual(
     local.map((e) => e.name).sort(),
+  )
+  await tab(page, 'realtime').click()
+  await expect(page).toHaveURL(/#realtime\/realtime-corridor-9\/0\/questions$/)
+  await expect(options).toHaveCount(realtime.length)
+  expect(await options.evaluateAll((els) => els.map((el) => (el as HTMLOptionElement).value).sort())).toEqual(
+    realtime.map((e) => e.name).sort(),
   )
 })
 
@@ -140,7 +150,7 @@ test('at 1280 the rule tree’s top bar is one row with all six screens, beside 
   expect((side?.x ?? 999) + (side?.width ?? 999)).toBeLessThanOrEqual(box?.x ?? 0)
 })
 
-test('on a phone the side tab is a row of two buttons above the top bar', async ({ page }) => {
+test('on a phone the side tab is two rows of buttons above the top bar', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('./#rules/rules-corridor-9/0/watch')
   const side = await page.getByTestId('solution-tabs').boundingBox()
