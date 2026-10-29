@@ -18,7 +18,8 @@
       "senses_choose_targets": true,
       "recorded_at": "2026-10-26T07:14:11.868692+00:00",
       "solution": "senses-and-central",
-      "tree": null
+      "tree": null,
+      "realtime": false
     },
     {
       "name": "optimized-corridor-10",
@@ -37,7 +38,8 @@
       "senses_choose_targets": true,
       "recorded_at": "2026-10-26T07:16:17.772249+00:00",
       "solution": "senses-and-central",
-      "tree": null
+      "tree": null,
+      "realtime": false
     },
     {
       "name": "optimized-corridor-11",
@@ -56,7 +58,8 @@
       "senses_choose_targets": true,
       "recorded_at": "2026-10-26T07:14:25.616979+00:00",
       "solution": "senses-and-central",
-      "tree": null
+      "tree": null,
+      "realtime": false
     },
     {
       "name": "optimized-corridor-12",
@@ -75,7 +78,8 @@
       "senses_choose_targets": true,
       "recorded_at": "2026-10-26T07:15:31.542105+00:00",
       "solution": "senses-and-central",
-      "tree": null
+      "tree": null,
+      "realtime": false
     },
     {
       "name": "corridor-9",
@@ -94,7 +98,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-25T14:40:27.314616+00:00",
       "solution": "senses-and-central",
-      "tree": null
+      "tree": null,
+      "realtime": false
     },
     {
       "name": "jev-corridor-9",
@@ -113,7 +118,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-25T17:26:07.393703+00:00",
       "solution": "senses-and-central",
-      "tree": null
+      "tree": null,
+      "realtime": false
     },
     {
       "name": "corridor-9-v2",
@@ -132,7 +138,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-25T14:54:27.820117+00:00",
       "solution": "senses-and-central",
-      "tree": null
+      "tree": null,
+      "realtime": false
     },
     {
       "name": "corridor-11",
@@ -151,7 +158,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-25T14:42:55.034735+00:00",
       "solution": "senses-and-central",
-      "tree": null
+      "tree": null,
+      "realtime": false
     },
     {
       "name": "jev-corridor-11",
@@ -170,7 +178,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-25T17:28:53.652901+00:00",
       "solution": "senses-and-central",
-      "tree": null
+      "tree": null,
+      "realtime": false
     },
     {
       "name": "rules-codex-corridor-9",
@@ -189,7 +198,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-27T10:32:35.049815+00:00",
       "solution": "rule-tree",
-      "tree": "codex-11"
+      "tree": "codex-11",
+      "realtime": false
     },
     {
       "name": "local-corridor-9",
@@ -208,7 +218,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-28T04:23:49.554733+00:00",
       "solution": "rule-tree",
-      "tree": "general-11"
+      "tree": "general-11",
+      "realtime": false
     },
     {
       "name": "rules-corridor-9",
@@ -227,7 +238,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-27T09:00:56.774991+00:00",
       "solution": "rule-tree",
-      "tree": "general-11"
+      "tree": "general-11",
+      "realtime": false
     },
     {
       "name": "local-corridor-10",
@@ -246,7 +258,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-28T04:23:57.490447+00:00",
       "solution": "rule-tree",
-      "tree": "general-11"
+      "tree": "general-11",
+      "realtime": false
     },
     {
       "name": "rules-corridor-10",
@@ -265,7 +278,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-27T09:00:50.976034+00:00",
       "solution": "rule-tree",
-      "tree": "general-11"
+      "tree": "general-11",
+      "realtime": false
     },
     {
       "name": "local-corridor-11",
@@ -284,7 +298,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-28T04:24:07.726652+00:00",
       "solution": "rule-tree",
-      "tree": "general-11"
+      "tree": "general-11",
+      "realtime": false
     },
     {
       "name": "rules-corridor-11",
@@ -303,7 +318,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-27T09:01:02.653371+00:00",
       "solution": "rule-tree",
-      "tree": "general-11"
+      "tree": "general-11",
+      "realtime": false
     },
     {
       "name": "local-corridor-12",
@@ -322,7 +338,8 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-28T04:24:16.777438+00:00",
       "solution": "rule-tree",
-      "tree": "general-11"
+      "tree": "general-11",
+      "realtime": false
     },
     {
       "name": "rules-corridor-12",
@@ -341,7 +358,88 @@
       "senses_choose_targets": false,
       "recorded_at": "2026-10-27T09:00:56.671848+00:00",
       "solution": "rule-tree",
-      "tree": "general-11"
+      "tree": "general-11",
+      "realtime": false
+    },
+    {
+      "name": "realtime-corridor-9",
+      "title": "deadly corridor in real time, rule tree realtime-12, seed 9",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "none",
+      "seed": 9,
+      "cleared": true,
+      "died": false,
+      "reward": 2277.6,
+      "ticks": 35,
+      "kills": 6.0,
+      "configuration_start": 1,
+      "configuration_end": 1,
+      "decider": "laya",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-29T07:19:59.859982+00:00",
+      "solution": "rule-tree",
+      "tree": "realtime-12",
+      "realtime": true
+    },
+    {
+      "name": "realtime-corridor-10",
+      "title": "deadly corridor in real time, rule tree realtime-12, seed 10",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "none",
+      "seed": 10,
+      "cleared": true,
+      "died": false,
+      "reward": 2279.3,
+      "ticks": 37,
+      "kills": 6.0,
+      "configuration_start": 1,
+      "configuration_end": 1,
+      "decider": "laya",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-29T07:20:09.139859+00:00",
+      "solution": "rule-tree",
+      "tree": "realtime-12",
+      "realtime": true
+    },
+    {
+      "name": "realtime-corridor-11",
+      "title": "deadly corridor in real time, rule tree realtime-12, seed 11",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "none",
+      "seed": 11,
+      "cleared": true,
+      "died": false,
+      "reward": 2277.3,
+      "ticks": 35,
+      "kills": 6.0,
+      "configuration_start": 1,
+      "configuration_end": 1,
+      "decider": "laya",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-29T07:20:17.893759+00:00",
+      "solution": "rule-tree",
+      "tree": "realtime-12",
+      "realtime": true
+    },
+    {
+      "name": "realtime-corridor-12",
+      "title": "deadly corridor in real time, rule tree realtime-12, seed 12",
+      "scenario": "deadly_corridor.cfg",
+      "value_networks": "none",
+      "seed": 12,
+      "cleared": true,
+      "died": false,
+      "reward": 2276.1,
+      "ticks": 35,
+      "kills": 6.0,
+      "configuration_start": 1,
+      "configuration_end": 1,
+      "decider": "laya",
+      "senses_choose_targets": false,
+      "recorded_at": "2026-10-29T07:20:26.669833+00:00",
+      "solution": "rule-tree",
+      "tree": "realtime-12",
+      "realtime": true
     }
   ]
 }

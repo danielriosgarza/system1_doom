@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer
+from typing_extensions import Required, TypedDict
 
 from .codes import COMBOS, RANDOM, THEN, ActionError, describe, segments
 
@@ -41,6 +42,14 @@ class Focus(BaseModel):
     question: str
 
 
+class SkillCallDict(TypedDict, total=False):
+    """A skill call as tree.json holds it: `after` only when the rule names one."""
+
+    skill: Required[str]
+    then: Required[str]
+    after: str
+
+
 class SkillCall(BaseModel):
     """Go on walking in a skill; its rules' partial actions are completed by `then`. `after`, for real-time play
     with a tracking helper (realtime.py), is the code played once the focus is gone (an enemy dead), turned toward
@@ -60,7 +69,7 @@ class SkillCall(BaseModel):
         return v
 
     @model_serializer(mode="wrap")
-    def _without_after(self, handler: Any) -> Any:
+    def _without_after(self, handler: Any) -> SkillCallDict:
         data = handler(self)
         if isinstance(data, dict) and data.get("after") is None:
             data.pop("after", None)

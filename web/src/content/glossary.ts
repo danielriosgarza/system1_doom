@@ -2,7 +2,7 @@
 // exactly the terms of the documentation's glossary (docs/DOCUMENTATION.md, section 18), and a test keeps the
 // two in step. Each entry belongs to one solution's screens or to both; a term both use in different senses has
 // its rule-tree meaning beside the senses and central's.
-import { LOCAL_SCREENS, type Screen, type Solution } from '../store'
+import { LOCAL_SCREENS, REALTIME_SCREENS, type Screen, type Solution } from '../store'
 import type { PanelId } from './explainers'
 
 /** Where to see a term: a screen, and the panel on it to flash. */
@@ -27,6 +27,8 @@ export interface GlossaryEntry {
   rules?: Pick<GlossaryEntry, 'meaning' | 'see' | 'code'>
   /** What the term means on the local models' screens, where Laya in Jev's place is not enough. */
   local?: Pick<GlossaryEntry, 'meaning' | 'see' | 'code'>
+  /** What the term means on the real-time screens, where the local models' meaning is not enough. */
+  realtime?: Pick<GlossaryEntry, 'meaning' | 'see' | 'code'>
 }
 
 /** An entry as one solution's screens show it. */
@@ -41,10 +43,11 @@ export interface ShownEntry {
 
 /**
  * Whether a solution's screens use an entry. The local models' screens use the rule tree's terms, Jev's apart, and
- * their own.
+ * their own; real time's use the local models' and its own.
  */
 export function usedBy(entry: GlossaryEntry, solution: Solution): boolean {
   const solutions = entry.solutions ?? ['senses']
+  if (solution === 'realtime') return solutions.includes('realtime') || usedBy(entry, 'local')
   if (solution === 'local') return solutions.includes('local') || (solutions.includes('rules') && entry.id !== 'jev')
   return solutions.includes(solution)
 }
@@ -53,14 +56,17 @@ export function usedBy(entry: GlossaryEntry, solution: Solution): boolean {
 const asLocal = (text: string): string => text.replaceAll('Jev’s', 'Laya’s').replaceAll('Jev', 'Laya')
 
 const LOCAL_SCREEN_IDS = new Set<Screen>(LOCAL_SCREENS.map((s) => s.id))
+const REALTIME_SCREEN_IDS = new Set<Screen>(REALTIME_SCREENS.map((s) => s.id))
 
 /** An entry in the words of one solution. */
 export function shown(entry: GlossaryEntry, solution: Solution): ShownEntry {
-  if (solution === 'local') {
-    const own = entry.local ?? entry.rules ?? entry
-    const words = entry.local ? (text: string) => text : asLocal
+  if (solution === 'local' || solution === 'realtime') {
+    const mine = solution === 'realtime' ? entry.realtime : undefined
+    const own = mine ?? entry.local ?? entry.rules ?? entry
+    const words = mine || entry.local ? (text: string) => text : asLocal
+    const ids = solution === 'realtime' ? REALTIME_SCREEN_IDS : LOCAL_SCREEN_IDS
     // A link to a screen only the rule tree has (How the rules were written) points at The rule tree instead.
-    const see = own.see.filter((l) => LOCAL_SCREEN_IDS.has(l.screen)).map((l) => ({ ...l, label: words(l.label) }))
+    const see = own.see.filter((l) => ids.has(l.screen)).map((l) => ({ ...l, label: words(l.label) }))
     return {
       id: entry.id,
       term: entry.term,
@@ -548,6 +554,39 @@ export const GLOSSARY: GlossaryEntry[] = [
     see: [{ screen: 'watch', panel: 'rt-walk', label: 'the Act row on Watch' }],
     code: 'ruletree/codes.py · segments',
     solutions: ['rules'],
+  },
+  {
+    id: 'real-time-lag',
+    term: 'lag',
+    aliases: ['late by'],
+    meaning:
+      'How many tics after its state was read a decision’s action begins. In real time the game does not wait for the answers, so the action begins at the first tic after they are in: about 5 tics, a seventh of a second, for Laya. Until then the keys of the action before stay pressed.',
+    see: [
+      { screen: 'timing', panel: 'rtm-steps', label: 'from a state to its action' },
+      { screen: 'timing', panel: 'rtm-around', label: 'the lag of the decisions around this one' },
+    ],
+    code: 'ruletree/realtime.py · play_realtime',
+    solutions: ['realtime'],
+  },
+  {
+    id: 'helper',
+    term: 'helper',
+    aliases: [],
+    meaning:
+      'What presses the keys between Laya’s answers in real time. Given the focus Laya picked and the action’s keys, it turns toward the focus at every tic until the crosshair is on it, then presses those keys. It sees only what the player sees, presses only the player’s buttons, and chooses nothing.',
+    see: [{ screen: 'timing', panel: 'rtm-helper', label: 'what the helper does' }],
+    code: 'ruletree/realtime.py · Helper',
+    solutions: ['realtime'],
+  },
+  {
+    id: 'tap-firing',
+    term: 'tap firing',
+    aliases: [],
+    meaning:
+      'Lifting the trigger between shots. Held down, Doom’s pistol fires every 14 tics but scatters every shot after the first; lifted at the right moment, it fires every 19 tics and each shot goes where it is aimed. The helper taps at a narrow enemy, where aim matters most.',
+    see: [{ screen: 'timing', panel: 'rtm-helper', label: 'what the helper does' }],
+    code: 'ruletree/realtime.py · play_realtime',
+    solutions: ['realtime'],
   },
   {
     id: 'soft-loop',

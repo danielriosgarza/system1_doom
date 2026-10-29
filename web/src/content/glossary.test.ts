@@ -105,6 +105,21 @@ describe('the glossary', () => {
     expect(glossaryOf('rules').some((e) => e.id === 'laya' || e.id === 'kev')).toBe(false)
   })
 
+  it('gives real time the local models’ terms, without Jev, and the lag, the helper and tap firing of its own', () => {
+    const realtime = glossaryOf('realtime')
+    const ids = new Set(realtime.map((e) => e.id))
+    for (const id of ['laya', 'rule', 'walk', 'focus', 'real-time-lag', 'helper', 'tap-firing'])
+      expect(ids.has(id), id).toBe(true)
+    expect(ids.has('jev')).toBe(false)
+    for (const e of realtime) expect(`${e.meaning} ${e.see.map((l) => l.label).join(' ')}`, e.id).not.toMatch(/\bJev\b/)
+    for (const solution of ['senses', 'rules', 'local'] as Solution[]) {
+      expect(
+        glossaryOf(solution).some((e) => e.id === 'helper' || e.id === 'tap-firing'),
+        solution,
+      ).toBe(false)
+    }
+  })
+
   it('gives a term both solutions use its rule-tree meaning, and a rule-tree term no second one', () => {
     for (const entry of GLOSSARY) {
       const solutions = entry.solutions ?? ['senses']
@@ -113,7 +128,7 @@ describe('the glossary', () => {
   })
 
   const variants = GLOSSARY.flatMap((entry) =>
-    (['senses', 'rules', 'local'] as Solution[])
+    (['senses', 'rules', 'local', 'realtime'] as Solution[])
       .filter((s) => usedBy(entry, s))
       .map((s) => ({ solution: s, ...shown(entry, s) })),
   )

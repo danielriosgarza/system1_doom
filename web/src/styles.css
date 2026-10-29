@@ -2622,14 +2622,16 @@ kbd {
   .solution-tabs {
     position: static;
     flex-direction: row;
+    flex-wrap: wrap;
     width: auto;
     padding: 8px 16px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
 
+  /* Four tabs do not fit one row of a phone: two rows of two. */
   .solution-tabs button {
-    flex: 1 1 0;
+    flex: 1 1 40%;
     padding: 6px 8px;
     border-color: var(--border);
   }
@@ -2637,6 +2639,7 @@ kbd {
   .solution-label {
     writing-mode: horizontal-tb;
     transform: none;
+    white-space: normal;
   }
 
   .app.has-solutions {
@@ -3103,4 +3106,9 @@ kbd {
   .workflow {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Real time's table of the decisions around the one showing marks that one. */
+.timing .data-table tr[aria-current='true'] {
+  background: var(--accent-soft);
 }

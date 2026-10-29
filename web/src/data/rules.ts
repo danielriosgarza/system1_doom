@@ -7,7 +7,7 @@ import type {
   RuleTree,
   RuleTreeDecision,
   RuleTreeEpisodeMeta,
-  SkillCall,
+  SkillCallDict as SkillCall,
   WalkStep,
 } from '../schema/bundle'
 import { type ModelAnswers, parseModels } from './models'
@@ -82,8 +82,8 @@ export async function loadRulesEpisode(
     )
   }
   decisions.sort((a, b) => a.decision - b.decision)
-  // Only a local model's recording has the other models' answers to its questions.
-  const local = meta.decider === 'laya' || meta.decider === 'kev'
+  // Only a local model's recording, played with the game held, has the other models' answers to its questions.
+  const local = (meta.decider === 'laya' || meta.decider === 'kev') && !meta.realtime
   const modelsText = local ? await fetchText(`${base}/models.json`, fetcher, true) : ''
   return {
     name,
@@ -98,7 +98,10 @@ export async function loadRulesEpisode(
 
 /** Whether a rule-tree recording was played by a model on the machine (Laya, Kev), not Jev. */
 export const isLocalBundle = (bundle: Pick<RulesBundle, 'meta'>): boolean =>
-  bundle.meta.decider === 'laya' || bundle.meta.decider === 'kev'
+  !isRealtimeBundle(bundle) && (bundle.meta.decider === 'laya' || bundle.meta.decider === 'kev')
+
+/** Whether a rule-tree recording was played without holding the game for the answers. */
+export const isRealtimeBundle = (bundle: Pick<RulesBundle, 'meta'>): boolean => !!bundle.meta.realtime
 
 /** URL of a file the bundle names by its path inside the bundle: a frame, or a cornerstone's screen. */
 export const rulesFileUrl = (bundle: Pick<RulesBundle, 'base'>, path: string): string => `${bundle.base}/${path}`

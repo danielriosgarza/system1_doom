@@ -32,9 +32,11 @@ interface ModelsFile {
 
 async function localRecordings(page: Page): Promise<string[]> {
   const index = (await (await page.request.get(`${RECORDINGS}episodes/index.json`)).json()) as {
-    episodes: { name: string; solution?: string; decider?: string }[]
+    episodes: { name: string; solution?: string; decider?: string; realtime?: boolean }[]
   }
-  return index.episodes.filter((e) => e.solution === 'rule-tree' && e.decider === 'laya').map((e) => e.name)
+  return index.episodes
+    .filter((e) => e.solution === 'rule-tree' && e.decider === 'laya' && !e.realtime)
+    .map((e) => e.name)
 }
 
 async function decisions(page: Page, name: string): Promise<Decision[]> {

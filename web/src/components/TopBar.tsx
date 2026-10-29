@@ -100,7 +100,9 @@ export function TopBar() {
           every decision made by{' '}
           {solution === 'local'
             ? 'Laya, on this computer'
-            : deciderName(solution === 'rules' ? 'jev' : bundle?.meta.decider)}
+            : solution === 'realtime'
+              ? 'Laya, in real time'
+              : deciderName(solution === 'rules' ? 'jev' : bundle?.meta.decider)}
         </span>
       </div>
       <nav className="screens" aria-label="Screens">
