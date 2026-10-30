@@ -220,3 +220,15 @@ test('every rule-tree screen of every shipped recording opens without an error, 
   }
   expect(errors).toEqual([])
 })
+
+test('a check that stopped while the tree was written reads as part of the record', async ({ page }) => {
+  await page.goto('./#rules/rules-codex-corridor-9/0/written')
+  await page.locator('[data-testid="build-row"][data-kind="proposal"]', { hasText: 'f01-trace-s12-00-a2' }).click()
+  await expect(page.getByTestId('build-detail')).toHaveAttribute('data-outcome', 'check stopped')
+  const note = page.getByTestId('check-error')
+  await expect(note).toContainText(
+    'This check did not finish when the soft loop ran it: HTTP 402, no TypeSafe API credits.',
+  )
+  await expect(note).toContainText('neither added nor rejected')
+  await expect(page.locator('.build-detail .miss-box')).toHaveCount(0)
+})

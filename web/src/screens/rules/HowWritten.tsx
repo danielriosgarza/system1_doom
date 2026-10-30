@@ -247,7 +247,11 @@ function CheckDetail({ check }: { check: CheckView }) {
           </>
         )}
       </p>
-      {check.error && <p className="miss-box">{WRITTEN.checkError(check.error)}</p>}
+      {check.error && (
+        <p className="note" data-testid="check-error">
+          {WRITTEN.checkError(check.error)}
+        </p>
+      )}
       {tests ? (
         <ul className="check-tests">
           {(['sees', 'unchanged', 'avoids'] as const).map((t) => (
